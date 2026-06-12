@@ -1,4 +1,4 @@
-"""Builds E-path atom records from RABDAM atom-level BDamage output."""
+"""Build E-path atom records from RABDAM atom-level BDamage output."""
 
 from __future__ import annotations
 
