@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rabdam"
+name = "epath"
 version = "0.1.0"
-description = "RABDAM BDamage calculation tools"
+description = "E-path BDamage calculation tools"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -19,3 +19,9 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"rabdam.bnet" = ["database/database.csv"]
+
+[project.scripts]
+epath = "epath.cli:main"

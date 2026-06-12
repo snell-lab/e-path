@@ -24,17 +24,17 @@ from dataclasses import dataclass
 import math
 from typing import Protocol, TypeVar
 
-from bdamage.score import BDamageScoreResult, calculate_bdamage_scores_for_structure
-from crystal.symmetry import SymmetryExpandedStructure, expand_prepared_structure_by_symmetry
-from crystal.translate import TranslatedCrystalBlock, translate_expanded_unit_cell
-from crystal.trim import (
+from rabdam.bdamage.score import BDamageScoreResult, calculate_bdamage_scores_for_structure
+from rabdam.crystal.symmetry import SymmetryExpandedStructure, expand_prepared_structure_by_symmetry
+from rabdam.crystal.translate import TranslatedCrystalBlock, translate_expanded_unit_cell
+from rabdam.crystal.trim import (
     TrimmedNeighbourBlock,
     trim_expanded_unit_cell_for_bdamage,
 )
-from input.reader import StructureData
-from packing.density import PackingDensityResult, calculate_bdamage_packing_density
-from structure.models import PreparedStructure, StructurePreparationOptions
-from structure.prepare import prepare_structure
+from rabdam.input.reader import StructureData
+from rabdam.packing.density import PackingDensityResult, calculate_bdamage_packing_density
+from rabdam.structure.models import PreparedStructure, StructurePreparationOptions
+from rabdam.structure.prepare import prepare_structure
 
 
 T = TypeVar("T")

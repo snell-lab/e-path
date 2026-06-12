@@ -1,9 +1,9 @@
-# RABDAM custom
+# E-path
 
-RABDAM custom calculates per-atom BDamage scores, raw protein Bnet, and
-Bnet-percentile for protein crystal structures. It is a from-scratch
-implementation of RABDAM 2 created by the Garman Group at 
-the University of Oxford (https://github.com/GarmanGroup/RABDAM).
+E-path calculates per-atom BDamage scores, raw protein Bnet, and Bnet-percentile
+for protein crystal structures. Its current calculation core is a from-scratch
+implementation of RABDAM 2 created by the Garman Group at the University of
+Oxford (https://github.com/GarmanGroup/RABDAM).
 
 Use this near the end of refinement, or on deposited models, where per-atom
 B-factors are meaningful.
@@ -21,13 +21,13 @@ easier to compare between structures solved at different resolutions.
 
 ## Install
 
-RABDAM custom requires Python 3.10 or newer and the dependencies listed in
+E-path requires Python 3.10 or newer and the dependencies listed in
 `pyproject.toml`: `gemmi`, `numpy`, and `scipy`.
 
 From the repository root:
 
 ```bash
-./rabdam --help
+./epath --help
 ```
 
 ## Run
@@ -35,26 +35,26 @@ From the repository root:
 Local structure file:
 
 ```bash
-./rabdam model.cif
+./epath model.cif
 ```
 
 RCSB/PDB ID:
 
 ```bash
-./rabdam 1LYZ
+./epath 1LYZ
 ```
 
 Batch run:
 
 ```bash
-./rabdam 1LYZ 2BLP model.cif
+./epath 1LYZ 2BLP model.cif
 ```
 
 If the structure file does not contain resolution metadata, provide it for
 Bnet-percentile:
 
 ```bash
-./rabdam model.pdb --bnet-resolution-angstrom 1.8
+./epath model.pdb --bnet-resolution-angstrom 1.8
 ```
 
 Accepted inputs are `.cif`, `.mmcif`, `.pdb`, and classic 4-character PDB IDs.
@@ -79,17 +79,17 @@ percentile ranking.
 
 ## Selection Defaults
 
-By default RABDAM custom removes hydrogens, resolves alternate atom sites by
+By default E-path removes hydrogens, resolves alternate atom sites by
 highest occupancy, scores protein atoms, and requires a protein selection.
 
 Useful selection options:
 
 ```bash
-./rabdam model.cif --include-hetatm
-./rabdam model.cif --include-nucleic-acid
-./rabdam model.cif --remove-component HOH
-./rabdam model.cif --add-component LIG
-./rabdam model.cif --remove-atom-serial 123 --add-atom-serial 456
+./epath model.cif --include-hetatm
+./epath model.cif --include-nucleic-acid
+./epath model.cif --remove-component HOH
+./epath model.cif --add-component LIG
+./epath model.cif --remove-atom-serial 123 --add-atom-serial 456
 ```
 
 Changing the selected atoms changes the BDamage distribution and the Bnet
@@ -98,7 +98,7 @@ selection unless you have a specific reason to change it.
 
 ## Differences From RABDAM 2
 
-RABDAM custom is a calculation-compatible rewrite of RABDAM 2, not a
+E-path currently contains a calculation-compatible rewrite of RABDAM 2, not a
 feature-for-feature clone. Its purpose is to keep the scientific calculation
 stable while making the program easier to install, faster to run, easier to
 test, and better suited to scripted use.
@@ -112,9 +112,9 @@ comparison.
 
 The main expected numerical difference is Bnet-percentile. Percentile is not an
 intrinsic property of the input structure; it depends on the reference
-population. RABDAM 2 used the original 2020 reference CSV, while RABDAM custom
+population. RABDAM 2 used the original 2020 reference CSV, while E-path
 uses a newer, larger bundled reference database at
-`database/reference/database.csv`. Raw Bnet can therefore match while
+`src/rabdam/bnet/database/database.csv`. Raw Bnet can therefore match while
 Bnet-percentile changes.
 
 The rewrite improves practical use in several ways:
@@ -124,21 +124,21 @@ The rewrite improves practical use in several ways:
   3x3x3 crystal block, and BDamage window averages use cumulative sums instead
   of pandas rolling means.
 - Larger-structure speedups: in large-structure runs, these changes can make
-  RABDAM custom complete more than 80 times faster than RABDAM 2.
+  E-path complete more than 80 times faster than RABDAM 2.
 - Lighter installation: the runtime stack is Gemmi, NumPy, and SciPy. It does
   not require cctbx, CCP4/PDBCUR, pandas, matplotlib, or requests.
 - Clearer structure: the code is split into small tested modules for input,
   structure preparation, crystal expansion, packing density, BDamage, Bnet, and
   reference-database handling.
 - Cleaner automation: the CLI uses
-  `rabdam STRUCTURE_INPUT [STRUCTURE_INPUT ...] [options]`, supports simple
+  `epath STRUCTURE_INPUT [STRUCTURE_INPUT ...] [options]`, supports simple
   batch runs, and writes compact per-atom CSVs plus terminal summaries.
-- Maintained, modular reference data: the included reference database can be
-  regenerated with the separate PDB-REDO build pipeline, and the active
-  reference CSV is easy to swap for another compatible database.
+- Maintained, modular reference data: the active bundled reference CSV lives
+  under `src/rabdam/bnet/database/` and is easy to swap for another compatible
+  database.
 
 These improvements intentionally remove some RABDAM 2 application features.
-RABDAM custom does not support the legacy text input file, `-f`, `-i`, `-r`
+E-path does not support the legacy text input file, `-f`, `-i`, `-r`
 dataframe restart modes, interactive overwrite prompts, HTML reports, plots,
 BDamage-colored coordinate files, or restartable dataframe outputs.
 
@@ -149,12 +149,6 @@ space-group metadata. BDamage and Bnet rely on per-atom B-factors; structures
 with grouped or otherwise non-comparable B-factors should be interpreted with
 care. Bnet and Bnet-percentile are intended for cryo-temperature protein crystal
 structures.
-
-## Tests
-
-```bash
-PYTHONPATH=src python3 -m unittest discover -s tests
-```
 
 ## Citations
 
