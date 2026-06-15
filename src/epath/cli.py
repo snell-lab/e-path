@@ -444,7 +444,7 @@ def run_from_args(
 
 
 def structure_inputs_from_args(args: argparse.Namespace) -> tuple[str, ...]:
-    """Return one or more structure inputs from current or legacy arg names."""
+    """Return one or more structure inputs from parsed CLI arguments."""
 
     structure_inputs = tuple(getattr(args, "structure_inputs", ()) or ())
     if structure_inputs:

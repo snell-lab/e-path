@@ -52,7 +52,7 @@ def marcus_geom_rate(
     T: float = DEFAULT_TEMPERATURE_K,
     beta: float = DEFAULT_BETA_PER_ANGSTROM,
 ) -> float:
-    """Return the original E-path Marcus-like geometric rate proxy."""
+    """Return the E-path Marcus-like geometric rate proxy."""
 
     return marcus_rate_details(
         path_length_angstrom=R_A,
@@ -135,7 +135,7 @@ def geometric_decay_rate(
     *,
     beta_per_angstrom: float = DEFAULT_BETA_PER_ANGSTROM,
 ) -> float:
-    """Return the original cluster ranking proxy exp(-beta * length)."""
+    """Return the cluster ranking proxy exp(-beta * length)."""
 
     length_angstrom = _non_negative_finite_float(
         length_angstrom,
