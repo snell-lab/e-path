@@ -91,6 +91,23 @@ COMBINED_ATOM_FIELDNAMES = [
     "null_mst_p_value_less",
 ]
 
+CLUSTER_FIELDNAMES = [
+    "cluster_id",
+    "atom_count",
+    "mst_total_length",
+    "mean_step",
+    "largest_edge",
+    "span",
+    "geometric_rate",
+    "normalized_rate",
+    "null_observed_largest_cluster_size",
+    "null_observed_mst_total_length",
+    "null_largest_z_score",
+    "null_largest_p_value_greater",
+    "null_mst_z_score",
+    "null_mst_p_value_less",
+]
+
 
 class EpathTableError(ValueError):
     """Raised when E-path table output cannot be built."""
@@ -130,6 +147,102 @@ def write_combined_atom_csv(
         writer.writerows(_format_row(row) for row in rows)
 
     return output_file
+
+
+def write_cluster_csv(
+    output_path: str | Path,
+    clusters: Iterable[EpathCluster],
+    *,
+    cluster_rates: Iterable[EpathClusterRate] = (),
+    null_comparisons: Mapping[int, EpathNullModelComparison] | None = None,
+) -> Path:
+    """Write a standalone CSV table with one row per E-path cluster."""
+
+    output_file = Path(output_path)
+    if output_file.parent != Path("."):
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    rows = cluster_rows(
+        clusters,
+        cluster_rates=cluster_rates,
+        null_comparisons=null_comparisons,
+    )
+    with output_file.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=CLUSTER_FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(
+            _format_row_for_fields(row, CLUSTER_FIELDNAMES)
+            for row in rows
+        )
+
+    return output_file
+
+
+def cluster_rows(
+    clusters: Iterable[EpathCluster],
+    *,
+    cluster_rates: Iterable[EpathClusterRate] = (),
+    null_comparisons: Mapping[int, EpathNullModelComparison] | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Return one standalone CSV row for each E-path cluster."""
+
+    cluster_rates_by_id = {
+        cluster_rate.cluster_id: cluster_rate
+        for cluster_rate in cluster_rates
+    }
+    comparisons_by_id = null_comparisons or {}
+    rows: list[dict[str, Any]] = []
+    for cluster in clusters:
+        cluster_rate = cluster_rates_by_id.get(cluster.cluster_id)
+        null_comparison = comparisons_by_id.get(cluster.cluster_id)
+        rows.append(
+            {
+                "cluster_id": cluster.cluster_id,
+                "atom_count": cluster.atom_count,
+                "mst_total_length": cluster.metrics.mst_total_length,
+                "mean_step": cluster.metrics.mean_step,
+                "largest_edge": cluster.metrics.mst_largest_edge,
+                "span": cluster.metrics.span,
+                "geometric_rate": (
+                    cluster_rate.rate if cluster_rate else None
+                ),
+                "normalized_rate": (
+                    cluster_rate.normalized_rate if cluster_rate else None
+                ),
+                "null_observed_largest_cluster_size": (
+                    null_comparison.observed_largest_cluster_size
+                    if null_comparison
+                    else None
+                ),
+                "null_observed_mst_total_length": (
+                    null_comparison.observed_mst_total_length
+                    if null_comparison
+                    else None
+                ),
+                "null_largest_z_score": (
+                    null_comparison.largest_z_score
+                    if null_comparison
+                    else None
+                ),
+                "null_largest_p_value_greater": (
+                    null_comparison.largest_p_value_greater
+                    if null_comparison
+                    else None
+                ),
+                "null_mst_z_score": (
+                    null_comparison.mst_z_score
+                    if null_comparison
+                    else None
+                ),
+                "null_mst_p_value_less": (
+                    null_comparison.mst_p_value_less
+                    if null_comparison
+                    else None
+                ),
+            }
+        )
+
+    return tuple(rows)
 
 
 def combined_atom_rows(
@@ -441,9 +554,16 @@ def _marcus_columns(
 
 
 def _format_row(row: Mapping[str, Any]) -> dict[str, str]:
+    return _format_row_for_fields(row, COMBINED_ATOM_FIELDNAMES)
+
+
+def _format_row_for_fields(
+    row: Mapping[str, Any],
+    fieldnames: Iterable[str],
+) -> dict[str, str]:
     return {
         fieldname: _format_cell(row.get(fieldname))
-        for fieldname in COMBINED_ATOM_FIELDNAMES
+        for fieldname in fieldnames
     }
 
 

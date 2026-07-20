@@ -1,9 +1,10 @@
 # E-path
 
-E-path currently calculates per-atom BDamage scores for protein crystal
-structures. Its calculation core is a from-scratch implementation of the
-BDamage workflow from RABDAM 2, created by the Garman Group at the University
-of Oxford (https://github.com/GarmanGroup/RABDAM).
+E-path calculates per-atom BDamage scores and analyzes low-BDamage atom
+clusters and donor-to-acceptor pathways in protein crystal structures. Its
+calculation core is a from-scratch implementation of the BDamage workflow from
+RABDAM 2, created by the Garman Group at the University of Oxford
+(https://github.com/GarmanGroup/RABDAM).
 
 Use this near the end of refinement, or on deposited models, where per-atom
 B-factors are meaningful.
@@ -14,9 +15,11 @@ BDamage is a per-atom score that compares an atom's B-factor with atoms in a
 similar local packing-density environment. By default, packing density is the
 number of non-hydrogen crystal-environment atoms within 7.0 A.
 
-The E-path pipeline will build on these per-atom BDamage values for pathway
-analysis. Bnet code remains in the repository for later optional reporting, but
-it is not part of the current default CLI pipeline.
+The E-path pipeline builds on these per-atom BDamage values with Z-score or
+percentile selection, connectivity clustering, MST metrics, optional null-model
+statistics, and donor-to-acceptor path analysis. Bnet code remains in the
+repository for later optional reporting, but it is not part of the current
+default CLI pipeline.
 
 ## Install
 
@@ -54,19 +57,22 @@ Pass one input for a single run or multiple inputs for a batch run.
 
 ## Output
 
-Single and batch runs write CSVs in `output/` by default, using the PDB ID or
-input filename stem: for example `output/1LYZ_BDamage.csv` or
-`output/model_BDamage.csv`. Use `--output-dir` to choose another output
-directory; use `--output-csv` only when running one structure.
+Single and batch E-path runs write results in `output/` by default, using the
+PDB ID or input filename stem as the output prefix. A normal run writes:
 
-Each CSV contains one row per selected atom. The main result columns are:
+- `*_epath.csv`: combined per-atom BDamage and E-path results.
+- `*_clusters.csv`: one row per selected-atom cluster.
+- `*_selected.pdb`: selected E-path atoms.
+- `*_path.pdb`: ordered donor-to-acceptor path atoms, when a path is found.
+- `*_zscores.png`: BDamage Z-score histogram.
+- `*_summary.txt`: persistent human-readable analysis summary.
+- `*_marcus.txt`: endpoint, path, and Marcus-rate report when donor or acceptor
+  input is supplied.
 
-- `PD`: packing-density neighbour count.
-- `AVRG_BF`: local average B-factor for atoms with similar packing density.
-- `BDAM`: per-atom BDamage score.
-
-The terminal summary reports the BDamage calculation and crystal-neighbour
-diagnostics.
+Use `--output-dir` to choose another output directory or `--output-prefix` for
+a single structure. `--no-csv`, `--no-pdb`, `--no-plot`, and `--no-reports`
+disable the corresponding output groups. The `epath bdamage` subcommand writes
+the standalone per-atom BDamage CSV.
 
 ## Selection Defaults
 

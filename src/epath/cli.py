@@ -35,11 +35,11 @@ from rabdam.packing.density import (
     packing_density_counts_as_tuple,
 )
 from rabdam.structure.models import StructurePreparationOptions
+from epath.outputs import EpathOutputWorkflowOptions
 from epath.workflow import (
     EpathAnnotationWorkflowOptions,
     EpathClusterWorkflowOptions,
     EpathNullModelWorkflowOptions,
-    EpathOutputWorkflowOptions,
     EpathPathWorkflowOptions,
     EpathRateWorkflowOptions,
     EpathSelectionWorkflowOptions,
@@ -245,6 +245,11 @@ def _build_epath_parser() -> argparse.ArgumentParser:
         "--no-plot",
         action="store_true",
         help="Do not write the BDamage Z-score histogram plot.",
+    )
+    output.add_argument(
+        "--no-reports",
+        action="store_true",
+        help="Do not write the cluster CSV, summary, or Marcus text reports.",
     )
     output.add_argument(
         "--structure-b-factor",
@@ -842,6 +847,9 @@ def epath_workflow_options_from_args(
             write_structure_files=not args.no_pdb,
             write_z_score_plot=not args.no_plot,
             structure_b_factor_mode=args.structure_b_factor,
+            write_cluster_csv=not args.no_reports,
+            write_summary_report=not args.no_reports,
+            write_marcus_report=not args.no_reports,
         ),
     )
 
@@ -1537,9 +1545,12 @@ def print_epath_summary(
     print(file=stream)
     print("Outputs:", file=stream)
     print(f"  Combined CSV: {output_files.combined_csv}", file=stream)
+    print(f"  Cluster CSV: {output_files.cluster_csv}", file=stream)
     print(f"  Selected PDB: {output_files.selected_pdb}", file=stream)
     print(f"  Path PDB: {output_files.path_pdb}", file=stream)
     print(f"  Z-score plot: {output_files.z_score_histogram}", file=stream)
+    print(f"  Summary report: {output_files.summary_report}", file=stream)
+    print(f"  Marcus report: {output_files.marcus_report}", file=stream)
 
     if workflow_result.warnings:
         print(file=stream)

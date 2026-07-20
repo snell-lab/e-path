@@ -28,12 +28,16 @@ from epath.null import (
     compare_cluster_to_null,
     run_null_model,
 )
+from epath.outputs import (
+    EpathOutputWorkflowOptions,
+    EpathWorkflowOutputFiles,
+    write_epath_outputs,
+)
 from epath.paths import (
     DEFAULT_PATH_EDGE_DISTANCE_ANGSTROM,
     EpathPath,
     find_shortest_path,
 )
-from epath.plots import plot_z_hist
 from epath.rates import (
     DEFAULT_BETA_PER_ANGSTROM,
     DEFAULT_DELTA_G_EV,
@@ -51,8 +55,6 @@ from epath.selection import (
     select_atoms_by_percentile_per_chain,
     select_atoms_by_z,
 )
-from epath.structures import EpathStructureOutputFiles, PdbBFactorMode, write_structure_outputs
-from epath.tables import write_combined_atom_csv
 from rabdam.workflow import BDamageWorkflowResult
 
 
@@ -122,17 +124,6 @@ class EpathNullModelWorkflowOptions:
 
 
 @dataclass(frozen=True, slots=True)
-class EpathOutputWorkflowOptions:
-    """Options controlling E-path output files."""
-
-    output_prefix: str | Path | None = None
-    write_combined_csv: bool = True
-    write_structure_files: bool = True
-    write_z_score_plot: bool = True
-    structure_b_factor_mode: PdbBFactorMode = "bdamage"
-
-
-@dataclass(frozen=True, slots=True)
 class EpathWorkflowOptions:
     """Options for the complete E-path analysis workflow."""
 
@@ -152,16 +143,6 @@ class EpathWorkflowOptions:
     )
     output: EpathOutputWorkflowOptions = field(default_factory=EpathOutputWorkflowOptions)
     allowed_chains: tuple[str, ...] | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class EpathWorkflowOutputFiles:
-    """Files written by an E-path workflow run."""
-
-    combined_csv: Path | None = None
-    selected_pdb: Path | None = None
-    path_pdb: Path | None = None
-    z_score_histogram: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -273,7 +254,8 @@ def analyze_epath_atoms(
         warn=warning_handler,
     )
 
-    output_files = _write_outputs(
+    analyzed_chains = tuple(dict.fromkeys(atom.chain_id for atom in atom_tuple))
+    output_files = write_epath_outputs(
         selection_result=selection_result,
         clusters=clusters,
         annotations=annotations,
@@ -281,7 +263,19 @@ def analyze_epath_atoms(
         marcus_rate=marcus_rate,
         cluster_rates=cluster_rates,
         endpoints=endpoints,
+        null_model_result=null_model_result,
         null_comparisons=null_comparisons,
+        analyzed_chains=analyzed_chains,
+        warnings=tuple(warnings),
+        structure_path=structure_path,
+        requested_donor=options.path.donor_token,
+        requested_acceptor=options.path.acceptor_token,
+        edge_distance=options.path.edge_distance,
+        snap_radius=options.path.snap_radius,
+        reorganization_energy_ev=options.rates.reorganization_energy_ev,
+        delta_g_ev=options.rates.delta_g_ev,
+        temperature_k=options.rates.temperature_k,
+        beta_per_angstrom=options.rates.beta_per_angstrom,
         options=options.output,
         histogram_bins=options.selection.histogram_bins,
     )
@@ -483,63 +477,6 @@ def _annotate_atoms(
         atoms,
         secondary_structure_map=annotation_maps.secondary_structure_by_residue,
         sasa_map=annotation_maps.sasa_by_atom,
-    )
-
-
-def _write_outputs(
-    *,
-    selection_result: EpathSelectionResult,
-    clusters: tuple[EpathCluster, ...],
-    annotations: tuple[EpathAtomAnnotation, ...],
-    path: EpathPath | None,
-    marcus_rate: EpathMarcusRate | None,
-    cluster_rates: tuple[EpathClusterRate, ...],
-    endpoints: Mapping[str, EpathResolvedEndpoint],
-    null_comparisons: Mapping[int, EpathNullModelComparison],
-    options: EpathOutputWorkflowOptions,
-    histogram_bins: int,
-) -> EpathWorkflowOutputFiles:
-    if options.output_prefix is None:
-        return EpathWorkflowOutputFiles()
-
-    prefix = Path(options.output_prefix)
-    combined_csv: Path | None = None
-    if options.write_combined_csv:
-        combined_csv = write_combined_atom_csv(
-            prefix.with_name(f"{prefix.name}_epath.csv"),
-            selection_result,
-            clusters=clusters,
-            annotations=annotations,
-            path=path,
-            marcus_rate=marcus_rate,
-            cluster_rates=cluster_rates,
-            endpoint_roles=endpoints,
-            null_comparisons=null_comparisons,
-        )
-
-    structure_files: EpathStructureOutputFiles | None = None
-    if options.write_structure_files:
-        structure_files = write_structure_outputs(
-            prefix,
-            selection_result.selected_atoms,
-            path=path,
-            b_factor_mode=options.structure_b_factor_mode,
-        )
-
-    z_score_histogram: Path | None = None
-    if options.write_z_score_plot:
-        z_score_histogram = plot_z_hist(
-            prefix,
-            [atom.bdamage_z_score for atom in selection_result.scored_atoms],
-            selection_result.z_mode,
-            bins=histogram_bins,
-        )
-
-    return EpathWorkflowOutputFiles(
-        combined_csv=combined_csv,
-        selected_pdb=structure_files.selected_pdb if structure_files else None,
-        path_pdb=structure_files.path_pdb if structure_files else None,
-        z_score_histogram=z_score_histogram,
     )
 
 
