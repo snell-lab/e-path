@@ -78,6 +78,7 @@ Useful selection options:
 ```bash
 ./epath model.cif --include-hetatm
 ./epath model.cif --include-nucleic-acid
+./epath model.cif --chains A,C
 ./epath model.cif --remove-component HOH
 ./epath model.cif --add-component LIG
 ./epath model.cif --remove-atom-serial 123 --add-atom-serial 456
@@ -85,6 +86,10 @@ Useful selection options:
 
 Changing the selected atoms changes the BDamage distribution. Prefer the
 default protein selection unless you have a specific reason to change it.
+
+`--chains` restricts the downstream E-path Z-score distribution, selection,
+clustering, path search, null model, annotations, and outputs. BDamage itself is
+still calculated first from the complete prepared crystallographic structure.
 
 ## Differences From RABDAM 2
 

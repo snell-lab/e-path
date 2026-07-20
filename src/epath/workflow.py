@@ -151,6 +151,7 @@ class EpathWorkflowOptions:
         default_factory=EpathNullModelWorkflowOptions
     )
     output: EpathOutputWorkflowOptions = field(default_factory=EpathOutputWorkflowOptions)
+    allowed_chains: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,9 +220,13 @@ def analyze_epath_atoms(
 
     warnings: list[str] = []
     warning_handler = _warning_handler(warnings, warn)
-    atom_tuple = tuple(atoms)
-    if not atom_tuple:
+    all_atoms = tuple(atoms)
+    if not all_atoms:
         raise EpathWorkflowError("E-path analysis requires at least one atom.")
+    atom_tuple = _filter_atoms_by_chain(
+        all_atoms,
+        allowed_chains=options.allowed_chains,
+    )
 
     selection_result = _select_atoms(atom_tuple, options.selection)
     clusters = cluster_selected_atoms(
@@ -295,6 +300,48 @@ def analyze_epath_atoms(
         output_files=output_files,
         warnings=tuple(warnings),
         bdamage_workflow_result=bdamage_workflow_result,
+    )
+
+
+def _filter_atoms_by_chain(
+    atoms: tuple[EpathAtom, ...],
+    *,
+    allowed_chains: tuple[str, ...] | None,
+) -> tuple[EpathAtom, ...]:
+    """Restrict downstream E-path analysis to requested chain identifiers."""
+
+    if allowed_chains is None:
+        return atoms
+
+    normalized_chains = tuple(
+        dict.fromkeys(
+            chain_id.strip()
+            for chain_id in allowed_chains
+            if chain_id.strip()
+        )
+    )
+    if not normalized_chains:
+        raise EpathWorkflowError("At least one non-empty chain ID is required.")
+
+    available_chains = {atom.chain_id for atom in atoms}
+    missing_chains = tuple(
+        chain_id
+        for chain_id in normalized_chains
+        if chain_id not in available_chains
+    )
+    if missing_chains:
+        missing_text = ", ".join(missing_chains)
+        available_text = ", ".join(sorted(available_chains)) or "none"
+        raise EpathWorkflowError(
+            f"Requested chain(s) have no BDamage-scored atoms: {missing_text}. "
+            f"Chains available for E-path analysis: {available_text}."
+        )
+
+    allowed_chain_set = set(normalized_chains)
+    return tuple(
+        atom
+        for atom in atoms
+        if atom.chain_id in allowed_chain_set
     )
 
 

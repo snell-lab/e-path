@@ -277,6 +277,17 @@ def _build_epath_parser() -> argparse.ArgumentParser:
         default=None,
         help="Select atoms with BDamage Z-score less than or equal to this value.",
     )
+    epath_selection.add_argument(
+        "--chains",
+        metavar="CHAIN[,CHAIN...]",
+        type=chain_selection,
+        default=None,
+        help=(
+            "Restrict downstream E-path analysis to these comma-separated chain "
+            "IDs (quoted whitespace-separated IDs are also accepted). BDamage is "
+            "still calculated from the complete structure."
+        ),
+    )
     epath_path.add_argument(
         "--donor",
         metavar="CHAIN:RESNUM:ATOM",
@@ -738,6 +749,15 @@ def component_name(value: str) -> str:
     return cleaned
 
 
+def chain_selection(value: str) -> tuple[str, ...]:
+    """Return unique chain IDs from a comma- or space-separated CLI value."""
+
+    chain_ids = tuple(dict.fromkeys(value.replace(",", " ").split()))
+    if not chain_ids:
+        raise argparse.ArgumentTypeError("at least one chain ID is required")
+    return chain_ids
+
+
 def workflow_options_from_args(args: argparse.Namespace) -> BDamageWorkflowOptions:
     """Build workflow options from parsed command-line arguments."""
 
@@ -784,6 +804,7 @@ def epath_workflow_options_from_args(
         selection_method = "percentile_per_chain"
 
     return EpathWorkflowOptions(
+        allowed_chains=args.chains,
         selection=EpathSelectionWorkflowOptions(
             method=selection_method,
             z_cutoff=0.0 if args.z_cutoff is None else args.z_cutoff,
@@ -1475,6 +1496,13 @@ def print_epath_summary(
     print(f"Output prefix: {result.output_prefix}", file=stream)
     print(file=stream)
     print("E-path selection:", file=stream)
+    analyzed_chains = tuple(
+        dict.fromkeys(atom.chain_id for atom in workflow_result.atoms)
+    )
+    print(
+        "  Chains: " + (", ".join(analyzed_chains) if analyzed_chains else "none"),
+        file=stream,
+    )
     print(f"  Method: {selection_result.description}", file=stream)
     print(
         f"  Selected atoms: {len(selection_result.selected_atoms)} "
