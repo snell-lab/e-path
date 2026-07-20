@@ -10,8 +10,14 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "gemmi",
+    "matplotlib",
     "numpy",
     "scipy",
+]
+
+[project.optional-dependencies]
+annotations = [
+    "biopython",
 ]
 
 [tool.setuptools]

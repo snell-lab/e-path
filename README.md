@@ -23,8 +23,23 @@ default CLI pipeline.
 
 ## Install
 
-E-path requires Python 3.10 or newer and the dependencies listed in
-`pyproject.toml`: `gemmi`, `numpy`, and `scipy`.
+E-path requires Python 3.10 or newer. Install the package and its normal
+runtime dependencies, including Matplotlib for the default Z-score plot, with:
+
+```bash
+python3 -m pip install .
+```
+
+To use the optional DSSP secondary-structure annotations, install the
+annotation dependencies with:
+
+```bash
+python3 -m pip install ".[annotations]"
+```
+
+DSSP annotation also requires the external `mkdssp` executable to be installed
+and available on `PATH`. If Biopython or `mkdssp` is unavailable, E-path skips
+DSSP annotation with a warning rather than failing the core analysis.
 
 From the repository root:
 
@@ -118,8 +133,8 @@ The rewrite improves practical use in several ways:
   of pandas rolling means.
 - Larger-structure speedups: in large-structure runs, these changes can make
   E-path complete more than 80 times faster than RABDAM 2.
-- Lighter installation: the runtime stack is Gemmi, NumPy, and SciPy. It does
-  not require cctbx, CCP4/PDBCUR, pandas, matplotlib, or requests.
+- Lighter installation: the core runtime stack is Gemmi, NumPy, SciPy, and
+  Matplotlib. It does not require cctbx, CCP4/PDBCUR, pandas, or requests.
 - Clearer structure: the code is split into small modules for input, structure
   preparation, crystal expansion, packing density, BDamage, and later E-path
   analysis.
