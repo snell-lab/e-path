@@ -15,7 +15,7 @@ from epath.clustering import euclidean_distance
 from epath.selection import EpathScoredAtom
 
 
-DEFAULT_PATH_EDGE_DISTANCE_ANGSTROM = 4.0
+DEFAULT_PATH_EDGE_DISTANCE_ANGSTROM = 5.0
 
 
 class EpathPathError(ValueError):
