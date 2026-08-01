@@ -37,11 +37,7 @@ from rabdam.packing.density import (
 from rabdam.structure.models import StructurePreparationOptions
 from epath.outputs import EpathOutputWorkflowOptions
 from epath.workflow import (
-    EpathAnnotationWorkflowOptions,
     EpathClusterWorkflowOptions,
-    EpathNullModelWorkflowOptions,
-    EpathPathWorkflowOptions,
-    EpathRateWorkflowOptions,
     EpathSelectionWorkflowOptions,
     EpathWorkflowOptions,
     EpathWorkflowResult,
@@ -200,10 +196,6 @@ def _build_epath_parser() -> argparse.ArgumentParser:
     input_group = parser.add_argument_group("input")
     output = parser.add_argument_group("output options")
     epath_selection = parser.add_argument_group("E-path selection options")
-    epath_path = parser.add_argument_group("E-path path options")
-    epath_optional = parser.add_argument_group(
-        "E-path annotation and statistics options"
-    )
     epath_advanced = parser.add_argument_group("advanced E-path parameters")
     bdamage = parser.add_argument_group("advanced BDamage parameters")
     bdamage_selection = parser.add_argument_group("advanced BDamage selection options")
@@ -239,7 +231,7 @@ def _build_epath_parser() -> argparse.ArgumentParser:
     output.add_argument(
         "--no-pdb",
         action="store_true",
-        help="Do not write selected/path PDB outputs.",
+        help="Do not write the selected-atom PDB output.",
     )
     output.add_argument(
         "--no-plot",
@@ -249,7 +241,7 @@ def _build_epath_parser() -> argparse.ArgumentParser:
     output.add_argument(
         "--no-reports",
         action="store_true",
-        help="Do not write the cluster CSV, summary, or Marcus text reports.",
+        help="Do not write the cluster CSV or summary report.",
     )
     output.add_argument(
         "--structure-b-factor",
@@ -293,33 +285,6 @@ def _build_epath_parser() -> argparse.ArgumentParser:
             "still calculated from the complete structure."
         ),
     )
-    epath_path.add_argument(
-        "--donor",
-        metavar="CHAIN:RESNUM:ATOM",
-        default=None,
-        help="Donor endpoint atom for path analysis, for example A:42:CA.",
-    )
-    epath_path.add_argument(
-        "--acceptor",
-        metavar="CHAIN:RESNUM:ATOM",
-        default=None,
-        help="Acceptor endpoint atom for path analysis, for example A:108:CA.",
-    )
-    epath_optional.add_argument(
-        "--annotations",
-        action="store_true",
-        help="Compute DSSP secondary structure and SASA annotations when available.",
-    )
-    epath_optional.add_argument(
-        "--no-sasa",
-        action="store_true",
-        help="Skip SASA calculation when annotations are enabled.",
-    )
-    epath_optional.add_argument(
-        "--null-model",
-        action="store_true",
-        help="Run the Monte Carlo null model for cluster statistics.",
-    )
     epath_advanced.add_argument(
         "--histogram-bins",
         metavar="INT",
@@ -354,96 +319,6 @@ def _build_epath_parser() -> argparse.ArgumentParser:
         "--keep-largest-cluster",
         action="store_true",
         help="Keep only the largest selected-atom cluster in E-path outputs.",
-    )
-    epath_advanced.add_argument(
-        "--edge-distance",
-        metavar="ANGSTROM",
-        type=positive_float,
-        default=epath_defaults.path.edge_distance,
-        help=(
-            "Maximum atom-to-atom graph edge distance for path analysis. "
-            f"Default: {epath_defaults.path.edge_distance}"
-        ),
-    )
-    epath_advanced.add_argument(
-        "--snap-radius",
-        metavar="ANGSTROM",
-        type=non_negative_float,
-        default=epath_defaults.path.snap_radius,
-        help=(
-            "Maximum distance for snapping donor/acceptor endpoints to selected atoms. "
-            f"Default: {epath_defaults.path.snap_radius}"
-        ),
-    )
-    epath_advanced.add_argument(
-        "--rate-proxy",
-        action="store_true",
-        help=(
-            "Enable exploratory unitless distance-decay scores for clusters and "
-            "endpoint paths. Disabled by default."
-        ),
-    )
-    epath_advanced.add_argument(
-        "--lambda-ev",
-        metavar="EV",
-        type=positive_float,
-        default=epath_defaults.rates.reorganization_energy_ev,
-        help=(
-            "Reorganization energy used by the optional path rate proxy. "
-            f"Default: {epath_defaults.rates.reorganization_energy_ev}"
-        ),
-    )
-    epath_advanced.add_argument(
-        "--delta-g-ev",
-        metavar="EV",
-        type=finite_float,
-        default=epath_defaults.rates.delta_g_ev,
-        help=(
-            "Reaction free energy used by the optional path rate proxy. "
-            f"Default: {epath_defaults.rates.delta_g_ev}"
-        ),
-    )
-    epath_advanced.add_argument(
-        "--temperature-k",
-        metavar="K",
-        type=positive_float,
-        default=epath_defaults.rates.temperature_k,
-        help=(
-            "Temperature used by the optional path rate proxy. "
-            f"Default: {epath_defaults.rates.temperature_k}"
-        ),
-    )
-    epath_advanced.add_argument(
-        "--beta-ainv",
-        "--beta-Ainv",
-        dest="beta_per_angstrom",
-        metavar="FLOAT",
-        type=positive_float,
-        default=epath_defaults.rates.beta_per_angstrom,
-        help=(
-            "Distance-decay beta value in inverse Angstroms. "
-            f"Default: {epath_defaults.rates.beta_per_angstrom}"
-        ),
-    )
-    epath_advanced.add_argument(
-        "--null-iterations",
-        metavar="INT",
-        type=positive_int,
-        default=epath_defaults.null_model.iterations,
-        help=(
-            "Monte Carlo iterations when --null-model is enabled. "
-            f"Default: {epath_defaults.null_model.iterations}"
-        ),
-    )
-    epath_advanced.add_argument(
-        "--null-seed",
-        metavar="INT",
-        type=_int_arg,
-        default=epath_defaults.null_model.seed,
-        help=(
-            "Random seed for the Monte Carlo null model. "
-            f"Default: {epath_defaults.null_model.seed}"
-        ),
     )
     _add_bdamage_calculation_arguments(bdamage, defaults=bdamage_defaults)
     _add_bdamage_selection_arguments(
@@ -753,17 +628,6 @@ def finite_float(value: str) -> float:
     return parsed
 
 
-def non_negative_float(value: str) -> float:
-    """Return a non-negative finite float for argparse."""
-
-    parsed = _float_arg(value)
-    if not math.isfinite(parsed) or parsed < 0.0:
-        raise argparse.ArgumentTypeError(
-            f"expected a non-negative number, got {value!r}"
-        )
-    return parsed
-
-
 def positive_int(value: str) -> int:
     """Return a positive integer for argparse."""
 
@@ -860,28 +724,6 @@ def epath_workflow_options_from_args(
             minimum_cluster_size=args.minimum_cluster_size,
             keep_largest_only=args.keep_largest_cluster,
         ),
-        path=EpathPathWorkflowOptions(
-            donor_token=args.donor,
-            acceptor_token=args.acceptor,
-            edge_distance=args.edge_distance,
-            snap_radius=args.snap_radius,
-        ),
-        rates=EpathRateWorkflowOptions(
-            enabled=args.rate_proxy,
-            reorganization_energy_ev=args.lambda_ev,
-            delta_g_ev=args.delta_g_ev,
-            temperature_k=args.temperature_k,
-            beta_per_angstrom=args.beta_per_angstrom,
-        ),
-        annotations=EpathAnnotationWorkflowOptions(
-            enabled=args.annotations,
-            disable_sasa=args.no_sasa,
-        ),
-        null_model=EpathNullModelWorkflowOptions(
-            enabled=args.null_model,
-            iterations=args.null_iterations,
-            seed=args.null_seed,
-        ),
         output=EpathOutputWorkflowOptions(
             output_prefix=output_prefix,
             write_combined_csv=not args.no_csv,
@@ -890,7 +732,6 @@ def epath_workflow_options_from_args(
             structure_b_factor_mode=args.structure_b_factor,
             write_cluster_csv=not args.no_reports,
             write_summary_report=not args.no_reports,
-            write_marcus_report=not args.no_reports,
         ),
     )
 
@@ -1204,12 +1045,6 @@ def run_single_epath_structure_from_args(
         output_prefix=output_prefix,
     )
     atoms = atoms_from_bdamage_workflow(bdamage_result)
-    warning_handler: Callable[[str], None] | None = None
-    if not args.quiet:
-        warning_handler = lambda message: print(
-            f"epath: warning: {message}",
-            file=stderr,
-        )
 
     workflow_result = run_stage(
         "Running E-path workflow",
@@ -1217,7 +1052,6 @@ def run_single_epath_structure_from_args(
             atoms,
             structure_path=local_input.local_path,
             options=options,
-            warn=warning_handler,
             bdamage_workflow_result=bdamage_result,
         ),
         stream=stderr,
@@ -1574,30 +1408,13 @@ def print_epath_summary(
             file=stream,
         )
 
-    if workflow_result.path is not None:
-        print(file=stream)
-        print("Path:", file=stream)
-        print(f"  Atoms: {workflow_result.path.atom_count}", file=stream)
-        print(f"  Steps: {workflow_result.path.step_count}", file=stream)
-        print(f"  Total length: {workflow_result.path.total_length:.3f} A", file=stream)
-        if workflow_result.marcus_rate is not None:
-            print(f"  Rate proxy: {workflow_result.marcus_rate.rate:.6g}", file=stream)
-
     print(file=stream)
     print("Outputs:", file=stream)
     print(f"  Combined CSV: {output_files.combined_csv}", file=stream)
     print(f"  Cluster CSV: {output_files.cluster_csv}", file=stream)
     print(f"  Selected PDB: {output_files.selected_pdb}", file=stream)
-    print(f"  Path PDB: {output_files.path_pdb}", file=stream)
     print(f"  Z-score plot: {output_files.z_score_histogram}", file=stream)
     print(f"  Summary report: {output_files.summary_report}", file=stream)
-    print(f"  Marcus report: {output_files.marcus_report}", file=stream)
-
-    if workflow_result.warnings:
-        print(file=stream)
-        print("Warnings:", file=stream)
-        for warning in workflow_result.warnings:
-            print(f"  {warning}", file=stream)
 
     if preview_count > 0 and workflow_result.bdamage_workflow_result is not None:
         bdamage_result = workflow_result.bdamage_workflow_result

@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Literal
 
 from epath.atoms import EpathAtom
-from epath.paths import EpathPath
 from epath.selection import EpathScoredAtom
 
 
@@ -25,17 +24,15 @@ class EpathStructureOutputFiles:
     """Coordinate outputs for selected E-path atoms."""
 
     selected_pdb: Path
-    path_pdb: Path | None = None
 
 
 def write_structure_outputs(
     output_prefix: str | Path,
     selected_atoms: Iterable[EpathScoredAtom],
     *,
-    path: EpathPath | None = None,
     b_factor_mode: PdbBFactorMode = "bdamage",
 ) -> EpathStructureOutputFiles:
-    """Write selected/path PDB coordinate subsets."""
+    """Write the selected-atom PDB coordinate subset."""
 
     prefix = Path(output_prefix)
     selected_pdb = prefix.with_name(f"{prefix.name}_selected.pdb")
@@ -46,19 +43,7 @@ def write_structure_outputs(
         title="E-path selected atoms",
     )
 
-    path_pdb: Path | None = None
-    if path is not None:
-        path_pdb = prefix.with_name(f"{prefix.name}_path.pdb")
-        write_path_atoms_pdb(
-            path_pdb,
-            path,
-            b_factor_mode=b_factor_mode,
-        )
-
-    return EpathStructureOutputFiles(
-        selected_pdb=selected_pdb,
-        path_pdb=path_pdb,
-    )
+    return EpathStructureOutputFiles(selected_pdb=selected_pdb)
 
 
 def write_selected_atoms_pdb(
@@ -75,29 +60,6 @@ def write_selected_atoms_pdb(
         atoms,
         b_factor_mode=b_factor_mode,
         title=title,
-    )
-
-
-def write_path_atoms_pdb(
-    output_path: str | Path,
-    path: EpathPath,
-    *,
-    b_factor_mode: PdbBFactorMode = "bdamage",
-    title: str = "E-path path atoms",
-) -> Path:
-    """Write path atoms as a PDB subset in path order."""
-
-    return write_atom_subset_pdb(
-        output_path,
-        path.atoms,
-        b_factor_mode=b_factor_mode,
-        title=title,
-        remarks=(
-            f"Path total length: {path.total_length:.3f} Angstrom",
-            f"Path atom count: {path.atom_count}",
-            f"Path step count: {path.step_count}",
-            f"Path largest step: {path.largest_step:.3f} Angstrom",
-        ),
     )
 
 

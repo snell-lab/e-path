@@ -1,7 +1,7 @@
 # E-path
 
-E-path calculates per-atom BDamage scores and analyzes low-BDamage atom
-clusters and donor-to-acceptor pathways in protein crystal structures. Its
+E-path calculates per-atom BDamage scores and analyzes spatially connected
+low-BDamage atom clusters in protein crystal structures. Its
 calculation core is a from-scratch implementation of the BDamage workflow from
 RABDAM 2, created by the Garman Group at the University of Oxford
 (https://github.com/GarmanGroup/RABDAM).
@@ -16,11 +16,10 @@ similar local packing-density environment. By default, packing density is the
 number of non-hydrogen crystal-environment atoms within 7.0 A.
 
 The E-path pipeline builds on these per-atom BDamage values with Z-score or
-percentile selection, connectivity clustering, MST metrics, optional null-model
-statistics, and optional donor-to-acceptor path analysis. Exploratory unitless
-distance-decay scores are available on request but are not part of the default
-analysis. Bnet code remains in the repository for later optional reporting, but
-it is not part of the current default CLI pipeline.
+percentile selection, 4 A connectivity clustering, and minimum-spanning-tree
+(MST) geometry metrics. Bnet code remains in the repository because Bnet and
+Bnet percentile are reported in the PNAS analysis, but it is not currently
+hooked into the default CLI pipeline.
 
 ## Install
 
@@ -30,17 +29,6 @@ runtime dependencies, including Matplotlib for the default Z-score plot, with:
 ```bash
 python3 -m pip install .
 ```
-
-To use the optional DSSP secondary-structure annotations, install the
-annotation dependencies with:
-
-```bash
-python3 -m pip install ".[annotations]"
-```
-
-DSSP annotation also requires the external `mkdssp` executable to be installed
-and available on `PATH`. If Biopython or `mkdssp` is unavailable, E-path skips
-DSSP annotation with a warning rather than failing the core analysis.
 
 From the repository root:
 
@@ -80,11 +68,8 @@ PDB ID or input filename stem as the output prefix. A normal run writes:
 - `*_clusters.csv`: one row per reported selected-atom cluster (eight or more
   atoms by default).
 - `*_selected.pdb`: selected E-path atoms.
-- `*_path.pdb`: ordered donor-to-acceptor path atoms, when a path is found.
 - `*_zscores.png`: BDamage Z-score histogram.
 - `*_summary.txt`: persistent human-readable analysis summary.
-- `*_marcus.txt`: endpoint, path, and Marcus-rate report when donor or acceptor
-  input is supplied.
 
 Use `--output-dir` to choose another output directory or `--output-prefix` for
 a single structure. `--no-csv`, `--no-pdb`, `--no-plot`, and `--no-reports`
@@ -120,14 +105,12 @@ selection overrides used for a particular structure.
 The default E-path selection is the lowest 2% of BDamage values. Connected
 components use a 4 A atom-to-atom cutoff and only components containing at least
 eight atoms are reported as clusters. `--minimum-cluster-size` changes that
-reporting threshold. Optional donor-to-acceptor paths use the same 4 A graph.
-Use `--rate-proxy` only when exploratory unitless distance-decay scores are
-wanted; these scores are disabled by default and are not electron-transfer rate
-constants.
+reporting threshold. Each reported cluster includes the atom count, MST total
+length, mean step, largest edge, and span used in the PNAS analysis.
 
 `--chains` restricts the downstream E-path Z-score distribution, selection,
-clustering, path search, null model, annotations, and outputs. BDamage itself is
-still calculated first from the complete prepared crystallographic structure.
+clustering, and outputs. BDamage itself is still calculated first from the
+complete prepared crystallographic structure.
 
 ## Differences From RABDAM 2
 

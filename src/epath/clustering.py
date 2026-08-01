@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import math
 
 import numpy as np
-from scipy.spatial import cKDTree
+from scipy.spatial import cKDTree  # pyright: ignore[reportAttributeAccessIssue]
 
 from epath.selection import EpathScoredAtom
 

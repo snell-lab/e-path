@@ -15,11 +15,6 @@ dependencies = [
     "scipy",
 ]
 
-[project.optional-dependencies]
-annotations = [
-    "biopython",
-]
-
 [tool.setuptools]
 package-dir = {"" = "src"}
 
