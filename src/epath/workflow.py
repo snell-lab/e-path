@@ -81,6 +81,7 @@ class EpathClusterWorkflowOptions:
     """Options controlling E-path cluster construction."""
 
     distance_cutoff: float = DEFAULT_CLUSTER_DISTANCE_ANGSTROM
+    minimum_cluster_size: int = 8
     keep_largest_only: bool = False
 
 
@@ -99,7 +100,7 @@ class EpathPathWorkflowOptions:
 class EpathRateWorkflowOptions:
     """Options controlling path rate-proxy calculations."""
 
-    enabled: bool = True
+    enabled: bool = False
     reorganization_energy_ev: float = DEFAULT_REORGANIZATION_ENERGY_EV
     delta_g_ev: float = DEFAULT_DELTA_G_EV
     temperature_k: float = DEFAULT_TEMPERATURE_K
@@ -214,12 +215,25 @@ def analyze_epath_atoms(
         selection_result.selected_atoms,
         distance_cutoff=options.clustering.distance_cutoff,
     )
+    minimum_cluster_size = _positive_int(
+        options.clustering.minimum_cluster_size,
+        name="minimum_cluster_size",
+    )
+    clusters = tuple(
+        cluster
+        for cluster in clusters
+        if cluster.atom_count >= minimum_cluster_size
+    )
     if options.clustering.keep_largest_only:
         clusters = keep_largest_cluster(clusters)
 
-    cluster_rates = cluster_geometric_rates(
-        clusters,
-        beta_per_angstrom=options.rates.beta_per_angstrom,
+    cluster_rates = (
+        cluster_geometric_rates(
+            clusters,
+            beta_per_angstrom=options.rates.beta_per_angstrom,
+        )
+        if options.rates.enabled
+        else ()
     )
 
     null_model_result, null_comparisons = _run_null_model(
@@ -270,6 +284,7 @@ def analyze_epath_atoms(
         structure_path=structure_path,
         requested_donor=options.path.donor_token,
         requested_acceptor=options.path.acceptor_token,
+        minimum_cluster_size=minimum_cluster_size,
         edge_distance=options.path.edge_distance,
         snap_radius=options.path.snap_radius,
         reorganization_energy_ev=options.rates.reorganization_energy_ev,
@@ -490,3 +505,11 @@ def _warning_handler(
             external_warn(message)
 
     return handle_warning
+
+
+def _positive_int(value: int, *, name: str) -> int:
+    if type(value) is not int or value <= 0:
+        raise EpathWorkflowError(
+            f"{name} must be a positive integer, got {value!r}."
+        )
+    return value

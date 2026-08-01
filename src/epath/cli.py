@@ -341,6 +341,16 @@ def _build_epath_parser() -> argparse.ArgumentParser:
         ),
     )
     epath_advanced.add_argument(
+        "--minimum-cluster-size",
+        metavar="INT",
+        type=positive_int,
+        default=epath_defaults.clustering.minimum_cluster_size,
+        help=(
+            "Minimum connected-component size reported as an E-path cluster. "
+            f"Default: {epath_defaults.clustering.minimum_cluster_size}"
+        ),
+    )
+    epath_advanced.add_argument(
         "--keep-largest-cluster",
         action="store_true",
         help="Keep only the largest selected-atom cluster in E-path outputs.",
@@ -366,12 +376,20 @@ def _build_epath_parser() -> argparse.ArgumentParser:
         ),
     )
     epath_advanced.add_argument(
+        "--rate-proxy",
+        action="store_true",
+        help=(
+            "Enable exploratory unitless distance-decay scores for clusters and "
+            "endpoint paths. Disabled by default."
+        ),
+    )
+    epath_advanced.add_argument(
         "--lambda-ev",
         metavar="EV",
         type=positive_float,
         default=epath_defaults.rates.reorganization_energy_ev,
         help=(
-            "Reorganization energy used for path rate calculation. "
+            "Reorganization energy used by the optional path rate proxy. "
             f"Default: {epath_defaults.rates.reorganization_energy_ev}"
         ),
     )
@@ -381,7 +399,7 @@ def _build_epath_parser() -> argparse.ArgumentParser:
         type=finite_float,
         default=epath_defaults.rates.delta_g_ev,
         help=(
-            "Reaction free energy used for path rate calculation. "
+            "Reaction free energy used by the optional path rate proxy. "
             f"Default: {epath_defaults.rates.delta_g_ev}"
         ),
     )
@@ -391,7 +409,7 @@ def _build_epath_parser() -> argparse.ArgumentParser:
         type=positive_float,
         default=epath_defaults.rates.temperature_k,
         help=(
-            "Temperature used for path rate calculation. "
+            "Temperature used by the optional path rate proxy. "
             f"Default: {epath_defaults.rates.temperature_k}"
         ),
     )
@@ -428,7 +446,10 @@ def _build_epath_parser() -> argparse.ArgumentParser:
         ),
     )
     _add_bdamage_calculation_arguments(bdamage, defaults=bdamage_defaults)
-    _add_bdamage_selection_arguments(bdamage_selection)
+    _add_bdamage_selection_arguments(
+        bdamage_selection,
+        include_hetatm_default=True,
+    )
     _add_bdamage_debug_arguments(bdamage_debug)
     _add_download_arguments(download)
     _add_general_arguments(general)
@@ -475,7 +496,10 @@ def _build_bdamage_parser() -> argparse.ArgumentParser:
     )
     _add_download_arguments(output_download)
     _add_bdamage_calculation_arguments(bdamage, defaults=defaults)
-    _add_bdamage_selection_arguments(selection)
+    _add_bdamage_selection_arguments(
+        selection,
+        include_hetatm_default=False,
+    )
     _add_bdamage_debug_arguments(advanced)
     _add_general_arguments(general)
 
@@ -585,7 +609,11 @@ def _add_bdamage_calculation_arguments(
     )
 
 
-def _add_bdamage_selection_arguments(group: Any) -> None:
+def _add_bdamage_selection_arguments(
+    group: Any,
+    *,
+    include_hetatm_default: bool,
+) -> None:
     group.add_argument(
         "--keep-hydrogens",
         action="store_true",
@@ -593,8 +621,19 @@ def _add_bdamage_selection_arguments(group: Any) -> None:
     )
     group.add_argument(
         "--include-hetatm",
+        dest="include_hetatm",
         action="store_true",
-        help="Include HETATM records in the BDamage atom selection.",
+        default=include_hetatm_default,
+        help=(
+            "Include all HETATM records, including solvent, in the BDamage atom "
+            f"selection. Default: {include_hetatm_default}"
+        ),
+    )
+    group.add_argument(
+        "--exclude-hetatm",
+        dest="include_hetatm",
+        action="store_false",
+        help="Exclude non-protein HETATM records from the BDamage atom selection.",
     )
     group.add_argument(
         "--include-nucleic-acid",
@@ -818,6 +857,7 @@ def epath_workflow_options_from_args(
         ),
         clustering=EpathClusterWorkflowOptions(
             distance_cutoff=args.cluster_distance,
+            minimum_cluster_size=args.minimum_cluster_size,
             keep_largest_only=args.keep_largest_cluster,
         ),
         path=EpathPathWorkflowOptions(
@@ -827,6 +867,7 @@ def epath_workflow_options_from_args(
             snap_radius=args.snap_radius,
         ),
         rates=EpathRateWorkflowOptions(
+            enabled=args.rate_proxy,
             reorganization_energy_ev=args.lambda_ev,
             delta_g_ev=args.delta_g_ev,
             temperature_k=args.temperature_k,

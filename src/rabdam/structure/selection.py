@@ -78,7 +78,7 @@ def is_default_bdamage_selection(
     ):
         return True
 
-    if options.include_hetatm_in_selection and atom.is_hetatm and not atom.is_solvent:
+    if options.include_hetatm_in_selection and atom.is_hetatm:
         return True
 
     if options.include_nucleic_acid_in_selection and atom.is_nucleic_acid:

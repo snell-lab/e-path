@@ -62,6 +62,7 @@ def write_epath_outputs(
     structure_path: str | Path | None,
     requested_donor: str | None,
     requested_acceptor: str | None,
+    minimum_cluster_size: int,
     edge_distance: float,
     snap_radius: float,
     reorganization_energy_ev: float,
@@ -169,6 +170,7 @@ def write_epath_outputs(
             null_comparisons=null_comparisons,
             requested_donor=requested_donor,
             requested_acceptor=requested_acceptor,
+            minimum_cluster_size=minimum_cluster_size,
             endpoints=endpoints,
             path=path,
             marcus_rate=marcus_rate,
@@ -191,6 +193,7 @@ def write_summary_txt(
     null_comparisons: Mapping[int, EpathNullModelComparison],
     requested_donor: str | None,
     requested_acceptor: str | None,
+    minimum_cluster_size: int,
     endpoints: Mapping[str, EpathResolvedEndpoint],
     path: EpathPath | None,
     marcus_rate: EpathMarcusRate | None,
@@ -256,7 +259,15 @@ def write_summary_txt(
             )
 
     rates_by_cluster = {rate.cluster_id: rate for rate in cluster_rates}
-    lines.extend(("", "Clusters", "--------", f"Cluster count: {len(clusters)}"))
+    lines.extend(
+        (
+            "",
+            "Clusters",
+            "--------",
+            f"Minimum reported cluster size: {minimum_cluster_size} atoms",
+            f"Cluster count: {len(clusters)}",
+        )
+    )
     if not clusters:
         lines.append("No selected-atom clusters.")
     for cluster in clusters:

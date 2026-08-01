@@ -17,9 +17,10 @@ number of non-hydrogen crystal-environment atoms within 7.0 A.
 
 The E-path pipeline builds on these per-atom BDamage values with Z-score or
 percentile selection, connectivity clustering, MST metrics, optional null-model
-statistics, and donor-to-acceptor path analysis. Bnet code remains in the
-repository for later optional reporting, but it is not part of the current
-default CLI pipeline.
+statistics, and optional donor-to-acceptor path analysis. Exploratory unitless
+distance-decay scores are available on request but are not part of the default
+analysis. Bnet code remains in the repository for later optional reporting, but
+it is not part of the current default CLI pipeline.
 
 ## Install
 
@@ -76,7 +77,8 @@ Single and batch E-path runs write results in `output/` by default, using the
 PDB ID or input filename stem as the output prefix. A normal run writes:
 
 - `*_epath.csv`: combined per-atom BDamage and E-path results.
-- `*_clusters.csv`: one row per selected-atom cluster.
+- `*_clusters.csv`: one row per reported selected-atom cluster (eight or more
+  atoms by default).
 - `*_selected.pdb`: selected E-path atoms.
 - `*_path.pdb`: ordered donor-to-acceptor path atoms, when a path is found.
 - `*_zscores.png`: BDamage Z-score histogram.
@@ -91,22 +93,37 @@ the standalone per-atom BDamage CSV.
 
 ## Selection Defaults
 
-By default E-path removes hydrogens, resolves alternate atom sites by
-highest occupancy, scores protein atoms, and requires a protein selection.
+By default the full E-path command removes hydrogens, resolves alternate atom
+sites by highest occupancy, and scores protein and HETATM records, including
+water. This is the manuscript-oriented pathway-analysis population and allows
+waters and cofactors to participate without extra flags. The standalone
+`epath bdamage` command retains the RABDAM-style default of excluding
+non-protein HETATM records.
 
 Useful selection options:
 
 ```bash
 ./epath model.cif --include-hetatm
+./epath model.cif --exclude-hetatm
 ./epath model.cif --include-nucleic-acid
 ./epath model.cif --chains A,C
 ./epath model.cif --remove-component HOH
 ./epath model.cif --add-component LIG
 ./epath model.cif --remove-atom-serial 123 --add-atom-serial 456
+./epath model.cif --minimum-cluster-size 1
 ```
 
 Changing the selected atoms changes the BDamage distribution. Prefer the
-default protein selection unless you have a specific reason to change it.
+documented manuscript-style default for comparable E-path runs, and record any
+selection overrides used for a particular structure.
+
+The default E-path selection is the lowest 2% of BDamage values. Connected
+components use a 4 A atom-to-atom cutoff and only components containing at least
+eight atoms are reported as clusters. `--minimum-cluster-size` changes that
+reporting threshold. Optional donor-to-acceptor paths use the same 4 A graph.
+Use `--rate-proxy` only when exploratory unitless distance-decay scores are
+wanted; these scores are disabled by default and are not electron-transfer rate
+constants.
 
 `--chains` restricts the downstream E-path Z-score distribution, selection,
 clustering, path search, null model, annotations, and outputs. BDamage itself is
