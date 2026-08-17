@@ -1,6 +1,4 @@
-"""
-Alternate-conformer handling for RABDAM structure preparation.
-"""
+"""Resolve alternate atom conformers for structure preparation."""
 
 from dataclasses import dataclass
 
@@ -10,7 +8,7 @@ from rabdam.structure.models import StructurePreparationOptions
 
 @dataclass(frozen=True, slots=True)
 class AltlocSelectionResult:
-    """Result of alternate-conformer selection."""
+    """Store retained conformers, removal count, and residue warnings."""
 
     atoms: tuple[AtomRecord, ...]
     removed_count: int
@@ -21,10 +19,7 @@ def select_altlocs(
     atoms: tuple[AtomRecord, ...],
     options: StructurePreparationOptions,
 ) -> AltlocSelectionResult:
-    """
-    Resolve alternate conformers.
-    """
-
+    """Resolve alternate conformers when enabled by preparation options."""
     if not options.resolve_altlocs:
         return AltlocSelectionResult(atoms=atoms, removed_count=0)
 
@@ -34,18 +29,19 @@ def select_altlocs(
 def select_atom_site_altlocs(
     atoms: tuple[AtomRecord, ...],
 ) -> AltlocSelectionResult:
-    """
-    Resolve alternate conformers independently for each atom site.
+    """Retain the highest-occupancy conformer at each atom site.
 
-    For atoms that appear to represent the same atom site, keep the highest
-    occupancy version. If occupancies tie, keep the one encountered first in
-    the input order.
-    """
+    Ties are resolved by retaining the first source record. Sites are resolved
+    independently, so one residue can retain atoms with different altloc labels.
 
+    Returns:
+        Retained atoms in source order, the number removed, and one warning per
+        residue that contained alternate conformers.
+    """
     grouped_atoms: dict[tuple[object, ...], list[tuple[int, AtomRecord]]] = {}
 
     for index, atom in enumerate(atoms):
-        key = atom_site_key(atom)
+        key = _atom_site_key(atom)
         grouped_atoms.setdefault(key, []).append((index, atom))
 
     kept_indexes: set[int] = set()
@@ -57,6 +53,8 @@ def select_atom_site_altlocs(
             kept_indexes.add(group[0][0])
             continue
 
+        # RABDAM resolves sites independently, even when that mixes altloc
+        # labels within one residue.
         selected_index, selected_atom = max(
             group,
             key=lambda item: (item[1].occupancy, -item[0]),
@@ -64,17 +62,15 @@ def select_atom_site_altlocs(
 
         kept_indexes.add(selected_index)
         removed_count += len(group) - 1
-        residues_with_altlocs.setdefault(residue_key(selected_atom), selected_atom)
+        residues_with_altlocs.setdefault(_residue_key(selected_atom), selected_atom)
 
     kept_atoms = tuple(
-        atom
-        for index, atom in enumerate(atoms)
-        if index in kept_indexes
+        atom for index, atom in enumerate(atoms) if index in kept_indexes
     )
 
     warnings = tuple(
         "Alternate conformers detected in "
-        f"{format_residue_label(atom)}. "
+        f"{_format_residue_label(atom)}. "
         "Highest-occupancy atom sites were retained."
         for atom in residues_with_altlocs.values()
     )
@@ -86,13 +82,7 @@ def select_atom_site_altlocs(
     )
 
 
-def atom_site_key(atom: AtomRecord) -> tuple[object, ...]:
-    """
-    Return a key representing a unique atom site before altloc selection.
-
-    Alternate conformers of the same atom site should share this key.
-    """
-
+def _atom_site_key(atom: AtomRecord) -> tuple[object, ...]:
     return (
         atom.model_number,
         atom.chain_id,
@@ -103,11 +93,7 @@ def atom_site_key(atom: AtomRecord) -> tuple[object, ...]:
     )
 
 
-def residue_key(atom: AtomRecord) -> tuple[object, ...]:
-    """
-    Return a key representing a residue.
-    """
-
+def _residue_key(atom: AtomRecord) -> tuple[object, ...]:
     return (
         atom.model_number,
         atom.chain_id,
@@ -117,11 +103,7 @@ def residue_key(atom: AtomRecord) -> tuple[object, ...]:
     )
 
 
-def format_residue_label(atom: AtomRecord) -> str:
-    """
-    Return a compact human-readable residue label for warnings.
-    """
-
+def _format_residue_label(atom: AtomRecord) -> str:
     chain_id = atom.chain_id.strip() or "?"
     residue_name = atom.residue_name.strip().upper() or "?"
     residue_number = "?" if atom.residue_number is None else str(atom.residue_number)

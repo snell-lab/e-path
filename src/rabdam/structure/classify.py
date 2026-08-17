@@ -1,9 +1,7 @@
-"""
-Atom classification for RABDAM structure preparation.
-"""
+"""Classify atoms as protein, nucleic acid, or solvent."""
 
 from collections.abc import Iterable
-from functools import lru_cache
+from functools import cache
 
 import gemmi
 
@@ -11,7 +9,8 @@ from rabdam.input.reader import AtomRecord
 from rabdam.structure.filters import is_hydrogen
 from rabdam.structure.models import PreparedAtom
 
-
+# Gemmi does not classify several force-field protonation variants and modified
+# nucleotides in the way RABDAM needs for atom selection.
 PROTEIN_COMPONENT_OVERRIDES = frozenset(
     {
         "ASH",
@@ -46,20 +45,13 @@ SOLVENTS = frozenset(
 
 
 def classify_atoms(atoms: Iterable[AtomRecord]) -> tuple[PreparedAtom, ...]:
-    """
-    Classify atom records for RABDAM preparation.
-    """
-
+    """Classify atom records in input order."""
     return tuple(classify_atom(atom) for atom in atoms)
 
 
 def classify_atom(atom: AtomRecord) -> PreparedAtom:
-    """
-    Classify one atom record for RABDAM preparation.
-    """
-
+    """Classify one atom by component type and input record kind."""
     component_name = atom.residue_name.strip().upper()
-    record_type = atom.record_type.strip().upper()
     is_protein, is_nucleic_acid, is_solvent = classify_component(component_name)
 
     return PreparedAtom(
@@ -68,47 +60,36 @@ def classify_atom(atom: AtomRecord) -> PreparedAtom:
         is_protein=is_protein,
         is_nucleic_acid=is_nucleic_acid,
         is_solvent=is_solvent,
-        is_hetatm=record_type == "HETATM",
+        is_hetatm=atom.is_hetatm,
     )
 
 
 def classify_component(component_name: str) -> tuple[bool, bool, bool]:
-    """
-    Return protein, nucleic-acid, and solvent flags for a component name.
-    """
-
+    """Return protein, nucleic-acid, and solvent flags for a component."""
     return _classify_normalized_component(component_name.strip().upper())
 
 
-@lru_cache(maxsize=None)
+@cache
 def _classify_normalized_component(component_name: str) -> tuple[bool, bool, bool]:
-    """
-    Return classification flags for a normalized component name.
-    """
-
     residue = gemmi.find_tabulated_residue(component_name)
 
     return (
         component_name in PROTEIN_COMPONENT_OVERRIDES or residue.is_amino_acid(),
-        component_name in NUCLEIC_ACID_COMPONENT_OVERRIDES
-        or residue.is_nucleic_acid(),
+        component_name in NUCLEIC_ACID_COMPONENT_OVERRIDES or residue.is_nucleic_acid(),
         component_name in SOLVENTS or residue.is_water(),
     )
 
 
 def is_protein_component(component_name: str) -> bool:
-    """Return True if a component should be treated as protein-like."""
-
+    """Return whether a component is protein-like."""
     return classify_component(component_name)[0]
 
 
 def is_nucleic_acid_component(component_name: str) -> bool:
-    """Return True if a component should be treated as nucleic-acid-like."""
-
+    """Return whether a component is nucleic-acid-like."""
     return classify_component(component_name)[1]
 
 
 def is_solvent_component(component_name: str) -> bool:
-    """Return True if a component should be treated as solvent."""
-
+    """Return whether a component is solvent."""
     return classify_component(component_name)[2]

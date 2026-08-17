@@ -1,3 +1,3 @@
-"""Public package for RABDAM application-level interfaces."""
+"""Expose RABDAM package metadata."""
 
 __version__ = "0.1.0"

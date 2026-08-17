@@ -1,9 +1,4 @@
-"""
-Prepare structure data for RABDAM calculations.
-
-This module takes raw StructureData from input/reader.py and orchestrates the
-structure-preparation pipeline for later RABDAM stages.
-"""
+"""Run the structure-cleaning and atom-selection pipeline."""
 
 from rabdam.input.reader import StructureData
 from rabdam.structure.altlocs import select_altlocs
@@ -19,7 +14,6 @@ from rabdam.structure.models import (
 )
 from rabdam.structure.selection import select_bdamage_atoms
 
-
 __all__ = (
     "PreparedAtom",
     "PreparedStructure",
@@ -34,12 +28,19 @@ def prepare_structure(
     structure_data: StructureData,
     options: StructurePreparationOptions | None = None,
 ) -> PreparedStructure:
-    """
-    Prepare raw structure data for RABDAM calculations.
+    """Clean, classify, and select atoms from a parsed structure.
 
-    This is the main entry point for the structure-preparation stage.
-    """
+    Args:
+        structure_data: Parsed atoms and crystallographic metadata.
+        options: Preparation policy. Defaults to the published RABDAM-compatible
+            cleaning and protein-selection policy.
 
+    Returns:
+        Cleaned atoms, selected BDamage atoms, metadata, and preparation counts.
+
+    Raises:
+        StructurePreparationError: If preparation leaves no usable selection.
+    """
     if options is None:
         options = StructurePreparationOptions()
 

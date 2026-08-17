@@ -1,31 +1,17 @@
-"""
-End-to-end RABDAM workflow orchestration.
-
-This module wires together the prepared-structure, crystal-environment,
-packing-density, and BDamage scoring stages.  It intentionally keeps the
-workflow thin: each scientific calculation remains in its dedicated module.
-
-Default workflow options:
-
-    packing density threshold = 7.0 Angstroms
-    window size fraction      = 0.02 of selected atoms
-    minimum window size       = 11 atoms
-    translation range         = 1, giving a 3x3x3 crystal block
-
-The sliding-window atom count is derived by rounding
-atom_count * window_fraction, making the value odd, and enforcing the minimum
-window size.
-"""
+"""Orchestrate the end-to-end BDamage workflow."""
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
-import math
 from typing import Protocol, TypeVar
 
 from rabdam.bdamage.score import BDamageScoreResult, calculate_bdamage_scores_for_structure
-from rabdam.crystal.symmetry import SymmetryExpandedStructure, expand_prepared_structure_by_symmetry
+from rabdam.crystal.symmetry import (
+    SymmetryExpandedStructure,
+    expand_prepared_structure_by_symmetry,
+)
 from rabdam.crystal.translate import TranslatedCrystalBlock, translate_expanded_unit_cell
 from rabdam.crystal.trim import (
     TrimmedNeighbourBlock,
@@ -36,44 +22,27 @@ from rabdam.packing.density import PackingDensityResult, calculate_bdamage_packi
 from rabdam.structure.models import PreparedStructure, StructurePreparationOptions
 from rabdam.structure.prepare import prepare_structure
 
-
 T = TypeVar("T")
 
 
 class WorkflowStageRunner(Protocol):
-    """Run a named workflow stage and return that stage's result."""
+    """Run a labelled workflow callback with caller-defined instrumentation."""
 
     def __call__(self, label: str, callback: Callable[[], T]) -> T:
+        """Run a labelled callback and return its result."""
         ...
 
 
 class BDamageWorkflowError(ValueError):
-    """Raised when RABDAM cannot run the end-to-end BDamage workflow."""
+    """Report invalid input to the end-to-end BDamage workflow."""
 
 
 @dataclass(frozen=True, slots=True)
 class BDamageWorkflowOptions:
-    """
-    Options controlling the end-to-end BDamage workflow.
+    """Configure the scientific and memory behavior of BDamage calculation."""
 
-    packing_density_threshold:
-        Distance cutoff in Angstroms used for trimming and neighbour counting.
-
-    window_size_fraction:
-        Fraction of selected atoms used to derive the sliding-window size.
-
-    minimum_window_size:
-        Minimum sliding-window atom count after fraction/odd adjustment.
-
-    translation_range:
-        Number of whole unit cells to translate in each direction.  The default
-        of 1 generates offsets -1, 0, and +1 along a, b, and c.
-
-    materialize_translated_block:
-        Build the full TranslatedCrystalBlock for diagnostic output. The
-        default fused path avoids this allocation.
-    """
-
+    # These scientific defaults match RABDAM 2 so the resulting scores remain
+    # directly comparable.
     packing_density_threshold: float = 7.0
     window_size_fraction: float = 0.02
     minimum_window_size: int = 11
@@ -83,35 +52,7 @@ class BDamageWorkflowOptions:
 
 @dataclass(frozen=True, slots=True)
 class BDamageWorkflowResult:
-    """
-    Complete result of an end-to-end BDamage calculation.
-
-    prepared_structure:
-        Cleaned and selected asymmetric-unit atoms used for BDamage.
-
-    symmetry_expanded_structure:
-        Full unit-cell atom cloud after applying crystallographic symmetry.
-
-    translated_block:
-        Symmetry-expanded unit cell copied into neighbouring unit cells, when
-        materialize_translated_block=True.  None on the default fast path.
-
-    trimmed_block:
-        Local neighbour cloud retained for packing-density calculation.  The
-        default workflow stores this as an array-backed block.
-
-    packing_density_result:
-        Per-selected-atom packing-density neighbour counts.
-
-    bdamage_score_result:
-        Per-selected-atom BDamage scores.
-
-    options:
-        Workflow options used for this calculation.
-
-    window_size:
-        Final integer sliding-window atom count used for BDamage scoring.
-    """
+    """Store every materialized result from the BDamage workflow."""
 
     prepared_structure: PreparedStructure
     symmetry_expanded_structure: SymmetryExpandedStructure
@@ -130,10 +71,18 @@ def calculate_bdamage_for_structure_data(
     preparation_options: StructurePreparationOptions | None = None,
     stage_runner: WorkflowStageRunner | None = None,
 ) -> BDamageWorkflowResult:
-    """
-    Prepare raw structure data and run the complete BDamage workflow.
-    """
+    """Prepare structure data and calculate per-atom BDamage scores.
 
+    Args:
+        structure_data: Parsed atoms and crystallographic metadata.
+        workflow_options: Scientific calculation settings.
+        preparation_options: Atom cleaning and selection settings.
+        stage_runner: Optional wrapper for timing or reporting named stages.
+
+    Returns:
+        Prepared atoms, crystal-neighbour data, packing densities, and BDamage
+        scores with the effective options and window size.
+    """
     prepared_structure = _run_workflow_stage(
         "Preparing structure",
         lambda: prepare_structure(
@@ -156,10 +105,16 @@ def calculate_bdamage_for_prepared_structure(
     options: BDamageWorkflowOptions | None = None,
     stage_runner: WorkflowStageRunner | None = None,
 ) -> BDamageWorkflowResult:
-    """
-    Run symmetry, translation, trimming, packing density, and BDamage scoring.
-    """
+    """Calculate per-atom BDamage scores for a prepared structure.
 
+    The workflow expands crystallographic symmetry, builds a trimmed translated
+    neighbour cloud, counts neighbours within the configured radius, and
+    normalizes B-factors within packing-density windows.
+
+    Raises:
+        BDamageWorkflowError: If options are invalid, no atoms are selected, or
+            the calculated window is larger than the selection.
+    """
     if options is None:
         options = BDamageWorkflowOptions()
 
@@ -188,6 +143,8 @@ def calculate_bdamage_for_prepared_structure(
         lambda: expand_prepared_structure_by_symmetry(prepared_structure),
         stage_runner=stage_runner,
     )
+    # The fused trimming path avoids allocating all 27 translated cells;
+    # materialization exists only for diagnostics.
     translated_block = (
         _run_workflow_stage(
             "Translating neighbouring unit cells",
@@ -247,23 +204,20 @@ def bdamage_window_size_from_fraction(
     window_size_fraction: float = 0.02,
     minimum_window_size: int = 11,
 ) -> int:
-    """
-    Return the integer BDamage sliding-window size.
+    """Calculate an odd BDamage window size from an atom-count fraction.
 
-    The window size is derived from the number of selected atoms by rounding
-    atom_count * window_size_fraction, making the result odd, and enforcing a
-    minimum window size.
-    """
+    The rounded fractional size is increased to the next odd integer and then
+    bounded below by `minimum_window_size`.
 
+    Raises:
+        BDamageWorkflowError: If the atom count, fraction, or minimum is invalid.
+    """
     if type(atom_count) is not int or atom_count <= 0:
         raise BDamageWorkflowError(
             f"atom_count must be a positive integer, got {atom_count!r}."
         )
 
-    if (
-        not math.isfinite(window_size_fraction)
-        or not 0 < window_size_fraction < 1
-    ):
+    if not math.isfinite(window_size_fraction) or not 0 < window_size_fraction < 1:
         raise BDamageWorkflowError(
             "window_size_fraction must be a finite float in the range 0 to 1, "
             f"got {window_size_fraction!r}."
@@ -276,18 +230,22 @@ def bdamage_window_size_from_fraction(
         )
 
     window_size = int(round(atom_count * window_size_fraction, 0))
+    # A centered window needs a single middle atom; rounding upward preserves
+    # at least the requested fraction.
     if window_size % 2 == 0:
         window_size += 1
 
-    if window_size < minimum_window_size:
-        window_size = minimum_window_size
+    window_size = max(window_size, minimum_window_size)
 
     return window_size
 
 
 def validate_workflow_options(options: BDamageWorkflowOptions) -> None:
-    """Validate end-to-end BDamage workflow options."""
+    """Validate all BDamage workflow options.
 
+    Raises:
+        BDamageWorkflowError: If a numeric range or option type is invalid.
+    """
     if (
         not math.isfinite(options.packing_density_threshold)
         or options.packing_density_threshold <= 0

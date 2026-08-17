@@ -1,1 +1,1 @@
-#init file
+"""Structure input handling package."""

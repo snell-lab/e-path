@@ -1,23 +1,15 @@
-"""
-Basic atom-cleaning filters for RABDAM structure preparation.
+"""Remove unusable atoms before structure preparation."""
 
-This module performs only the first cleaning pass:
-    - remove hydrogens/deuteriums
-    - remove atoms with non-finite Cartesian coordinates
-    - remove atoms with invalid occupancy
-    - remove atoms with non-positive B-factors
-"""
-
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
-import math
 
 from rabdam.input.reader import AtomRecord
 
 
 @dataclass(frozen=True, slots=True)
 class AtomFilterCounts:
-    """Counts of atoms removed by the basic cleaning pass."""
+    """Count atoms removed for each cleaning criterion."""
 
     hydrogen: int = 0
     invalid_coordinates: int = 0
@@ -27,7 +19,7 @@ class AtomFilterCounts:
 
 @dataclass(frozen=True, slots=True)
 class AtomFilterResult:
-    """Result of the basic atom-cleaning pass."""
+    """Store retained atoms and the associated cleaning report."""
 
     atoms: tuple[AtomRecord, ...]
     counts: AtomFilterCounts
@@ -41,10 +33,21 @@ def filter_clean_atoms(
     require_valid_occupancy: bool = True,
     require_positive_b_factor: bool = True,
 ) -> AtomFilterResult:
-    """
-    This keeps only atoms that are suitable to pass into altloc handling.
-    """
+    """Remove atoms that cannot contribute valid BDamage scores.
 
+    Coordinates must always be finite. The remaining criteria can be relaxed
+    for callers that need to inspect otherwise unusable records.
+
+    Args:
+        atoms: Atom records in source order.
+        remove_hydrogens: Whether to remove hydrogen and deuterium atoms.
+        require_valid_occupancy: Whether to require occupancy in the interval
+            `(0, 1]`.
+        require_positive_b_factor: Whether to require a positive B-factor.
+
+    Returns:
+        Retained atoms in source order and removal counts by criterion.
+    """
     kept_atoms: list[AtomRecord] = []
 
     removed_hydrogen_count = 0
@@ -57,15 +60,15 @@ def filter_clean_atoms(
             removed_hydrogen_count += 1
             continue
 
-        if not has_finite_coordinates(atom):
+        if not _has_finite_coordinates(atom):
             removed_invalid_coordinate_count += 1
             continue
 
-        if require_valid_occupancy and not has_valid_occupancy(atom):
+        if require_valid_occupancy and not _has_valid_occupancy(atom):
             removed_invalid_occupancy_count += 1
             continue
 
-        if require_positive_b_factor and not has_positive_b_factor(atom):
+        if require_positive_b_factor and not _has_positive_b_factor(atom):
             removed_invalid_b_factor_count += 1
             continue
 
@@ -85,10 +88,7 @@ def filter_clean_atoms(
 
 
 def is_hydrogen(atom: AtomRecord) -> bool:
-    """
-    Return True if an atom is hydrogen or deuterium.
-    """
-
+    """Return whether an atom is hydrogen or deuterium."""
     element = atom.element.strip().upper()
 
     if element:
@@ -99,29 +99,13 @@ def is_hydrogen(atom: AtomRecord) -> bool:
     return atom_name.startswith(("H", "D"))
 
 
-def has_finite_coordinates(atom: AtomRecord) -> bool:
-    """
-    Return True if all Cartesian coordinates are finite numbers.
-    """
-
-    return (
-        math.isfinite(atom.x)
-        and math.isfinite(atom.y)
-        and math.isfinite(atom.z)
-    )
+def _has_finite_coordinates(atom: AtomRecord) -> bool:
+    return math.isfinite(atom.x) and math.isfinite(atom.y) and math.isfinite(atom.z)
 
 
-def has_valid_occupancy(atom: AtomRecord) -> bool:
-    """
-    Return True if occupancy is valid for RABDAM structure preparation.
-    """
-
+def _has_valid_occupancy(atom: AtomRecord) -> bool:
     return 0.0 < atom.occupancy <= 1.0
 
 
-def has_positive_b_factor(atom: AtomRecord) -> bool:
-    """
-    Return True if an atom has a positive isotropic B-factor.
-    """
-
+def _has_positive_b_factor(atom: AtomRecord) -> bool:
     return atom.b_factor > 0.0

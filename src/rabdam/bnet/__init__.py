@@ -1,1 +1,1 @@
-"""Bnet calculation helpers."""
+"""Bnet calculation package."""

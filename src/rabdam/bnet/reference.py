@@ -1,38 +1,24 @@
-"""Bnet reference database loading and validation.
-
-The Bnet-percentile calculation is intentionally separated from the bundled
-reference data. This module only knows how to load, validate, and expose a
-table of reference Bnet values.
-
-Reference CSV Format
---------------------
-The loader ignores an optional leading index column. A reference CSV must contain
-one recognizable PDB identifier column, one resolution column, and one Bnet column.
-
-The loader also accepts some equivalent normalized column names.
-
-Extra columns are allowed and ignored by this module. Files must contain exactly 
-one recognizable column for each required value.
-"""
+"""Load, validate, and write Bnet reference databases."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 import csv
-from dataclasses import asdict, dataclass, field
 import json
 import math
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, SupportsFloat, SupportsIndex, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
-
 DEFAULT_REFERENCE_SCHEMA_VERSION = "1.0"
 DEFAULT_REFERENCE_METRIC_KIND = "protein_cryo_asp_glu_bnet"
 DEFAULT_REFERENCE_DATABASE_FILENAME = "database.csv"
-DEFAULT_REFERENCE_DATABASE_DIR = Path(__file__).resolve().parent / "database"
+DEFAULT_REFERENCE_DATABASE_DIR = (
+    Path(__file__).resolve().parent / "database"
+)
 DEFAULT_REFERENCE_DATABASE_CSV_PATH = (
     DEFAULT_REFERENCE_DATABASE_DIR / DEFAULT_REFERENCE_DATABASE_FILENAME
 )
@@ -64,22 +50,21 @@ _BNET_COLUMN_ALIASES = frozenset(
     }
 )
 
-_Floatable = str | bytes | bytearray | SupportsFloat | SupportsIndex
-
 
 class BnetReferenceError(ValueError):
-    """Raised when a Bnet reference database cannot be loaded or validated."""
+    """Report invalid Bnet reference data or metadata."""
 
 
 @dataclass(frozen=True, slots=True)
 class BnetReferenceEntry:
-    """One row in a Bnet reference database."""
+    """Store one structure's resolution in angstroms and raw Bnet value."""
 
     pdb_id: str
     resolution_angstrom: float
     bnet: float
 
     def __post_init__(self) -> None:
+        """Normalize identifiers and validate numeric reference values."""
         pdb_id = str(self.pdb_id).strip()
         if not pdb_id:
             raise BnetReferenceError("pdb_id must not be empty.")
@@ -107,20 +92,19 @@ class BnetReferenceEntry:
 
 @dataclass(frozen=True, slots=True)
 class BnetReferenceMetadata:
-    """Provenance for a Bnet reference database.
-
-    The percentile algorithm does not depend on most of these values, but they
-    make it clear which database was used for a reported percentile.
-    """
+    """Describe the provenance and schema of a Bnet reference database."""
 
     database_id: str = "unknown_bnet_reference"
     schema_version: str = DEFAULT_REFERENCE_SCHEMA_VERSION
     metric_kind: str = DEFAULT_REFERENCE_METRIC_KIND
     source: str | None = None
+    pdb_redo_snapshot: str | None = None
+    eligibility_policy_id: str | None = None
     source_path: str | None = None
     manifest_path: str | None = None
 
     def __post_init__(self) -> None:
+        """Normalize and validate required metadata strings."""
         database_id = str(self.database_id).strip()
         if not database_id:
             raise BnetReferenceError("metadata.database_id must not be empty.")
@@ -140,10 +124,10 @@ class BnetReferenceMetadata:
 
 @dataclass(frozen=True, slots=True)
 class BnetReferenceDatabase:
-    """Validated Bnet reference database.
+    """Store validated reference entries and immutable numeric columns.
 
-    The public ``entries`` tuple preserves the CSV order. Read-only NumPy arrays
-    are cached for fast percentile calculations.
+    The resolution and Bnet arrays have shape `(n,)`, align with `entries`, and
+    are read-only so cached column views cannot diverge from the records.
     """
 
     entries: Sequence[BnetReferenceEntry]
@@ -157,16 +141,18 @@ class BnetReferenceDatabase:
     _bnet_values: NDArray[np.float64] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
+        """Validate entries and build immutable aligned column views."""
         entries = tuple(self.entries)
         if not entries:
             raise BnetReferenceError("Bnet reference database must contain entries.")
 
         seen_pdb_ids: set[str] = set()
-        for entry in entries:
-            if not isinstance(entry, BnetReferenceEntry):
+        for raw_entry in cast(tuple[object, ...], entries):
+            if not isinstance(raw_entry, BnetReferenceEntry):
                 raise BnetReferenceError(
                     "entries must contain only BnetReferenceEntry objects."
                 )
+            entry = raw_entry
 
             duplicate_key = entry.pdb_id.casefold()
             if duplicate_key in seen_pdb_ids:
@@ -192,31 +178,26 @@ class BnetReferenceDatabase:
 
     def __len__(self) -> int:
         """Return the number of reference entries."""
-
         return self.entry_count
 
     @property
     def entry_count(self) -> int:
         """Return the number of reference entries."""
-
         return len(self.entries)
 
     @property
     def pdb_ids(self) -> tuple[str, ...]:
-        """Return PDB identifiers in reference-table order."""
-
+        """Return structure identifiers in entry order."""
         return self._pdb_ids
 
     @property
     def resolution_values(self) -> NDArray[np.float64]:
-        """Return read-only resolution values in reference-table order."""
-
+        """Return read-only resolutions in entry order."""
         return self._resolution_values
 
     @property
     def bnet_values(self) -> NDArray[np.float64]:
-        """Return read-only Bnet values in reference-table order."""
-
+        """Return read-only raw Bnet values in entry order."""
         return self._bnet_values
 
 
@@ -226,24 +207,18 @@ def load_bnet_reference_database(
     manifest_path: str | Path | None = None,
     database_id: str | None = None,
 ) -> BnetReferenceDatabase:
-    """Load a Bnet reference database from CSV.
+    """Load a Bnet reference CSV and optional JSON manifest.
 
-    Parameters
-    ----------
-    path
-        CSV file containing at least PDB ID, resolution, and Bnet columns.
-    manifest_path
-        Optional JSON manifest. If omitted, ``<csv-stem>.manifest.json`` is
-        loaded when present.
-    database_id
-        Optional fallback database identifier when no manifest is present.
+    Args:
+        path: CSV containing structure ID, resolution, and Bnet columns.
+        manifest_path: Explicit manifest path. By default, use a sibling file
+            ending in `.manifest.json` when present.
+        database_id: Fallback identifier when the manifest omits one.
 
-    Returns
-    -------
-    BnetReferenceDatabase
-        Validated reference database ready for percentile calculation.
+    Raises:
+        BnetReferenceError: If files cannot be found or parsed, required columns
+            are absent or ambiguous, or reference values are invalid.
     """
-
     csv_path = Path(path).expanduser()
     if not csv_path.is_file():
         raise BnetReferenceError(f"Bnet reference CSV does not exist: {csv_path}.")
@@ -265,20 +240,14 @@ def load_bnet_reference_database(
 def default_bnet_reference_database_path(
     reference_dir: str | Path = DEFAULT_REFERENCE_DATABASE_DIR,
 ) -> Path:
-    """Return the active default Bnet reference CSV path."""
-
+    """Return the conventional reference CSV path within a directory."""
     return Path(reference_dir).expanduser() / DEFAULT_REFERENCE_DATABASE_FILENAME
 
 
 def load_default_bnet_reference_database(
     reference_dir: str | Path = DEFAULT_REFERENCE_DATABASE_DIR,
 ) -> BnetReferenceDatabase | None:
-    """Load the default Bnet reference database when it exists.
-
-    Only ``database.csv`` is considered active. Other CSV files in the same
-    directory are ignored so alternate databases can be stored there safely.
-    """
-
+    """Load the conventional reference database when its CSV exists."""
     csv_path = default_bnet_reference_database_path(reference_dir)
     if not csv_path.is_file():
         return None
@@ -292,11 +261,11 @@ def write_bnet_reference_database(
     *,
     manifest_path: str | Path | None = None,
 ) -> None:
-    """Write the minimal swappable Bnet reference database CSV and manifest.
+    """Write a reference CSV and JSON metadata manifest.
 
-    This helper is intended for simple exports and tests.
+    Parent directories are created as needed. If `manifest_path` is omitted,
+    the manifest is written beside the CSV with a `.manifest.json` suffix.
     """
-
     csv_path = Path(path).expanduser()
     csv_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -434,6 +403,8 @@ def _metadata_from_manifest(
         ),
         metric_kind=str(manifest.get("metric_kind") or DEFAULT_REFERENCE_METRIC_KIND),
         source=_optional_string(manifest.get("source")),
+        pdb_redo_snapshot=_optional_string(manifest.get("pdb_redo_snapshot")),
+        eligibility_policy_id=_optional_string(manifest.get("eligibility_policy_id")),
         source_path=str(source_path),
         manifest_path=str(manifest_path) if manifest_path is not None else None,
     )
@@ -508,7 +479,7 @@ def _finite_float(value: object, *, name: str) -> float:
         raise BnetReferenceError(f"{name} must be numeric, got {value!r}.")
 
     try:
-        number = float(cast(_Floatable, value))
+        number = float(value)
     except (TypeError, ValueError) as error:
         raise BnetReferenceError(f"{name} must be numeric, got {value!r}.") from error
 
@@ -527,17 +498,17 @@ def _optional_string(value: object) -> str | None:
 
 
 __all__ = [
-    "BnetReferenceDatabase",
-    "BnetReferenceEntry",
-    "BnetReferenceError",
-    "BnetReferenceMetadata",
     "DEFAULT_REFERENCE_DATABASE_CSV_PATH",
     "DEFAULT_REFERENCE_DATABASE_DIR",
     "DEFAULT_REFERENCE_DATABASE_FILENAME",
     "DEFAULT_REFERENCE_METRIC_KIND",
     "DEFAULT_REFERENCE_SCHEMA_VERSION",
+    "BnetReferenceDatabase",
+    "BnetReferenceEntry",
+    "BnetReferenceError",
+    "BnetReferenceMetadata",
     "default_bnet_reference_database_path",
-    "load_default_bnet_reference_database",
     "load_bnet_reference_database",
+    "load_default_bnet_reference_database",
     "write_bnet_reference_database",
 ]

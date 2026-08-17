@@ -17,6 +17,7 @@ from rabdam.bdamage.score import (
     BDamageScoreError,
     bdamage_scores_as_tuple,
 )
+from rabdam.bnet.workflow import BnetWorkflowResult, calculate_bnet_workflow
 from epath import __version__
 from rabdam.workflow import (
     BDamageWorkflowError,
@@ -59,7 +60,11 @@ RABDAM:
 
 BDamage:
   Gerstel M, Deane CM & Garman EF (2015).
-  J Synchrotron Radiat 22, 201-212."""
+  J Synchrotron Radiat 22, 201-212.
+
+Bnet / Bnet percentile:
+  Shelley KL & Garman EF (2022).
+  Nat Commun 13, 1314."""
 MISSING_STRUCTURE_INPUT_MESSAGE = """epath: error: missing required argument: structure_input
 
 Usage:
@@ -117,6 +122,7 @@ class RabdamCliResult:
     local_input: ResolvedStructureInput
     output_csv: Path
     workflow_result: BDamageWorkflowResult
+    bnet_workflow_result: BnetWorkflowResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -899,10 +905,21 @@ def run_single_structure_from_args(
         quiet=args.quiet,
     )
 
+    bnet_workflow_result = run_stage(
+        "Calculating Bnet and Bnet percentile",
+        lambda: calculate_bnet_workflow(
+            prepared_structure=workflow_result.prepared_structure,
+            bdamage_score_result=workflow_result.bdamage_score_result,
+        ),
+        stream=stderr,
+        quiet=args.quiet,
+    )
+
     cli_result = RabdamCliResult(
         local_input=local_input,
         output_csv=output_csv,
         workflow_result=workflow_result,
+        bnet_workflow_result=bnet_workflow_result,
     )
 
     if not args.quiet:
@@ -1045,6 +1062,15 @@ def run_single_epath_structure_from_args(
         output_prefix=output_prefix,
     )
     atoms = atoms_from_bdamage_workflow(bdamage_result)
+    bnet_workflow_result = run_stage(
+        "Calculating Bnet and Bnet percentile",
+        lambda: calculate_bnet_workflow(
+            prepared_structure=bdamage_result.prepared_structure,
+            bdamage_score_result=bdamage_result.bdamage_score_result,
+        ),
+        stream=stderr,
+        quiet=args.quiet,
+    )
 
     workflow_result = run_stage(
         "Running E-path workflow",
@@ -1053,6 +1079,7 @@ def run_single_epath_structure_from_args(
             structure_path=local_input.local_path,
             options=options,
             bdamage_workflow_result=bdamage_result,
+            bnet_workflow_result=bnet_workflow_result,
         ),
         stream=stderr,
         quiet=args.quiet,
@@ -1275,7 +1302,7 @@ def write_bdamage_csv(
             record = atom.record
             writer.writerow(
                 {
-                    "REC": record.record_type,
+                    "REC": "HETATM" if record.is_hetatm else "ATOM",
                     "ATMNUM": record.atom_serial,
                     "ATMNAME": record.atom_name,
                     "CONFORMER": record.altloc or ".",
@@ -1337,6 +1364,9 @@ def print_summary(
     )
     print(f"  Window size: {workflow_result.window_size}", file=stream)
 
+    print(file=stream)
+    print_bnet_summary(result.bnet_workflow_result, stream=stream)
+
     if preview_count > 0:
         packing_density_counts = packing_density_counts_as_tuple(
             workflow_result.packing_density_result
@@ -1394,6 +1424,8 @@ def print_epath_summary(
     )
     print(f"  Z-score mode: {selection_result.z_mode:.3f}", file=stream)
     print(file=stream)
+    print_bnet_summary(workflow_result.bnet_workflow_result, stream=stream)
+    print(file=stream)
     print("Clusters:", file=stream)
     print(f"  Count: {len(workflow_result.clusters)}", file=stream)
     largest_cluster = max(
@@ -1433,6 +1465,50 @@ def print_epath_summary(
 
     print(file=stream)
     print(f"Total runtime: {total_runtime_seconds:.1f}s", file=stream)
+
+
+def print_bnet_summary(
+    workflow_result: BnetWorkflowResult | None,
+    *,
+    stream: TextIO,
+) -> None:
+    """Print the Bnet outputs from the RABDAM workflow."""
+
+    print("RABDAM Bnet results:", file=stream)
+    if workflow_result is None:
+        print("  Bnet: not calculated", file=stream)
+        print("  Bnet percentile: not calculated", file=stream)
+        return
+
+    bnet_result = workflow_result.bnet_result
+    if bnet_result is None:
+        reason = workflow_result.bnet_unavailable_reason or "not calculated"
+        print(f"  Bnet: unavailable ({reason})", file=stream)
+        print("  Bnet percentile: unavailable (raw Bnet is unavailable)", file=stream)
+        return
+
+    print(f"  Protein Bnet sites: {bnet_result.site_count}", file=stream)
+    print(f"  Raw protein Bnet: {bnet_result.bnet:.4f}", file=stream)
+    percentile = workflow_result.percentile_result
+    if percentile is None:
+        reason = workflow_result.percentile_unavailable_reason or "not calculated"
+        print(f"  Bnet percentile: unavailable ({reason})", file=stream)
+        return
+
+    print(f"  Bnet percentile: {percentile.percentile_percent:.2f}%", file=stream)
+    print(
+        f"  Bnet reference: {percentile.reference_database_id} "
+        f"({percentile.reference_entry_count} entries)",
+        file=stream,
+    )
+    print(f"  Resolution used: {percentile.resolution_angstrom:.3g} A", file=stream)
+    print(
+        "  Local reference set: "
+        f"{percentile.local_reference_count} entries, "
+        f"{percentile.local_resolution_min:.3g}-"
+        f"{percentile.local_resolution_max:.3g} A",
+        file=stream,
+    )
 
 
 def print_batch_summary(

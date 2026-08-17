@@ -1,23 +1,4 @@
-"""
-Trim translated crystal atoms to the local neighbour box used for BDamage.
-
-After symmetry expansion and unit-cell translation, the crystal environment
-contains atoms from a 3x3x3 block of neighbouring unit cells. BDamage only needs
-the atoms close enough to the selected asymmetric-unit atoms to contribute to
-packing-density calculations.
-
-This module defines an axis-aligned Cartesian box around the selected atoms.
-The box is calculated from the selected atoms' minimum and maximum x, y, and z
-coordinates, then padded on every side by the packing-density threshold (PDT).
-
-The workflow is:
-
-    selected asymmetric-unit atoms -> Cartesian bounds -> bounds +/- PDT
-    translated 3x3x3 block -> atoms inside padded bounds only
-
-The trimmed block is the local neighbour cloud passed to the packing-density
-stage.
-"""
+"""Trim translated crystal atoms to the BDamage neighbour region."""
 
 from __future__ import annotations
 
@@ -25,6 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import NDArray
 
 from rabdam.crystal.symmetry import SymmetryExpandedStructure
 from rabdam.crystal.translate import (
@@ -38,18 +20,12 @@ from rabdam.structure.models import PreparedAtom, PreparedStructure
 
 
 class CrystalTrimError(ValueError):
-    """Raised when RABDAM cannot trim a translated crystal block."""
+    """Report invalid bounds or an unusable trimmed crystal block."""
 
 
 @dataclass(frozen=True, slots=True)
 class CartesianBounds:
-    """
-    Axis-aligned Cartesian coordinate bounds in Angstroms.
-
-    x_min, x_max, y_min, y_max, z_min, z_max are calculated independently from
-    the reference asymmetric-unit atoms, then padded by the packing-density
-    threshold before filtering the translated crystal block.
-    """
+    """Store inclusive Cartesian bounds in angstroms."""
 
     x_min: float
     x_max: float
@@ -61,26 +37,7 @@ class CartesianBounds:
 
 @dataclass(frozen=True, slots=True)
 class TrimmedCrystalBlock:
-    """
-    Translated crystal block after neighbour-box trimming.
-
-    atoms:
-        Translated atoms whose Cartesian coordinates lie inside the padded
-        reference-atom bounds.
-
-    reference_bounds:
-        Unpadded Cartesian bounds of the reference asymmetric-unit atoms.
-
-    trim_bounds:
-        Padded Cartesian bounds used to retain translated atoms.
-
-    padding:
-        Padding added to each side of reference_bounds, normally the
-        packing-density threshold in Angstroms.
-
-    original_atom_count:
-        Number of atoms in the translated block before trimming.
-    """
+    """Store object-based translated atoms retained inside Cartesian bounds."""
 
     atoms: tuple[TranslatedAtom, ...]
     reference_bounds: CartesianBounds
@@ -90,19 +47,17 @@ class TrimmedCrystalBlock:
 
     @property
     def atom_count(self) -> int:
-        """Number of retained translated atoms."""
-
+        """Return the number of retained atoms."""
         return len(self.atoms)
 
 
 @dataclass(frozen=True, slots=True)
 class ArrayTrimmedCrystalBlock:
-    """
-    NumPy-backed translated crystal block after neighbour-box trimming.
+    """Store a vectorized trimmed crystal block.
 
-    The full translated 3x3x3 block is never materialized. Coordinates and the
-    metadata needed by packing-density self-copy correction are retained only
-    for atoms inside the padded reference bounds.
+    Coordinates have shape `(n, 3)` in angstroms. Source indices and identity
+    flags have shape `(n,)`, and integer translation offsets have shape `(n, 3)`.
+    Rows across all four arrays describe the same translated atom.
     """
 
     coordinates: np.ndarray
@@ -119,8 +74,7 @@ class ArrayTrimmedCrystalBlock:
 
     @property
     def atom_count(self) -> int:
-        """Number of retained translated atoms."""
-
+        """Return the number of retained coordinate rows."""
         return int(self.coordinates.shape[0])
 
 
@@ -133,12 +87,7 @@ def trim_translated_block_for_bdamage(
     prepared_structure: PreparedStructure,
     padding: float,
 ) -> TrimmedCrystalBlock:
-    """
-    Trim a translated crystal block for BDamage packing-density calculation.
-
-    This uses prepared_structure.selected_atoms as the reference atoms.
-    """
-
+    """Trim a materialized translated block around selected BDamage atoms."""
     return trim_translated_block_to_reference_atoms(
         translated_block=translated_block,
         reference_atoms=prepared_structure.selected_atoms,
@@ -153,13 +102,7 @@ def trim_expanded_unit_cell_for_bdamage(
     padding: float,
     translation_range: int = 1,
 ) -> ArrayTrimmedCrystalBlock:
-    """
-    Fused translation and trimming for BDamage packing-density calculation.
-
-    This uses prepared_structure.selected_atoms as the reference atoms and
-    avoids constructing TranslatedAtom objects for atoms outside the trim box.
-    """
-
+    """Translate and trim an expanded cell around selected BDamage atoms."""
     return trim_expanded_unit_cell_to_reference_atoms(
         expanded_structure=expanded_structure,
         reference_atoms=prepared_structure.selected_atoms,
@@ -175,10 +118,26 @@ def trim_expanded_unit_cell_to_reference_atoms(
     padding: float,
     translation_range: int = 1,
 ) -> ArrayTrimmedCrystalBlock:
-    """
-    Translate symmetry-expanded atoms and keep only atoms inside padded bounds.
-    """
+    """Translate and retain atom images near reference atoms.
 
+    The reference bounding box is expanded by `padding` angstroms on every
+    Cartesian face. Translation and trimming are fused to avoid materializing
+    every atom copy.
+
+    Args:
+        expanded_structure: Symmetry-expanded source unit cell.
+        reference_atoms: Atoms whose Cartesian extent defines the trim region.
+        padding: Nonnegative extension of each bounding-box face in angstroms.
+        translation_range: Maximum integer unit-cell offset along each axis.
+
+    Returns:
+        Row-aligned coordinate, source-index, symmetry, and translation arrays
+        for retained atom images.
+
+    Raises:
+        CrystalTrimError: If an input is empty, a numeric option is invalid, or
+            trimming retains no atoms.
+    """
     if padding < 0:
         raise CrystalTrimError(f"padding must be non-negative, got {padding!r}.")
 
@@ -190,9 +149,7 @@ def trim_expanded_unit_cell_to_reference_atoms(
 
     expanded_atoms = tuple(expanded_structure.atoms)
     if not expanded_atoms:
-        raise CrystalTrimError(
-            "Cannot trim an empty symmetry-expanded atom list."
-        )
+        raise CrystalTrimError("Cannot trim an empty symmetry-expanded atom list.")
 
     reference_bounds = bounds_from_prepared_atoms(reference_atoms)
     trim_bounds = expand_bounds(reference_bounds, padding)
@@ -211,10 +168,10 @@ def trim_expanded_unit_cell_to_reference_atoms(
         dtype=np.bool_,
     )
 
-    coordinate_chunks: list[np.ndarray] = []
-    source_index_chunks: list[np.ndarray] = []
-    identity_flag_chunks: list[np.ndarray] = []
-    offset_chunks: list[np.ndarray] = []
+    coordinate_chunks: list[NDArray[np.float64]] = []
+    source_index_chunks: list[NDArray[np.int64]] = []
+    identity_flag_chunks: list[NDArray[np.bool_]] = []
+    offset_chunks: list[NDArray[np.int64]] = []
 
     for a_offset in range(-translation_range, translation_range + 1):
         for b_offset in range(-translation_range, translation_range + 1):
@@ -246,9 +203,15 @@ def trim_expanded_unit_cell_to_reference_atoms(
                 source_index_chunks.append(source_atom_indices[inside_bounds])
                 identity_flag_chunks.append(identity_flags[inside_bounds])
                 offset_chunks.append(
-                    np.full(
-                        (retained_count, 3),
-                        (a_offset, b_offset, c_offset),
+                    np.asarray(
+                        np.repeat(
+                            np.asarray(
+                                ((a_offset, b_offset, c_offset),),
+                                dtype=np.int64,
+                            ),
+                            retained_count,
+                            axis=0,
+                        ),
                         dtype=np.int64,
                     )
                 )
@@ -282,10 +245,11 @@ def trim_translated_block_to_reference_atoms(
     reference_atoms: Iterable[PreparedAtom],
     padding: float,
 ) -> TrimmedCrystalBlock:
-    """
-    Keep translated atoms inside reference-atom bounds padded by padding.
-    """
+    """Retain materialized translated atoms near reference atoms.
 
+    The inclusive Cartesian bounds extend `padding` angstroms beyond the
+    reference atoms on every face.
+    """
     if padding < 0:
         raise CrystalTrimError(f"padding must be non-negative, got {padding!r}.")
 
@@ -320,10 +284,11 @@ def trim_translated_block_to_reference_atoms(
 def bounds_from_prepared_atoms(
     atoms: Iterable[PreparedAtom],
 ) -> CartesianBounds:
-    """
-    Return min/max Cartesian bounds for prepared asymmetric-unit atoms.
-    """
+    """Compute inclusive Cartesian bounds for prepared atoms.
 
+    Raises:
+        CrystalTrimError: If no atoms are provided.
+    """
     atom_tuple = tuple(atoms)
     if not atom_tuple:
         raise CrystalTrimError("Cannot calculate bounds for an empty atom list.")
@@ -343,13 +308,12 @@ def bounds_from_prepared_atoms(
 
 
 def expand_bounds(bounds: CartesianBounds, padding: float) -> CartesianBounds:
-    """
-    Pad Cartesian bounds by padding Angstroms in every direction.
-    """
-
+    """Expand Cartesian bounds by a nonnegative padding in angstroms."""
     if padding < 0:
         raise CrystalTrimError(f"padding must be non-negative, got {padding!r}.")
 
+    # Cartesian padding cannot exclude a Euclidean neighbour because that atom
+    # must be within the cutoff along every individual axis.
     return CartesianBounds(
         x_min=float(bounds.x_min - padding),
         x_max=float(bounds.x_max + padding),
@@ -364,10 +328,7 @@ def translated_atom_is_inside_bounds(
     atom: TranslatedAtom,
     bounds: CartesianBounds,
 ) -> bool:
-    """
-    Return True when a translated atom lies inside inclusive Cartesian bounds.
-    """
-
+    """Return whether an atom lies inside inclusive Cartesian bounds."""
     return (
         bounds.x_min <= atom.x <= bounds.x_max
         and bounds.y_min <= atom.y <= bounds.y_max
@@ -378,8 +339,7 @@ def translated_atom_is_inside_bounds(
 def trimmed_coordinates_as_tuples(
     trimmed_block: TrimmedNeighbourBlock,
 ) -> tuple[tuple[float, float, float], ...]:
-    """Return only xyz coordinates from a trimmed crystal block."""
-
+    """Return trimmed Cartesian coordinates in row or atom order."""
     if isinstance(trimmed_block, ArrayTrimmedCrystalBlock):
         return tuple(tuple(row) for row in trimmed_block.coordinates.tolist())
 

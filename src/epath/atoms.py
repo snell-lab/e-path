@@ -71,7 +71,7 @@ def atoms_from_bdamage_workflow(
                 source_atom_index=record.source_atom_index,
                 bdamage_atom_index=bdamage_result.bdamage_atom_index,
                 atom_serial=record.atom_serial,
-                record_type=record.record_type,
+                record_type="HETATM" if record.is_hetatm else "ATOM",
                 chain_id=record.chain_id,
                 residue_name=record.residue_name,
                 residue_number=record.residue_number,

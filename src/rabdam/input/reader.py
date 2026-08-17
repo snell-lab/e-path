@@ -1,16 +1,9 @@
-"""
-Read local structure files for RABDAM.
+"""Read structure files into RABDAM data models."""
 
-This module takes a resolved local structure input and reads the structure file
-using Gemmi.
-
-It converts the file into RABDAM-owned data objects.
-"""
-
-from dataclasses import dataclass
 import math
-from pathlib import Path
 import re
+from dataclasses import dataclass
+from pathlib import Path
 
 import gemmi
 
@@ -19,7 +12,6 @@ from rabdam.input.resolver import (
     ResolvedStructureInput,
     StructureFileFormat,
 )
-
 
 _RESOLUTION_CIF_TAGS = (
     "_refine.ls_d_res_high",
@@ -33,18 +25,12 @@ _MISSING_METADATA_VALUES = frozenset({"", ".", "?", "null", "none", "nan", "na",
 
 
 class StructureReadError(InputResolutionError):
-    """Raised when RABDAM cannot read a local structure file."""
+    """Report a structure file that cannot be read or validated."""
 
 
 @dataclass(frozen=True, slots=True)
 class AtomRecord:
-    """
-    One atom record read from a structure file.
-
-    source_atom_index:
-        Zero-based index assigned by reader.py in the order atoms are read.
-        Used internally for stable atom identity and deduplication.
-    """
+    """Store one atom record with Cartesian coordinates in angstroms."""
 
     source_atom_index: int
     model_number: int
@@ -61,12 +47,16 @@ class AtomRecord:
     occupancy: float
     b_factor: float
     atom_serial: int | None
-    record_type: str
+    is_hetatm: bool
 
 
 @dataclass(frozen=True, slots=True)
 class StructureMetadata:
-    """Basic metadata read from a structure file."""
+    """Store crystallographic metadata extracted from a structure file.
+
+    Unit-cell lengths and resolution are in angstroms; unit-cell angles are in
+    degrees. Missing or invalid metadata values are represented by `None`.
+    """
 
     source_path: Path
     structure_id: str | None
@@ -83,17 +73,22 @@ class StructureMetadata:
 
 @dataclass(frozen=True, slots=True)
 class StructureData:
-    """Structure data passed from the input layer to later RABDAM stages."""
+    """Pair source-order atom records with crystallographic metadata."""
 
     atoms: tuple[AtomRecord, ...]
     metadata: StructureMetadata
 
 
 def read_structure(resolved_input: ResolvedStructureInput) -> StructureData:
-    """
-    Read a resolved local structure file.
-    """
+    """Read and validate a single-model local structure.
 
+    Returns:
+        Source-order atom records and available crystallographic metadata.
+
+    Raises:
+        StructureReadError: If the input is not a readable local coordinate
+            file, contains anything other than one model, or contains no atoms.
+    """
     if not resolved_input.is_local_file:
         raise StructureReadError(
             "read_structure expected a local file input, "
@@ -143,8 +138,6 @@ def read_structure(resolved_input: ResolvedStructureInput) -> StructureData:
 
 
 def _extract_atom_records(structure: gemmi.Structure) -> list[AtomRecord]:
-    """Extract atom records from a Gemmi structure."""
-
     atom_records: list[AtomRecord] = []
 
     for model_index, model in enumerate(structure, start=1):
@@ -155,7 +148,7 @@ def _extract_atom_records(structure: gemmi.Structure) -> list[AtomRecord]:
                 residue_name = residue.name
                 residue_number = _get_residue_number(residue)
                 insertion_code = _get_insertion_code(residue)
-                record_type = _get_record_type(residue)
+                is_hetatm = _is_hetatm(residue)
 
                 for atom in residue:
                     position = atom.pos
@@ -177,7 +170,7 @@ def _extract_atom_records(structure: gemmi.Structure) -> list[AtomRecord]:
                             occupancy=float(atom.occ),
                             b_factor=float(atom.b_iso),
                             atom_serial=_get_atom_serial(atom),
-                            record_type=record_type,
+                            is_hetatm=is_hetatm,
                         )
                     )
 
@@ -190,8 +183,6 @@ def _extract_metadata(
     resolved_input: ResolvedStructureInput,
     path: Path,
 ) -> StructureMetadata:
-    """Extract basic metadata from a Gemmi structure."""
-
     cell = structure.cell
     space_group = _get_space_group_name(structure)
 
@@ -215,8 +206,6 @@ def _extract_metadata(
 
 
 def _get_space_group_name(structure: gemmi.Structure) -> str | None:
-    """Return the space-group name if Gemmi provides one."""
-
     space_group = getattr(structure, "spacegroup_hm", None)
 
     if space_group:
@@ -231,12 +220,11 @@ def _extract_resolution_angstrom(
     path: Path,
     file_format: StructureFileFormat,
 ) -> float | None:
-    """Extract crystallographic resolution from Gemmi or file metadata."""
-
     resolution = _get_structure_resolution_angstrom(structure)
     if resolution is not None:
         return resolution
 
+    # Gemmi does not populate Structure.resolution for every valid file.
     if file_format is StructureFileFormat.MMCIF:
         return _extract_mmcif_resolution_angstrom(path)
 
@@ -247,15 +235,11 @@ def _extract_resolution_angstrom(
 
 
 def _get_structure_resolution_angstrom(structure: gemmi.Structure) -> float | None:
-    """Return the crystallographic resolution if Gemmi found one."""
-
     resolution = getattr(structure, "resolution", None)
     return _finite_positive_float_or_none(resolution)
 
 
 def _extract_mmcif_resolution_angstrom(path: Path) -> float | None:
-    """Return resolution from common mmCIF scalar tags when available."""
-
     try:
         document = gemmi.cif.read_file(str(path))
     except (OSError, RuntimeError, ValueError):
@@ -274,8 +258,6 @@ def _extract_mmcif_resolution_angstrom(path: Path) -> float | None:
 
 
 def _extract_pdb_resolution_angstrom(path: Path) -> float | None:
-    """Return resolution from a PDB REMARK 2 record when available."""
-
     try:
         with path.open("r", encoding="utf-8", errors="replace") as handle:
             for line in handle:
@@ -291,8 +273,6 @@ def _extract_pdb_resolution_angstrom(path: Path) -> float | None:
 
 
 def _finite_positive_float_or_none(value: object) -> float | None:
-    """Return a finite positive float, or None for missing/invalid values."""
-
     if value is None:
         return None
 
@@ -312,8 +292,6 @@ def _finite_positive_float_or_none(value: object) -> float | None:
 
 
 def _get_residue_number(residue: gemmi.Residue) -> int | None:
-    """Return the residue sequence number if available."""
-
     residue_number = getattr(residue.seqid, "num", None)
 
     if residue_number is None:
@@ -323,8 +301,6 @@ def _get_residue_number(residue: gemmi.Residue) -> int | None:
 
 
 def _get_insertion_code(residue: gemmi.Residue) -> str:
-    """Return the residue insertion code if available."""
-
     insertion_code = getattr(residue.seqid, "icode", "")
 
     if insertion_code is None:
@@ -334,8 +310,6 @@ def _get_insertion_code(residue: gemmi.Residue) -> str:
 
 
 def _get_atom_serial(atom: gemmi.Atom) -> int | None:
-    """Return the atom serial number if available."""
-
     atom_serial = getattr(atom, "serial", None)
 
     if atom_serial is None:
@@ -344,9 +318,7 @@ def _get_atom_serial(atom: gemmi.Atom) -> int | None:
     return int(atom_serial)
 
 
-def _clean_altloc(altloc: str) -> str:
-    """Return a clean alternate-location identifier."""
-
+def _clean_altloc(altloc: str | None) -> str:
     if altloc is None:
         return ""
 
@@ -358,29 +330,11 @@ def _clean_altloc(altloc: str) -> str:
     return cleaned
 
 
-def _get_record_type(residue: gemmi.Residue) -> str:
-    """
-    Return ATOM or HETATM for a residue.
-
-    Gemmi stores this information at residue level through het_flag.
-    """
-
-    het_flag = str(getattr(residue, "het_flag", "")).strip().upper()
-
-    if het_flag == "H":
-        return "HETATM"
-
-    return "ATOM"
+def _is_hetatm(residue: gemmi.Residue) -> bool:
+    return str(getattr(residue, "het_flag", "")).strip().upper() == "H"
 
 
 def _none_if_zero(value: float) -> float | None:
-    """
-    Convert zero cell values to None.
-
-    Some malformed or non-crystallographic inputs may not have useful unit-cell
-    values.
-    """
-
     value = float(value)
 
     if value == 0.0:

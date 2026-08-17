@@ -1,19 +1,15 @@
-"""Selection of atom sites used for protein Bnet calculations.
-
-Protein Bnet is calculated from the BDamage values of Asp/Glu side-chain
-carboxyl oxygen atoms. This module connects RABDAM's prepared atoms and
-per-atom BDamage results to the raw Bnet metric calculation.
-"""
+"""Select protein atoms used in the Bnet calculation."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
 from rabdam.bdamage.score import BDamageAtomResult, BDamageScoreResult
 from rabdam.structure.models import PreparedAtom, PreparedStructure
 
-
+# Asp/Glu carboxyl oxygens are used because decarboxylation makes them
+# established protein radiation-damage markers.
 ASPARTATE_BNET_RESIDUES = frozenset({"ASP", "DAS"})
 GLUTAMATE_BNET_RESIDUES = frozenset({"GLU", "DGL"})
 
@@ -22,28 +18,12 @@ GLUTAMATE_BNET_ATOMS = frozenset({"OE1", "OE2"})
 
 
 class BnetSiteSelectionError(ValueError):
-    """Raised when RABDAM cannot select Bnet sites from BDamage results."""
+    """Report invalid input to protein Bnet-site selection."""
 
 
 @dataclass(frozen=True, slots=True)
 class BnetSite:
-    """One atom used in the protein Bnet calculation.
-
-    source_atom_index:
-        Zero-based reader index of the selected asymmetric-unit atom.
-
-    bdamage_atom_index:
-        One-based position of this atom in the BDamage selected-atom order.
-
-    atom_serial:
-        Atom serial number from the input structure, when available.
-
-    chain_id, residue_name, residue_number, insertion_code, atom_name:
-        Structure identifiers copied from the input atom record.
-
-    bdamage:
-        Per-atom BDamage value for this Bnet site.
-    """
+    """Store the identity and BDamage value of one protein Bnet site."""
 
     source_atom_index: int
     bdamage_atom_index: int
@@ -58,14 +38,13 @@ class BnetSite:
 
 @dataclass(frozen=True, slots=True)
 class ProteinBnetSiteSelection:
-    """Selected protein Bnet sites and their BDamage values."""
+    """Store selected protein Bnet sites in prepared-atom order."""
 
     sites: tuple[BnetSite, ...]
 
     @property
     def bdamage_values(self) -> tuple[float, ...]:
-        """Return the BDamage values for the selected Bnet sites."""
-
+        """Return site BDamage values in selection order."""
         return tuple(site.bdamage for site in self.sites)
 
 
@@ -74,13 +53,12 @@ def select_protein_bnet_sites(
     prepared_structure: PreparedStructure,
     bdamage_score_result: BDamageScoreResult,
 ) -> ProteinBnetSiteSelection:
-    """Select Asp/Glu carboxyl oxygen atoms for protein Bnet.
+    """Select Asp/Glu carboxyl oxygens from aligned BDamage results.
 
-    The selected atoms and BDamage results are expected to be in the same
-    selected-atom order. Identity is checked by source atom index and atom
-    serial before selecting Bnet sites.
+    Raises:
+        BnetSiteSelectionError: If selected atoms and results differ in count or
+            identity, or if a selected site has a non-finite BDamage value.
     """
-
     selected_atoms = tuple(prepared_structure.selected_atoms)
     bdamage_results = tuple(bdamage_score_result.atom_results)
 
@@ -136,8 +114,12 @@ def select_protein_bnet_sites(
 def all_selected_bdamage_values(
     bdamage_score_result: BDamageScoreResult,
 ) -> tuple[float, ...]:
-    """Return all selected-atom BDamage values from a BDamage score result."""
+    """Return all finite BDamage values in result order.
 
+    Raises:
+        BnetSiteSelectionError: If the result is empty or contains a non-finite
+            BDamage value.
+    """
     values: list[float] = []
 
     for atom_result in bdamage_score_result.atom_results:
@@ -161,8 +143,7 @@ def all_selected_bdamage_values(
 
 
 def is_protein_bnet_site(*, residue_name: str, atom_name: str) -> bool:
-    """Return whether an atom is an Asp/Glu carboxyl oxygen Bnet site."""
-
+    """Return whether an atom is a recognized Asp/Glu carboxyl oxygen."""
     residue_name = residue_name.strip().upper()
     atom_name = atom_name.strip().upper()
 
@@ -180,8 +161,6 @@ def _validate_atom_matches_bdamage_result(
     atom: PreparedAtom,
     bdamage_result: BDamageAtomResult,
 ) -> None:
-    """Validate that a prepared atom and BDamage result refer to the same atom."""
-
     if atom.record.source_atom_index != bdamage_result.source_atom_index:
         raise BnetSiteSelectionError(
             "Selected atom and BDamage result refer to different source atoms: "

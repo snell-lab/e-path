@@ -1,1 +1,1 @@
-#init file
+"""Crystallographic environment construction package."""

@@ -1,24 +1,15 @@
-"""
-Packing-density calculation for BDamage.
-
-The trimmed crystal block contains the local neighbour cloud around the selected
-asymmetric-unit atoms. For each selected atom, packing density is the number of
-trimmed crystal atoms whose Cartesian distance from that selected atom is less
-than the packing-density threshold, minus one to remove the selected atom's
-central-cell copy.
-
-This module performs the exact distance-counting step after the broader crystal
-block has already been reduced by crystal.trim.
-"""
+"""Calculate packing-density neighbour counts for selected atoms."""
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib import import_module
-import math
+from typing import Protocol, cast
 
 import numpy as np
+from numpy.typing import NDArray
 
 from rabdam.crystal.translate import TranslatedAtom
 from rabdam.crystal.trim import ArrayTrimmedCrystalBlock, TrimmedNeighbourBlock
@@ -26,28 +17,27 @@ from rabdam.structure.models import PreparedAtom, PreparedStructure
 
 
 class PackingDensityError(ValueError):
-    """Raised when RABDAM cannot calculate packing density."""
+    """Report invalid input to a packing-density calculation."""
+
+
+class _KDTree(Protocol):
+    def query_ball_point(
+        self,
+        points: NDArray[np.float64],
+        radius: float,
+        *,
+        return_length: bool,
+        workers: int,
+    ) -> NDArray[np.int64]: ...
+
+
+class _KDTreeFactory(Protocol):
+    def __call__(self, data: NDArray[np.float64]) -> _KDTree: ...
 
 
 @dataclass(frozen=True, slots=True)
 class PackingDensityAtomResult:
-    """
-    Packing-density result for one selected asymmetric-unit atom.
-
-    packing_density_atom_index:
-        One-based position of this atom in the packing-density result list.
-
-    source_atom_index:
-        Zero-based reader index of the selected asymmetric-unit atom.
-
-    atom_serial:
-        Atom serial number from the input structure, when available.
-
-    neighbour_count:
-        Number of trimmed crystal atoms within the packing-density threshold of
-        this selected atom, after subtracting one for the central-cell copy of
-        the atom itself.
-    """
+    """Store the neighbour count and source identity for one selected atom."""
 
     packing_density_atom_index: int
     source_atom_index: int
@@ -57,21 +47,7 @@ class PackingDensityAtomResult:
 
 @dataclass(frozen=True, slots=True)
 class PackingDensityResult:
-    """
-    Packing-density counts for the selected BDamage atoms.
-
-    atom_results:
-        One result per selected asymmetric-unit atom, in selected-atom order.
-
-    packing_density_threshold:
-        Distance cutoff in Angstroms used for neighbour counting.
-
-    selected_atom_count:
-        Number of selected asymmetric-unit atoms that were scored.
-
-    neighbour_atom_count:
-        Number of trimmed crystal atoms searched for each selected atom.
-    """
+    """Store per-atom counts and summary values for a neighbour search."""
 
     atom_results: tuple[PackingDensityAtomResult, ...]
     packing_density_threshold: float
@@ -85,14 +61,11 @@ def calculate_bdamage_packing_density(
     trimmed_block: TrimmedNeighbourBlock,
     packing_density_threshold: float,
 ) -> PackingDensityResult:
-    """
-    Calculate packing density for the BDamage-selected atoms.
+    """Calculate packing density for a prepared structure and neighbour block.
 
-    This convenience wrapper uses prepared_structure.selected_atoms as the atoms
-    that receive packing-density counts and the trimmed block as the local
-    crystal neighbour cloud.
+    The implementation accepts either materialized translated atoms or the
+    row-aligned array representation produced by fused crystal trimming.
     """
-
     if isinstance(trimmed_block, ArrayTrimmedCrystalBlock):
         return calculate_packing_density_from_arrays(
             selected_atoms=prepared_structure.selected_atoms,
@@ -118,14 +91,22 @@ def calculate_packing_density(
     neighbour_atoms: Iterable[TranslatedAtom],
     packing_density_threshold: float,
 ) -> PackingDensityResult:
-    """
-    Count neighbour atoms within packing_density_threshold of each selected atom.
-    """
+    """Count translated neighbours strictly within a distance threshold.
 
-    if (
-        not math.isfinite(packing_density_threshold)
-        or packing_density_threshold <= 0
-    ):
+    Args:
+        selected_atoms: Atoms that receive packing-density values.
+        neighbour_atoms: Candidate crystal neighbours in Cartesian angstroms.
+        packing_density_threshold: Exclusive neighbour radius in angstroms.
+
+    Returns:
+        Counts aligned with selected-atom order. Each count excludes the atom's
+        own identity copy in the central unit cell.
+
+    Raises:
+        PackingDensityError: If inputs are empty, the threshold is invalid, or a
+            selected atom's central-cell identity copy cannot be verified.
+    """
+    if not math.isfinite(packing_density_threshold) or packing_density_threshold <= 0:
         raise PackingDensityError(
             "packing_density_threshold must be a finite positive number, "
             f"got {packing_density_threshold!r}."
@@ -177,14 +158,27 @@ def calculate_packing_density_from_arrays(
     translation_offsets: np.ndarray,
     packing_density_threshold: float,
 ) -> PackingDensityResult:
-    """
-    Count neighbours using array-backed retained translated atoms.
-    """
+    """Count neighbours from row-aligned crystal arrays.
 
-    if (
-        not math.isfinite(packing_density_threshold)
-        or packing_density_threshold <= 0
-    ):
+    Args:
+        selected_atoms: Atoms that receive packing-density values.
+        neighbour_coordinates: Cartesian coordinates with shape `(n, 3)` in
+            angstroms.
+        source_atom_indices: Source indices with shape `(n,)`.
+        is_identity_symmetry_operation: Identity-operation flags with shape
+            `(n,)`.
+        translation_offsets: Integer unit-cell offsets with shape `(n, 3)`.
+        packing_density_threshold: Exclusive neighbour radius in angstroms.
+
+    Returns:
+        Counts aligned with selected-atom order, excluding each atom's verified
+        central-cell identity copy.
+
+    Raises:
+        PackingDensityError: If arrays are empty or misaligned, numeric input is
+            invalid, or a selected atom's identity copy cannot be verified.
+    """
+    if not math.isfinite(packing_density_threshold) or packing_density_threshold <= 0:
         raise PackingDensityError(
             "packing_density_threshold must be a finite positive number, "
             f"got {packing_density_threshold!r}."
@@ -227,14 +221,10 @@ def _calculate_packing_density_with_ckdtree(
     translation_offsets: np.ndarray,
     packing_density_threshold: float,
 ) -> PackingDensityResult:
-    """
-    Count neighbours with scipy.spatial.cKDTree.
-    """
-
     threshold = float(packing_density_threshold)
     threshold_squared = threshold**2
     selected_coordinates = _selected_atom_coordinates(selected_atoms)
-    _validate_array_self_copies_are_counted(
+    _validate_self_copies_are_counted(
         selected_atoms=selected_atoms,
         selected_coordinates=selected_coordinates,
         neighbour_coordinates=neighbour_coordinates,
@@ -244,7 +234,12 @@ def _calculate_packing_density_with_ckdtree(
         threshold_squared=threshold_squared,
     )
 
+    # A KD-tree keeps the neighbour search near-linear in the size of the
+    # neighbour cloud, which is far too large for pairwise distance checks.
     tree = _build_ckdtree(neighbour_coordinates)
+
+    # query_ball_point counts points at exactly the radius, but packing density
+    # counts only atoms strictly inside the threshold, so drop one ULP.
     strict_radius = float(np.nextafter(threshold, 0.0))
     raw_counts = tree.query_ball_point(
         selected_coordinates,
@@ -252,7 +247,15 @@ def _calculate_packing_density_with_ckdtree(
         return_length=True,
         workers=-1,
     )
-    neighbour_counts = np.asarray(raw_counts, dtype=np.int64).reshape(-1) - 1
+    # The identity copy is returned by the radius query but is not one of the
+    # atom's neighbours.
+    neighbour_counts = (
+        np.reshape(
+            np.asarray(raw_counts, dtype=np.int64),
+            (-1,),
+        )
+        - 1
+    )
 
     return PackingDensityResult(
         atom_results=tuple(
@@ -273,9 +276,7 @@ def _calculate_packing_density_with_ckdtree(
     )
 
 
-def _build_ckdtree(neighbour_coordinates: np.ndarray):
-    """Return a SciPy cKDTree for neighbour coordinates."""
-
+def _build_ckdtree(neighbour_coordinates: NDArray[np.float64]) -> _KDTree:
     try:
         scipy_spatial = import_module("scipy.spatial")
     except ImportError as error:
@@ -283,7 +284,10 @@ def _build_ckdtree(neighbour_coordinates: np.ndarray):
             "SciPy is required for packing-density calculation."
         ) from error
 
-    ckdtree_class = getattr(scipy_spatial, "cKDTree", None)
+    ckdtree_class = cast(
+        _KDTreeFactory | None,
+        getattr(scipy_spatial, "cKDTree", None),
+    )
     if ckdtree_class is None:
         raise PackingDensityError(
             "SciPy is installed but scipy.spatial.cKDTree is unavailable."
@@ -295,18 +299,13 @@ def _build_ckdtree(neighbour_coordinates: np.ndarray):
 def _selected_atom_coordinates(
     selected_atoms: tuple[PreparedAtom, ...],
 ) -> np.ndarray:
-    """Return selected-atom coordinates as a float64 array."""
-
     return np.asarray(
-        [
-            (atom.record.x, atom.record.y, atom.record.z)
-            for atom in selected_atoms
-        ],
+        [(atom.record.x, atom.record.y, atom.record.z) for atom in selected_atoms],
         dtype=np.float64,
     )
 
 
-def _validate_array_self_copies_are_counted(
+def _validate_self_copies_are_counted(
     *,
     selected_atoms: tuple[PreparedAtom, ...],
     selected_coordinates: np.ndarray,
@@ -316,8 +315,7 @@ def _validate_array_self_copies_are_counted(
     translation_offsets: np.ndarray,
     threshold_squared: float,
 ) -> None:
-    """Verify each selected atom's central-cell self copy can be subtracted."""
-
+    """Verify each selected atom has a counted central-cell identity image."""
     if not math.isfinite(threshold_squared) or threshold_squared < 0:
         raise PackingDensityError(
             "threshold_squared must be a finite non-negative number, "
@@ -325,8 +323,7 @@ def _validate_array_self_copies_are_counted(
         )
 
     central_cell_identity_indices = np.flatnonzero(
-        is_identity_symmetry_operation
-        & np.all(translation_offsets == 0, axis=1)
+        is_identity_symmetry_operation & np.all(translation_offsets == 0, axis=1)
     )
     candidate_indices_by_source_atom: dict[int, list[int]] = {}
     for neighbour_index in central_cell_identity_indices:
@@ -375,12 +372,9 @@ def _validate_neighbour_arrays(
     is_identity_symmetry_operation: np.ndarray,
     translation_offsets: np.ndarray,
 ) -> None:
-    """Validate array-backed neighbour-cloud shapes."""
-
+    """Validate row counts and shapes across neighbour-cloud arrays."""
     if coordinates.ndim != 2 or coordinates.shape[1] != 3:
-        raise PackingDensityError(
-            "neighbour_coordinates must have shape (n, 3)."
-        )
+        raise PackingDensityError("neighbour_coordinates must have shape (n, 3).")
 
     neighbour_count = coordinates.shape[0]
     if neighbour_count == 0:
@@ -395,8 +389,7 @@ def _validate_neighbour_arrays(
 
     if is_identity_symmetry_operation.shape != (neighbour_count,):
         raise PackingDensityError(
-            "is_identity_symmetry_operation must have shape (n,) matching "
-            "coordinates."
+            "is_identity_symmetry_operation must have shape (n,) matching coordinates."
         )
 
     if translation_offsets.shape != (neighbour_count, 3):
@@ -405,27 +398,8 @@ def _validate_neighbour_arrays(
         )
 
 
-def squared_distance_to_translated_atom(
-    *,
-    selected_x: float,
-    selected_y: float,
-    selected_z: float,
-    neighbour_atom: TranslatedAtom,
-) -> float:
-    """
-    Return squared Cartesian distance from a selected atom to a neighbour atom.
-    """
-
-    dx = selected_x - neighbour_atom.x
-    dy = selected_y - neighbour_atom.y
-    dz = selected_z - neighbour_atom.z
-
-    return float(dx * dx + dy * dy + dz * dz)
-
-
 def packing_density_counts_as_tuple(
     result: PackingDensityResult,
 ) -> tuple[int, ...]:
-    """Return only neighbour counts from a packing-density result."""
-
+    """Return neighbour counts in selected-atom order."""
     return tuple(atom_result.neighbour_count for atom_result in result.atom_results)

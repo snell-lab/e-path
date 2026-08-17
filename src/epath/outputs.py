@@ -12,6 +12,7 @@ from epath.plots import plot_z_hist
 from epath.selection import EpathSelectionResult
 from epath.structures import PdbBFactorMode, write_structure_outputs
 from epath.tables import write_cluster_csv, write_combined_atom_csv
+from rabdam.bnet.workflow import BnetWorkflowResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,7 @@ def write_epath_outputs(
     minimum_cluster_size: int,
     options: EpathOutputWorkflowOptions,
     histogram_bins: int,
+    bnet_workflow_result: BnetWorkflowResult | None = None,
 ) -> EpathWorkflowOutputFiles:
     """Write enabled E-path artifacts and return their paths."""
 
@@ -109,6 +111,7 @@ def write_epath_outputs(
             clusters=clusters,
             minimum_cluster_size=minimum_cluster_size,
             output_files=output_files,
+            bnet_workflow_result=bnet_workflow_result,
         )
 
     return output_files
@@ -123,6 +126,7 @@ def write_summary_txt(
     clusters: Sequence[EpathCluster],
     minimum_cluster_size: int,
     output_files: EpathWorkflowOutputFiles,
+    bnet_workflow_result: BnetWorkflowResult | None = None,
 ) -> Path:
     """Write a persistent human-readable E-path analysis summary."""
 
@@ -182,6 +186,9 @@ def write_summary_txt(
                 f"Z threshold={_number(threshold.z_threshold)}"
             )
 
+    lines.extend(("", "RABDAM Bnet results", "--------------------"))
+    lines.extend(_bnet_summary_lines(bnet_workflow_result))
+
     lines.extend(
         (
             "",
@@ -215,6 +222,48 @@ def write_summary_txt(
         lines.append("None.")
 
     return _write_text(output_path, lines)
+
+
+def _bnet_summary_lines(
+    workflow_result: BnetWorkflowResult | None,
+) -> tuple[str, ...]:
+    if workflow_result is None:
+        return ("Bnet: not calculated", "Bnet percentile: not calculated")
+
+    bnet_result = workflow_result.bnet_result
+    if bnet_result is None:
+        reason = workflow_result.bnet_unavailable_reason or "not calculated"
+        return (
+            f"Bnet: unavailable ({reason})",
+            "Bnet percentile: unavailable (raw Bnet is unavailable)",
+        )
+
+    lines = [
+        f"Protein Bnet sites: {bnet_result.site_count}",
+        f"Raw protein Bnet: {_number(bnet_result.bnet)}",
+    ]
+    percentile = workflow_result.percentile_result
+    if percentile is None:
+        reason = workflow_result.percentile_unavailable_reason or "not calculated"
+        lines.append(f"Bnet percentile: unavailable ({reason})")
+        return tuple(lines)
+
+    lines.extend(
+        (
+            f"Bnet percentile: {_number(percentile.percentile_percent)}%",
+            (
+                f"Bnet reference: {percentile.reference_database_id} "
+                f"({percentile.reference_entry_count} entries)"
+            ),
+            f"Resolution used: {_number(percentile.resolution_angstrom)} A",
+            (
+                f"Local reference set: {percentile.local_reference_count} entries, "
+                f"{_number(percentile.local_resolution_min)}-"
+                f"{_number(percentile.local_resolution_max)} A"
+            ),
+        )
+    )
+    return tuple(lines)
 
 
 def _output_file_entries(

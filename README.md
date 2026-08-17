@@ -17,9 +17,10 @@ number of non-hydrogen crystal-environment atoms within 7.0 A.
 
 The E-path pipeline builds on these per-atom BDamage values with Z-score or
 percentile selection, 4 A connectivity clustering, and minimum-spanning-tree
-(MST) geometry metrics. Bnet code remains in the repository because Bnet and
-Bnet percentile are reported in the PNAS analysis, but it is not currently
-hooked into the default CLI pipeline.
+(MST) geometry metrics. The complete RABDAM stage also calculates raw protein
+Bnet and a resolution-matched Bnet percentile. ePath consumes BDamage only;
+Bnet and its percentile are reported alongside the ePath results but do not
+change ePath selection or clustering.
 
 ## Install
 
@@ -70,6 +71,12 @@ PDB ID or input filename stem as the output prefix. A normal run writes:
 - `*_selected.pdb`: selected E-path atoms.
 - `*_zscores.png`: BDamage Z-score histogram.
 - `*_summary.txt`: persistent human-readable analysis summary.
+
+The terminal and persistent summaries include raw protein Bnet and, when the
+input contains resolution metadata, its percentile against the bundled
+resolution-matched reference database. If a structure has no usable Asp/Glu
+carboxyl-oxygen sites or no resolution, the summaries explain why the
+corresponding RABDAM value is unavailable without stopping ePath.
 
 Use `--output-dir` to choose another output directory or `--output-prefix` for
 a single structure. `--no-csv`, `--no-pdb`, `--no-plot`, and `--no-reports`
@@ -141,8 +148,10 @@ The rewrite improves practical use in several ways:
 - Cleaner automation: the CLI uses
   `epath STRUCTURE_INPUT [STRUCTURE_INPUT ...] [options]`, supports simple
   batch runs, and writes compact per-atom CSVs plus terminal summaries.
-- Bnet retained for later: Bnet and reference-database modules remain under
-  `src/rabdam/bnet/`, but are not currently hooked into the default CLI.
+- Full damage context: raw protein Bnet and its resolution-matched percentile
+  are calculated with the bundled reference database and reported alongside
+  E-path results. Their scientific defaults are fixed by the integrated RABDAM
+  workflow rather than exposed as additional E-path settings.
 
 These improvements intentionally remove some RABDAM 2 application features.
 E-path does not support the legacy text input file, `-f`, `-i`, `-r`
@@ -152,8 +161,10 @@ BDamage-colored coordinate files, or restartable dataframe outputs.
 ## Limits And Assumptions
 
 The CLI expects a single-model crystallographic structure with unit-cell and
-space-group metadata. BDamage relies on per-atom B-factors; structures with
-grouped or otherwise non-comparable B-factors should be interpreted with care.
+space-group metadata. BDamage and Bnet rely on per-atom B-factors; structures
+with grouped or otherwise non-comparable B-factors should be interpreted with
+care. Bnet and Bnet percentiles are intended for protein crystal structures
+collected at cryogenic temperatures.
 
 ## Citations
 
@@ -162,3 +173,6 @@ J Appl Cryst 51, 552-559. https://doi.org/10.1107/S1600576718002509
 
 BDamage: Gerstel M, Deane CM & Garman EF (2015).
 J Synchrotron Radiat 22, 201-212. https://doi.org/10.1107/S1600577515002131
+
+Bnet and Bnet percentile: Shelley KL & Garman EF (2022).
+Nat Commun 13, 1314. https://doi.org/10.1038/s41467-022-28934-0

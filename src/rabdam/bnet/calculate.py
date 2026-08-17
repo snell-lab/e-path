@@ -1,15 +1,11 @@
-"""High-level protein Bnet calculation.
-
-This module connects RABDAM's prepared structure and per-atom BDamage results
-to the raw Bnet metric calculation.
-"""
+"""Calculate raw protein Bnet from prepared structures and BDamage scores."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from rabdam.bdamage.score import BDamageScoreResult
 import rabdam.bnet.metric as bnet_metric
+from rabdam.bdamage.score import BDamageScoreResult
 from rabdam.bnet.metric import BnetResult
 from rabdam.bnet.sites import (
     BnetSite,
@@ -22,50 +18,44 @@ from rabdam.structure.models import PreparedStructure
 
 
 class ProteinBnetCalculationError(ValueError):
-    """Raised when protein Bnet cannot be calculated."""
+    """Report an invalid or unsuccessful protein Bnet calculation."""
 
 
 @dataclass(frozen=True, slots=True)
 class ProteinBnetResult:
-    """Protein Bnet result and the sites used to calculate it."""
+    """Store a protein Bnet metric and its selected damage-sensitive sites."""
 
     metric: BnetResult
     site_selection: ProteinBnetSiteSelection
 
     @property
     def bnet(self) -> float:
-        """Return the raw protein Bnet value."""
-
+        """Return the raw Bnet ratio."""
         return self.metric.bnet
 
     @property
     def median_bdamage(self) -> float:
-        """Return the all-selected-atom median BDamage value."""
-
+        """Return the all-selected-atom median BDamage."""
         return self.metric.median_bdamage
 
     @property
-    def left_area(self) -> float:
-        """Return the below-median KDE area."""
-
-        return self.metric.left_area
+    def below_median_area(self) -> float:
+        """Return KDE area assigned below the median BDamage."""
+        return self.metric.below_median_area
 
     @property
-    def right_area(self) -> float:
-        """Return the above-median KDE area."""
-
-        return self.metric.right_area
+    def above_median_area(self) -> float:
+        """Return KDE area assigned at or above the median BDamage."""
+        return self.metric.above_median_area
 
     @property
     def site_count(self) -> int:
-        """Return the number of selected protein Bnet sites."""
-
+        """Return the number of damage-sensitive sites."""
         return len(self.sites)
 
     @property
     def sites(self) -> tuple[BnetSite, ...]:
-        """Return the selected protein Bnet sites."""
-
+        """Return selected sites in prepared-atom order."""
         return self.site_selection.sites
 
 
@@ -74,17 +64,18 @@ def calculate_protein_bnet(
     prepared_structure: PreparedStructure,
     bdamage_score_result: BDamageScoreResult,
 ) -> ProteinBnetResult:
-    """Calculate raw protein Bnet from a prepared structure and BDamage result.
+    """Calculate protein Bnet from aligned prepared atoms and BDamage scores.
 
-    This function:
-      1. collects all selected-atom BDamage values,
-      2. selects Asp/Glu carboxyl oxygen Bnet sites,
-      3. calculates the raw Bnet metric.
+    The KDE is fit to Asp/Glu carboxyl-oxygen BDamage values, while its split
+    point is the median BDamage across all selected atoms.
 
-    Bnet-percentile is intentionally not calculated here. It requires a
-    reference database and resolution-dependent comparison step.
+    Returns:
+        The raw Bnet metric and the sites used to calculate it.
+
+    Raises:
+        ProteinBnetCalculationError: If atoms and scores do not align, no usable
+            sites exist, or the Bnet metric cannot be calculated.
     """
-
     try:
         all_bdamage_values = all_selected_bdamage_values(bdamage_score_result)
         site_selection = select_protein_bnet_sites(

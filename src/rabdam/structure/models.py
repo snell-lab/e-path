@@ -1,9 +1,4 @@
-"""
-Shared structure-preparation models for RABDAM.
-
-This module contains dataclasses and enums used across the structure package.
-Keeping them here prevents circular imports between the preparation steps.
-"""
+"""Define shared structure-preparation data models and options."""
 
 from dataclasses import dataclass
 
@@ -11,21 +6,23 @@ from rabdam.input.reader import AtomRecord, StructureMetadata
 
 
 class StructurePreparationError(ValueError):
-    """Raised when RABDAM cannot prepare structure data for calculation."""
+    """Report invalid input to the structure-preparation pipeline."""
 
 
 @dataclass(frozen=True, slots=True)
 class StructurePreparationOptions:
-    """
-    Options controlling structure preparation.
-    """
+    """Configure atom cleaning, classification, and BDamage selection."""
 
+    # Hydrogens and unusable B-factor records cannot contribute to the
+    # published BDamage metric.
     remove_hydrogens: bool = True
     require_valid_occupancy: bool = True
     require_positive_b_factor: bool = True
     resolve_altlocs: bool = True
 
     include_hetatm_in_selection: bool = False
+    # Modified amino acids are often encoded as HETATM but still belong to the
+    # protein selection.
     include_protein_like_hetatm_in_selection: bool = True
     include_nucleic_acid_in_selection: bool = False
     require_protein_selection: bool = True
@@ -39,9 +36,7 @@ class StructurePreparationOptions:
 
 @dataclass(frozen=True, slots=True)
 class PreparedAtom:
-    """
-    An atom record with structure-preparation annotations.
-    """
+    """Pair an input atom record with its structural classifications."""
 
     record: AtomRecord
     is_hydrogen: bool
@@ -53,9 +48,7 @@ class PreparedAtom:
 
 @dataclass(frozen=True, slots=True)
 class StructurePreparationReport:
-    """
-    Counts and warnings produced during structure preparation.
-    """
+    """Summarize atom counts, removals, and warnings from preparation."""
 
     input_atom_count: int
     cleaned_atom_count: int
@@ -70,21 +63,7 @@ class StructurePreparationReport:
 
 @dataclass(frozen=True, slots=True)
 class PreparedStructure:
-    """
-    Prepared structure data for later RABDAM stages.
-
-    cleaned_atoms:
-        All valid cleaned atoms retained from the asymmetric unit.
-
-    selected_atoms:
-        The subset of cleaned atoms selected for BDamage calculation.
-
-    metadata:
-        Structure-level metadata from the reader.
-
-    report:
-        Counts and warnings from the preparation stage.
-    """
+    """Store cleaned atoms, the BDamage selection, and source metadata."""
 
     cleaned_atoms: tuple[PreparedAtom, ...]
     selected_atoms: tuple[PreparedAtom, ...]

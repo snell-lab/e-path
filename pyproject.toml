@@ -22,7 +22,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-"rabdam.bnet" = ["database/database.csv"]
+"rabdam.bnet" = ["database/database.csv", "database/database.manifest.json"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

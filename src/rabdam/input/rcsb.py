@@ -1,9 +1,4 @@
-"""
-Download RCSB/PDB structure files for RABDAM.
-
-This module takes a resolved RCSB/PDB ID input and downloads the corresponding
-mmCIF file to a local downloads directory.
-"""
+"""Download and cache mmCIF structures from RCSB."""
 
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -21,16 +16,17 @@ DEFAULT_RCSB_DOWNLOAD_DIR = Path("downloads") / "rcsb"
 
 
 class RcsbDownloadError(InputResolutionError):
-    """Raised when RABDAM cannot download a structure from RCSB."""
+    """Report a structure that cannot be downloaded from RCSB."""
 
 
 class RcsbBatchDownloadError(RcsbDownloadError):
-    """Raised when one or more structures fail during a batch download."""
+    """Collect RCSB download failures from a batch of inputs."""
 
     def __init__(
         self,
         errors: list[tuple[ResolvedStructureInput, RcsbDownloadError]],
     ):
+        """Initialize the error from resolved-input-and-failure pairs."""
         self.errors = errors
         summary = "\n".join(
             f"- {resolved_input.original_input!r}: {error}"
@@ -47,27 +43,20 @@ def download_rcsb_mmcif(
     download_dir: Path | str = DEFAULT_RCSB_DOWNLOAD_DIR,
     overwrite: bool = False,
 ) -> ResolvedStructureInput:
+    """Download and cache an RCSB entry as an mmCIF file.
+
+    Args:
+        resolved_input: RCSB identifier produced by the input resolver.
+        download_dir: Directory for cached mmCIF files.
+        overwrite: Whether to replace an existing nonempty cache file.
+
+    Returns:
+        A local-file input that retains the original RCSB structure ID.
+
+    Raises:
+        RcsbDownloadError: If the input is not an RCSB ID or the download fails,
+            returns no data, or identifies no RCSB entry.
     """
-    Download an RCSB/PDB structure as an mmCIF file.
-
-    Parameters
-    ----------
-    resolved_input:
-        A ResolvedStructureInput with source_type == RCSB_ID.
-
-    download_dir:
-        Directory where downloaded mmCIF files should be saved.
-
-    overwrite:
-        If False, reuse an existing downloaded file.
-        If True, download again even if the file already exists.
-
-    Returns
-    -------
-    ResolvedStructureInput
-        A new resolved input pointing to the downloaded local mmCIF file.
-    """
-
     if resolved_input.source_type != StructureSourceType.RCSB_ID:
         raise RcsbDownloadError(
             "download_rcsb_mmcif expected an RCSB_ID input, "
@@ -128,13 +117,7 @@ def ensure_local_structure_file(
     download_dir: Path | str = DEFAULT_RCSB_DOWNLOAD_DIR,
     overwrite: bool = False,
 ) -> ResolvedStructureInput:
-    """
-    Ensure a resolved structure input points to a local file.
-
-    Local file inputs are returned unchanged.
-    RCSB/PDB ID inputs are downloaded as mmCIF files.
-    """
-
+    """Return a local input, downloading an RCSB entry when necessary."""
     if resolved_input.is_local_file:
         return resolved_input
 
@@ -156,14 +139,11 @@ def ensure_local_structure_files(
     download_dir: Path | str = DEFAULT_RCSB_DOWNLOAD_DIR,
     overwrite: bool = False,
 ) -> list[ResolvedStructureInput]:
-    """
-    Ensure multiple resolved structure inputs point to local files.
+    """Ensure a batch is local while collecting all download failures.
 
-    Local file inputs are returned unchanged.
-    RCSB/PDB ID inputs are downloaded as mmCIF files.
-    If any inputs fail, all inputs are attempted before raising a batch error.
+    Raises:
+        RcsbBatchDownloadError: If any input cannot be downloaded.
     """
-
     local_inputs: list[ResolvedStructureInput] = []
     errors: list[tuple[ResolvedStructureInput, RcsbDownloadError]] = []
 
@@ -190,12 +170,8 @@ def _as_downloaded_local_input(
     resolved_input: ResolvedStructureInput,
     local_path: Path,
 ) -> ResolvedStructureInput:
-    """
-    Convert a downloaded RCSB input into a local-file resolved input.
-
-    The original RCSB ID is preserved in structure_id.
-    """
-
+    # structure_id is carried over so later stages can still report which RCSB
+    # entry the downloaded file came from.
     return ResolvedStructureInput(
         original_input=resolved_input.original_input,
         source_type=StructureSourceType.LOCAL_FILE,

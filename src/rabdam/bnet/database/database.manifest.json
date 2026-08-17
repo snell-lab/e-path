@@ -1,0 +1,34 @@
+{
+  "artifact": "database/reference/database.csv",
+  "attribution": "Derived from PDB-REDO databank entries; credit PDB-REDO and the original authors of the structural data.",
+  "build": {
+    "documented_command": "./build_bnet_database downloads/pdb-redo --output-dir database/output",
+    "exact_invocation_retained": false,
+    "settings": {
+      "allow_nucleic_acid": true,
+      "fetch_rcsb_temperatures_when_needed": true,
+      "max_asp_glu_side_chain_total_occupancy_below_one": 0,
+      "max_r_free_exclusive": 0.4,
+      "max_resolution_angstrom": 3.5,
+      "min_asp_glu_carboxyl_oxygen_count": 20,
+      "require_data_json": true,
+      "require_per_atom_b_factors": true,
+      "require_protein": true,
+      "require_single_model": true,
+      "require_xray": true,
+      "temperature_range_k": [
+        80.0,
+        120.0
+      ]
+    }
+  },
+  "database_id": "pdb_redo_8_20_202606_strict_cryo_bnet",
+  "eligibility_policy_id": "rabdam2_strict_cryo_v1",
+  "entry_count": 124948,
+  "metric_kind": "protein_cryo_asp_glu_bnet",
+  "pdb_redo_snapshot": "8.20 (downloaded 2026-06)",
+  "schema_version": "1.0",
+  "sha256": "56f15160ca8e1c5cc598efcc5e229e02d9ef3fcde15eb5c23758f3e0154d8ed3",
+  "source": "PDB-REDO databank snapshot 8.20",
+  "usage_policy": "https://pdb-redo.eu/license"
+}

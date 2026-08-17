@@ -1,20 +1,4 @@
-"""
-Resolve user-supplied structure inputs for RABDAM.
-
-This module takes raw user input such as:
-
-    "model.cif"
-    "model.pdb"
-    "1LYZ"
-
-and decides whether each input is a local structure file or an RCSB/PDB ID.
-
-Resolution order:
-1. If the input exists as a local file, treat it as a local file
-2. Otherwise, try a case-insensitive local filename match
-3. Otherwise, if it looks like a classic PDB ID, treat it as an RCSB/PDB ID
-4. Otherwise, raise a clear error
-"""
+"""Resolve structure inputs as local files or RCSB identifiers."""
 
 import os
 import re
@@ -25,32 +9,30 @@ from pathlib import Path
 
 
 class InputResolutionError(ValueError):
-    """Raised when RABDAM cannot understand or resolve a structure input."""
+    """Report a structure input that cannot be resolved."""
 
 
 class InputBatchResolutionError(InputResolutionError):
-    """Raised when one or more structure inputs fail during batch resolution."""
+    """Collect resolution failures from a batch of structure inputs."""
 
     def __init__(self, errors: list[tuple[str, InputResolutionError]]):
+        """Initialize the error from input-and-failure pairs."""
         self.errors = errors
-        summary = "\n".join(
-            f"- {raw_input!r}: {error}"
-            for raw_input, error in errors
-        )
+        summary = "\n".join(f"- {raw_input!r}: {error}" for raw_input, error in errors)
         super().__init__(
             "One or more structure inputs could not be resolved:\n" + summary
         )
 
 
 class StructureSourceType(str, Enum):
-    """Where the structure input comes from."""
+    """Identify whether a structure originated locally or from RCSB."""
 
     LOCAL_FILE = "local_file"
     RCSB_ID = "rcsb_id"
 
 
 class StructureFileFormat(str, Enum):
-    """Accepted structure file formats."""
+    """Identify a supported coordinate-file format."""
 
     MMCIF = "mmcif"
     PDB = "pdb"
@@ -58,11 +40,7 @@ class StructureFileFormat(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class ResolvedStructureInput:
-    """
-    A normalized description of one structure input.
-
-    For a local file, local_path will be set.
-    """
+    """Describe a validated local file or downloadable RCSB entry."""
 
     original_input: str
     source_type: StructureSourceType
@@ -72,25 +50,22 @@ class ResolvedStructureInput:
 
     @property
     def needs_download(self) -> bool:
-        """Return True if this input still needs to be downloaded."""
+        """Return whether the structure must be downloaded before reading."""
         return self.source_type == StructureSourceType.RCSB_ID
 
     @property
     def is_local_file(self) -> bool:
-        """Return True if this input points to an existing local file."""
+        """Return whether the resolved input names an existing local file."""
         return self.source_type == StructureSourceType.LOCAL_FILE
 
+
 def resolve_structure_input(raw_input: str) -> ResolvedStructureInput:
-    """
-    Resolve one user-supplied structure input.
+    """Resolve one input as a local coordinate file or classic PDB ID.
 
-    Resolution order:
-    1. If the input exists as a local path, treat it as a local file.
-    2. If not local, try a case-insensitive local filename match.
-    3. If not local, check whether it looks like a valid PDB ID.
-    4. Otherwise, raise a clear error.
+    Raises:
+        InputResolutionError: If the input is empty, ambiguous, unsupported, or
+            neither an existing file nor a valid four-character PDB ID.
     """
-
     cleaned_input = _clean_raw_input(raw_input)
     possible_path = _expand_path(cleaned_input)
 
@@ -123,12 +98,12 @@ def resolve_structure_input(raw_input: str) -> ResolvedStructureInput:
 def resolve_many_structure_inputs(
     raw_inputs: Sequence[str],
 ) -> list[ResolvedStructureInput]:
-    """
-    Resolve multiple structure inputs in a batch run.
+    """Resolve a batch of inputs while collecting all failures.
 
-    If any inputs fail, all inputs are attempted before raising a batch error.
+    Raises:
+        InputResolutionError: If no inputs are provided.
+        InputBatchResolutionError: If any individual input cannot be resolved.
     """
-
     if not raw_inputs:
         raise InputResolutionError("No structure inputs were provided.")
 
@@ -146,25 +121,19 @@ def resolve_many_structure_inputs(
 
     return resolved_inputs
 
+
 def is_valid_classic_pdb_id(value: str) -> bool:
-    """
-    Return True if value looks like a classic 4-character PDB ID.
-
-    Classic PDB IDs are four characters long and usually begin with a digit.
-    """
-
+    """Return whether a value is a classic four-character PDB identifier."""
     return bool(re.fullmatch(r"[0-9][A-Za-z0-9]{3}", value.strip()))
 
+
 def detect_structure_format_from_path(path: Path) -> StructureFileFormat:
-    """
-    Detect structure file format from a local file path.
+    """Detect a supported structure format from a filename extension.
 
-    Supported:
-        .cif
-        .mmcif
-        .pdb
+    Raises:
+        InputResolutionError: If the path has no extension or uses an
+            unsupported extension.
     """
-
     suffixes = [suffix.lower() for suffix in path.suffixes]
 
     if not suffixes:
@@ -185,13 +154,12 @@ def detect_structure_format_from_path(path: Path) -> StructureFileFormat:
         "Supported extensions are: .cif, .mmcif, and .pdb"
     )
 
+
 def _resolve_local_file(
     path_text: str,
     *,
     original_input: str,
 ) -> ResolvedStructureInput:
-    """Resolve and validate a local structure file."""
-
     path = _expand_path(path_text)
 
     if not path.exists():
@@ -212,17 +180,12 @@ def _resolve_local_file(
         structure_id=None,
     )
 
+
 def _resolve_rcsb_id(
     structure_id: str,
     *,
     original_input: str,
 ) -> ResolvedStructureInput:
-    """
-    Resolve an RCSB/PDB accession ID.
-
-    mmCIF only.
-    """
-
     cleaned_id = structure_id.strip()
 
     if not is_valid_classic_pdb_id(cleaned_id):
@@ -240,9 +203,7 @@ def _resolve_rcsb_id(
     )
 
 
-def _clean_raw_input(raw_input: str) -> str:
-    """Clean and validate the raw user input string."""
-
+def _clean_raw_input(raw_input: object) -> str:
     if not isinstance(raw_input, str):
         raise InputResolutionError(
             f"Structure input must be a string, not {type(raw_input).__name__}."
@@ -257,23 +218,11 @@ def _clean_raw_input(raw_input: str) -> str:
 
 
 def _expand_path(path_text: str) -> Path:
-    """
-    Expand user and environment variables in a path.
-    """
-
     expanded = os.path.expandvars(path_text)
     return Path(expanded).expanduser()
 
 
 def _find_case_insensitive_local_path(path: Path) -> Path | None:
-    """
-    Return a local path whose filename matches case-insensitively.
-
-    Exact paths are handled before this function is called. This fallback only
-    compares the final path component inside an existing parent directory, so it
-    avoids guessing across unrelated directory names.
-    """
-
     parent = path.parent
     if not parent.exists() or not parent.is_dir():
         return None

@@ -1,1 +1,1 @@
-#init file
+"""BDamage scoring package."""

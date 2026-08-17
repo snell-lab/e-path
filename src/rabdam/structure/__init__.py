@@ -1,1 +1,1 @@
-#init file
+"""Structure preparation package."""

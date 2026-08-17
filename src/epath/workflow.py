@@ -26,6 +26,7 @@ from epath.selection import (
     select_atoms_by_percentile_per_chain,
     select_atoms_by_z,
 )
+from rabdam.bnet.workflow import BnetWorkflowResult, calculate_bnet_workflow
 from rabdam.workflow import BDamageWorkflowResult
 
 
@@ -78,6 +79,7 @@ class EpathWorkflowResult:
     clusters: tuple[EpathCluster, ...]
     output_files: EpathWorkflowOutputFiles
     bdamage_workflow_result: BDamageWorkflowResult | None = None
+    bnet_workflow_result: BnetWorkflowResult | None = None
 
 
 def run_epath_workflow(
@@ -106,6 +108,7 @@ def analyze_epath_atoms(
     structure_path: str | Path | None = None,
     options: EpathWorkflowOptions | None = None,
     bdamage_workflow_result: BDamageWorkflowResult | None = None,
+    bnet_workflow_result: BnetWorkflowResult | None = None,
 ) -> EpathWorkflowResult:
     """Run E-path selection, clustering, MST analysis, and outputs."""
 
@@ -138,6 +141,11 @@ def analyze_epath_atoms(
         clusters = keep_largest_cluster(clusters)
 
     analyzed_chains = tuple(dict.fromkeys(atom.chain_id for atom in atom_tuple))
+    if bnet_workflow_result is None and bdamage_workflow_result is not None:
+        bnet_workflow_result = calculate_bnet_workflow(
+            prepared_structure=bdamage_workflow_result.prepared_structure,
+            bdamage_score_result=bdamage_workflow_result.bdamage_score_result,
+        )
     output_files = write_epath_outputs(
         selection_result=selection_result,
         clusters=clusters,
@@ -146,6 +154,7 @@ def analyze_epath_atoms(
         minimum_cluster_size=minimum_cluster_size,
         options=options.output,
         histogram_bins=options.selection.histogram_bins,
+        bnet_workflow_result=bnet_workflow_result,
     )
 
     return EpathWorkflowResult(
@@ -154,6 +163,7 @@ def analyze_epath_atoms(
         clusters=clusters,
         output_files=output_files,
         bdamage_workflow_result=bdamage_workflow_result,
+        bnet_workflow_result=bnet_workflow_result,
     )
 
 

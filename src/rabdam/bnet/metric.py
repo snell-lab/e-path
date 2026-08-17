@@ -1,31 +1,38 @@
-"""Bnet metric calculation.
+"""Calculate raw Bnet from damage-sensitive BDamage values.
 
-Bnet compares the BDamage distribution of selected damage-sensitive sites
-against the median BDamage value for all scored atoms in the structure.
+Bnet is the ratio of KDE area above versus below the all-atom median BDamage.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from numbers import Integral
-from typing import Sequence
+from typing import Protocol, cast
 
 import numpy as np
-from scipy.stats import gaussian_kde
+from numpy.typing import NDArray
+from scipy.stats import gaussian_kde  # type: ignore[import-untyped]
 
-
+# These sampling choices match RABDAM 2 so raw Bnet values remain comparable.
 DEFAULT_TRAPEZIUM_COUNT = 99
-DEFAULT_KDE_TAIL_WIDTHS = 3.0
+DEFAULT_KDE_TAIL_BANDWIDTH_COUNT = 3.0
+
+
+class _GaussianKDE(Protocol):
+    def __call__(self, points: NDArray[np.float64]) -> NDArray[np.float64]: ...
+
+    def scotts_factor(self) -> float: ...
 
 
 @dataclass(frozen=True, slots=True)
 class BnetResult:
-    """Raw Bnet calculation result."""
+    """Store raw Bnet and its KDE integration components."""
 
     bnet: float
     median_bdamage: float
-    left_area: float
-    right_area: float
+    below_median_area: float
+    above_median_area: float
     site_count: int
 
 
@@ -33,40 +40,28 @@ def calculate_bnet(
     *,
     all_bdamage_values: Sequence[float],
     bnet_site_bdamage_values: Sequence[float],
-    trapezium_count: int = DEFAULT_TRAPEZIUM_COUNT,
+    trapezium_count: object = DEFAULT_TRAPEZIUM_COUNT,
 ) -> BnetResult:
-    """Calculate raw Bnet.
+    """Calculate raw Bnet from all-atom and damage-sensitive BDamage values.
 
-    Bnet is the ratio of the area under the KDE of Asp/Glu carboxyl oxygen
-    BDamage values to the right of the all-atom median BDamage value, divided
-    by the area to the left of that median.
+    A Gaussian KDE with Scott bandwidth is fit to the Bnet-site values. Bnet is
+    the integrated area at or above the all-atom median divided by the area
+    below it.
 
-    The KDE is evaluated on an evenly spaced, tail-padded grid. Trapeziums are
-    assigned to the below-median area when their left x value is below the
-    median; all remaining trapeziums are assigned to the above-median area.
+    Args:
+        all_bdamage_values: Finite BDamage values for every selected atom.
+        bnet_site_bdamage_values: Finite BDamage values for damage-sensitive
+            Asp/Glu carboxyl oxygens.
+        trapezium_count: Positive number of integration intervals.
 
-    Parameters
-    ----------
-    all_bdamage_values
-        BDamage values for all scored atoms in the structure.
-    bnet_site_bdamage_values
-        BDamage values for Asp/Glu side-chain carboxyl oxygen atoms.
-    trapezium_count
-        Number of trapeziums used for numerical integration. The default uses
-        99 trapeziums, requiring 100 grid points.
+    Returns:
+        The Bnet ratio, split point, component areas, and Bnet-site count.
 
-    Returns
-    -------
-    BnetResult
-        Raw Bnet value plus supporting integration values.
-
-    Raises
-    ------
-    ValueError
-        If the inputs are empty, non-finite, too small for KDE estimation, or
-        lead to zero below-median area.
+    Raises:
+        ValueError: If inputs are empty, non-finite, incorrectly shaped, contain
+            fewer than two sites or zero site variance, or produce no area below
+            the median.
     """
-
     all_values = _as_finite_1d_array(
         all_bdamage_values,
         name="all_bdamage_values",
@@ -86,6 +81,8 @@ def calculate_bnet(
         name="trapezium_count",
     )
 
+    # The all-atom median supplies the baseline while the KDE contains only
+    # damage-sensitive Asp/Glu sites.
     median_bdamage = float(np.median(all_values))
 
     kde = _build_gaussian_kde_scott(site_values)
@@ -96,29 +93,27 @@ def calculate_bnet(
     )
     y_values = kde(x_values)
 
-    left_area, right_area = _split_trapezium_areas(
+    below_median_area, above_median_area = _split_trapezium_areas(
         x_values=x_values,
         y_values=y_values,
         split_value=median_bdamage,
     )
 
-    if left_area <= 0.0:
+    if below_median_area <= 0.0:
         raise ValueError(
             "Cannot calculate Bnet because the below-median KDE area is zero."
         )
 
     return BnetResult(
-        bnet=right_area / left_area,
+        bnet=above_median_area / below_median_area,
         median_bdamage=median_bdamage,
-        left_area=left_area,
-        right_area=right_area,
+        below_median_area=below_median_area,
+        above_median_area=above_median_area,
         site_count=int(site_values.size),
     )
 
 
 def _as_finite_1d_array(values: Sequence[float], *, name: str) -> np.ndarray:
-    """Convert values to a finite one-dimensional float array."""
-
     array = np.asarray(values, dtype=float)
 
     if array.ndim != 1:
@@ -134,8 +129,6 @@ def _as_finite_1d_array(values: Sequence[float], *, name: str) -> np.ndarray:
 
 
 def _as_positive_integer(value: object, *, name: str) -> int:
-    """Return value as an int after validating it is a positive integer."""
-
     if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
         raise ValueError(f"{name} must be a positive integer.")
 
@@ -144,11 +137,13 @@ def _as_positive_integer(value: object, *, name: str) -> int:
 
 def _build_gaussian_kde_scott(
     sample_values: np.ndarray,
-) -> gaussian_kde:
-    """Build a one-dimensional Gaussian KDE using Scott's bandwidth rule."""
-
+) -> _GaussianKDE:
+    """Fit a Gaussian KDE with Scott bandwidth to one-dimensional samples."""
     try:
-        return gaussian_kde(dataset=sample_values, bw_method="scott")
+        return cast(
+            _GaussianKDE,
+            gaussian_kde(dataset=sample_values, bw_method="scott"),
+        )
     except np.linalg.LinAlgError as error:
         raise ValueError(
             "Cannot calculate KDE because Bnet-site values have zero variance."
@@ -157,12 +152,11 @@ def _build_gaussian_kde_scott(
 
 def _bnet_kde_x_values(
     sample_values: np.ndarray,
-    kde: gaussian_kde,
+    kde: _GaussianKDE,
     *,
     trapezium_count: int,
 ) -> np.ndarray:
-    """Return tail-padded x values for evaluating the Bnet KDE."""
-
+    """Build evenly spaced integration points spanning three tail bandwidths."""
     sample_standard_deviation = float(np.std(sample_values, ddof=0))
 
     if sample_standard_deviation <= 0.0:
@@ -173,8 +167,12 @@ def _bnet_kde_x_values(
     scott_factor = float(kde.scotts_factor())
     tail_width = scott_factor * sample_standard_deviation
 
-    x_min = float(np.min(sample_values) - (DEFAULT_KDE_TAIL_WIDTHS * tail_width))
-    x_max = float(np.max(sample_values) + (DEFAULT_KDE_TAIL_WIDTHS * tail_width))
+    x_min = float(
+        np.min(sample_values) - (DEFAULT_KDE_TAIL_BANDWIDTH_COUNT * tail_width)
+    )
+    x_max = float(
+        np.max(sample_values) + (DEFAULT_KDE_TAIL_BANDWIDTH_COUNT * tail_width)
+    )
 
     return np.linspace(x_min, x_max, trapezium_count + 1)
 
@@ -185,15 +183,9 @@ def _split_trapezium_areas(
     y_values: np.ndarray,
     split_value: float,
 ) -> tuple[float, float]:
-    """Split trapezoidal integration area around a threshold.
-
-    A trapezium is below the split value when its left x value is below the
-    split. This includes the split-containing trapezium in the left area,
-    except when the split falls exactly on that trapezium's left edge.
-    """
-
-    left_area = 0.0
-    right_area = 0.0
+    """Split trapezoidal KDE area according to each interval's left edge."""
+    below_split_area = 0.0
+    above_split_area = 0.0
 
     for left_x, right_x, left_y, right_y in zip(
         x_values[:-1],
@@ -204,9 +196,10 @@ def _split_trapezium_areas(
     ):
         trapezium_area = float((right_x - left_x) * (left_y + right_y) / 2.0)
 
+        # RABDAM assigns the trapezium spanning the median by its left edge.
         if left_x < split_value:
-            left_area += trapezium_area
+            below_split_area += trapezium_area
         else:
-            right_area += trapezium_area
+            above_split_area += trapezium_area
 
-    return left_area, right_area
+    return below_split_area, above_split_area
