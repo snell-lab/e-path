@@ -7,6 +7,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import NDArray
 
 from epath.atoms import EpathAtom
 
@@ -83,7 +84,7 @@ def score_bdamage_atoms(
 
 
 def histogram_mode(
-    values: Sequence[float] | np.ndarray,
+    values: Sequence[float] | NDArray[np.float64],
     *,
     bins: int = DEFAULT_HISTOGRAM_BINS,
 ) -> float:
@@ -276,7 +277,7 @@ def _select_lowest_percentile(
         for scored_atom in scored_atoms
         if scored_atom.bdamage <= bdamage_threshold
     ]
-    target_count = int(round((percentile / 100.0) * atom_count))
+    target_count = round((percentile / 100.0) * atom_count)
     target_count = max(0, min(atom_count, target_count))
     if len(selected_atoms) > target_count:
         selected_atoms.sort(
@@ -303,14 +304,14 @@ def _atoms_by_chain(
     )
 
 
-def _bdamage_values(atoms: Sequence[EpathAtom]) -> np.ndarray:
+def _bdamage_values(atoms: Sequence[EpathAtom]) -> NDArray[np.float64]:
     values = np.asarray([atom.bdamage for atom in atoms], dtype=float)
     if not np.all(np.isfinite(values)):
         raise EpathSelectionError("BDamage values must be finite.")
     return values
 
 
-def _z_scores(values: np.ndarray) -> np.ndarray:
+def _z_scores(values: NDArray[np.float64]) -> NDArray[np.float64]:
     if values.size == 0:
         return values
 

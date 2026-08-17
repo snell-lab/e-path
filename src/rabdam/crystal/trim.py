@@ -60,10 +60,10 @@ class ArrayTrimmedCrystalBlock:
     Rows across all four arrays describe the same translated atom.
     """
 
-    coordinates: np.ndarray
-    source_atom_indices: np.ndarray
-    is_identity_symmetry_operation: np.ndarray
-    translation_offsets: np.ndarray
+    coordinates: NDArray[np.float64]
+    source_atom_indices: NDArray[np.int64]
+    is_identity_symmetry_operation: NDArray[np.bool_]
+    translation_offsets: NDArray[np.int64]
     reference_bounds: CartesianBounds
     trim_bounds: CartesianBounds
     padding: float

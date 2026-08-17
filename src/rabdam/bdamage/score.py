@@ -11,6 +11,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import NDArray
 
 from rabdam.packing.density import PackingDensityAtomResult, PackingDensityResult
 from rabdam.structure.models import PreparedAtom, PreparedStructure
@@ -369,7 +370,7 @@ def centered_window_average_b_factors(
 
 
 def _window_average_from_prefix_sums(
-    prefix_sums: np.ndarray,
+    prefix_sums: NDArray[np.float64],
     *,
     start: int,
     window_size: int,

@@ -1,3 +1,5 @@
 {
-  "extraPaths": ["src", "/usr/lib/python3/dist-packages"]
+  "include": ["src"],
+  "extraPaths": ["src"],
+  "typeCheckingMode": "strict"
 }

@@ -152,10 +152,10 @@ def calculate_packing_density(
 def calculate_packing_density_from_arrays(
     *,
     selected_atoms: Iterable[PreparedAtom],
-    neighbour_coordinates: np.ndarray,
-    source_atom_indices: np.ndarray,
-    is_identity_symmetry_operation: np.ndarray,
-    translation_offsets: np.ndarray,
+    neighbour_coordinates: NDArray[np.float64],
+    source_atom_indices: NDArray[np.int64],
+    is_identity_symmetry_operation: NDArray[np.bool_],
+    translation_offsets: NDArray[np.int64],
     packing_density_threshold: float,
 ) -> PackingDensityResult:
     """Count neighbours from row-aligned crystal arrays.
@@ -215,10 +215,10 @@ def calculate_packing_density_from_arrays(
 def _calculate_packing_density_with_ckdtree(
     *,
     selected_atoms: tuple[PreparedAtom, ...],
-    neighbour_coordinates: np.ndarray,
-    source_atom_indices: np.ndarray,
-    is_identity_symmetry_operation: np.ndarray,
-    translation_offsets: np.ndarray,
+    neighbour_coordinates: NDArray[np.float64],
+    source_atom_indices: NDArray[np.int64],
+    is_identity_symmetry_operation: NDArray[np.bool_],
+    translation_offsets: NDArray[np.int64],
     packing_density_threshold: float,
 ) -> PackingDensityResult:
     threshold = float(packing_density_threshold)
@@ -298,7 +298,7 @@ def _build_ckdtree(neighbour_coordinates: NDArray[np.float64]) -> _KDTree:
 
 def _selected_atom_coordinates(
     selected_atoms: tuple[PreparedAtom, ...],
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     return np.asarray(
         [(atom.record.x, atom.record.y, atom.record.z) for atom in selected_atoms],
         dtype=np.float64,
@@ -308,11 +308,11 @@ def _selected_atom_coordinates(
 def _validate_self_copies_are_counted(
     *,
     selected_atoms: tuple[PreparedAtom, ...],
-    selected_coordinates: np.ndarray,
-    neighbour_coordinates: np.ndarray,
-    source_atom_indices: np.ndarray,
-    is_identity_symmetry_operation: np.ndarray,
-    translation_offsets: np.ndarray,
+    selected_coordinates: NDArray[np.float64],
+    neighbour_coordinates: NDArray[np.float64],
+    source_atom_indices: NDArray[np.int64],
+    is_identity_symmetry_operation: NDArray[np.bool_],
+    translation_offsets: NDArray[np.int64],
     threshold_squared: float,
 ) -> None:
     """Verify each selected atom has a counted central-cell identity image."""
@@ -351,7 +351,7 @@ def _validate_self_copies_are_counted(
         coordinate_deltas = (
             selected_coordinates[selected_atom_index] - candidate_coordinates
         )
-        distances_squared = np.einsum(
+        distances_squared = np.einsum(  # pyright: ignore[reportUnknownMemberType]  # numpy stub gap
             "ij,ij->i",
             coordinate_deltas,
             coordinate_deltas,
@@ -367,10 +367,10 @@ def _validate_self_copies_are_counted(
 
 def _validate_neighbour_arrays(
     *,
-    coordinates: np.ndarray,
-    source_atom_indices: np.ndarray,
-    is_identity_symmetry_operation: np.ndarray,
-    translation_offsets: np.ndarray,
+    coordinates: NDArray[np.float64],
+    source_atom_indices: NDArray[np.int64],
+    is_identity_symmetry_operation: NDArray[np.bool_],
+    translation_offsets: NDArray[np.int64],
 ) -> None:
     """Validate row counts and shapes across neighbour-cloud arrays."""
     if coordinates.ndim != 2 or coordinates.shape[1] != 3:

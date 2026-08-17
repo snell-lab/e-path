@@ -182,7 +182,9 @@ def _symmetry_expanded_coordinates(
     # Wrapping here would move symmetry images needed by the later neighbour-box
     # trimming step.
     transformed_fractional_coordinates: NDArray[np.float64] = np.asarray(
-        np.einsum("ni,mji->nmj", fractional_coordinates, operation_rotations)
+        np.einsum(  # pyright: ignore[reportUnknownMemberType]  # numpy stub gap
+            "ni,mji->nmj", fractional_coordinates, operation_rotations
+        )
         + operation_translations[np.newaxis, :, :],
         dtype=np.float64,
     )

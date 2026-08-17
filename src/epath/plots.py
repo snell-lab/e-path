@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from epath.selection import (
     DEFAULT_HISTOGRAM_BINS,
@@ -28,7 +29,7 @@ class EpathPlotError(RuntimeError):
 
 def plot_z_hist(
     prefix: str | Path,
-    z_all: Sequence[float] | np.ndarray,
+    z_all: Sequence[float] | NDArray[np.float64],
     z_mode: float,
     *,
     bins: int = DEFAULT_HISTOGRAM_BINS,
@@ -85,7 +86,7 @@ def write_scored_atom_z_score_histogram(
 
 def write_z_score_histogram(
     output_path: str | Path,
-    z_scores: Sequence[float] | np.ndarray,
+    z_scores: Sequence[float] | NDArray[np.float64],
     *,
     z_mode: float,
     bins: int = DEFAULT_HISTOGRAM_BINS,
@@ -159,7 +160,9 @@ def _ensure_matplotlib_config_dir() -> None:
     os.environ["MPLCONFIGDIR"] = str(config_dir)
 
 
-def _z_score_array(values: Sequence[float] | np.ndarray) -> np.ndarray:
+def _z_score_array(
+    values: Sequence[float] | NDArray[np.float64],
+) -> NDArray[np.float64]:
     array = np.asarray(values, dtype=float)
     if array.ndim != 1:
         raise EpathPlotError("z_scores must be one-dimensional.")

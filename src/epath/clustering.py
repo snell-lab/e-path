@@ -5,9 +5,11 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from importlib import import_module
+from typing import Protocol, cast
 
 import numpy as np
-from scipy.spatial import cKDTree  # pyright: ignore[reportAttributeAccessIssue]
+from numpy.typing import NDArray
 
 from epath.selection import EpathScoredAtom
 
@@ -16,6 +18,21 @@ DEFAULT_CLUSTER_DISTANCE_ANGSTROM = 4.0
 
 class EpathClusteringError(ValueError):
     """Raised when E-path atom clustering cannot be calculated."""
+
+
+class _KDTree(Protocol):
+    def query_ball_point(
+        self,
+        x: NDArray[np.float64],
+        r: float,
+        p: float,
+        *,
+        workers: int,
+    ) -> NDArray[np.object_]: ...
+
+
+class _KDTreeFactory(Protocol):
+    def __call__(self, data: NDArray[np.float64]) -> _KDTree: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +130,7 @@ def cluster_metrics_for_atoms(
     return mst_length_stats(_coordinates(atoms))
 
 
-def mst_length_stats(coordinates: np.ndarray) -> EpathClusterMetrics:
+def mst_length_stats(coordinates: NDArray[np.float64]) -> EpathClusterMetrics:
     """Return Prim-style MST metrics for a coordinate array."""
 
     coordinate_array = np.asarray(coordinates, dtype=float)
@@ -177,8 +194,8 @@ def mst_length_stats(coordinates: np.ndarray) -> EpathClusterMetrics:
 
 
 def euclidean_distance(
-    first_coordinate: Sequence[float] | np.ndarray,
-    second_coordinate: Sequence[float] | np.ndarray,
+    first_coordinate: Sequence[float] | NDArray[np.float64],
+    second_coordinate: Sequence[float] | NDArray[np.float64],
 ) -> float:
     """Return the Euclidean distance between two 3D coordinates."""
 
@@ -191,7 +208,7 @@ def euclidean_distance(
     return float(np.sqrt(np.dot(difference, difference)))
 
 
-def maximum_pairwise_distance(coordinates: np.ndarray) -> float:
+def maximum_pairwise_distance(coordinates: NDArray[np.float64]) -> float:
     """Return the largest pairwise distance in a coordinate array."""
 
     coordinate_array = np.asarray(coordinates, dtype=float)
@@ -210,7 +227,7 @@ def maximum_pairwise_distance(coordinates: np.ndarray) -> float:
     return maximum_distance
 
 
-def _coordinates(atoms: Sequence[EpathScoredAtom]) -> np.ndarray:
+def _coordinates(atoms: Sequence[EpathScoredAtom]) -> NDArray[np.float64]:
     coordinates = np.asarray(
         [
             (
@@ -232,20 +249,40 @@ def _coordinates(atoms: Sequence[EpathScoredAtom]) -> np.ndarray:
 
 
 def _neighbour_indices_by_atom(
-    coordinates: np.ndarray,
+    coordinates: NDArray[np.float64],
     *,
     distance_cutoff: float,
 ) -> tuple[tuple[int, ...], ...]:
-    tree = cKDTree(coordinates)
+    tree = _build_ckdtree(coordinates)
     raw_neighbours = tree.query_ball_point(
         coordinates,
-        r=distance_cutoff,
-        p=2.0,
+        distance_cutoff,
+        2.0,
         workers=-1,
     )
     return tuple(
         tuple(int(index) for index in neighbours) for neighbours in raw_neighbours
     )
+
+
+def _build_ckdtree(coordinates: NDArray[np.float64]) -> _KDTree:
+    try:
+        scipy_spatial = import_module("scipy.spatial")
+    except ImportError as error:
+        raise EpathClusteringError(
+            "SciPy is required for E-path atom clustering."
+        ) from error
+
+    ckdtree_class = cast(
+        _KDTreeFactory | None,
+        getattr(scipy_spatial, "cKDTree", None),
+    )
+    if ckdtree_class is None:
+        raise EpathClusteringError(
+            "SciPy is installed but scipy.spatial.cKDTree is unavailable."
+        )
+
+    return ckdtree_class(coordinates)
 
 
 def _connected_components(

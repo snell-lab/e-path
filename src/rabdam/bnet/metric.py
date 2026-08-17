@@ -113,7 +113,7 @@ def calculate_bnet(
     )
 
 
-def _as_finite_1d_array(values: Sequence[float], *, name: str) -> np.ndarray:
+def _as_finite_1d_array(values: Sequence[float], *, name: str) -> NDArray[np.float64]:
     array = np.asarray(values, dtype=float)
 
     if array.ndim != 1:
@@ -136,7 +136,7 @@ def _as_positive_integer(value: object, *, name: str) -> int:
 
 
 def _build_gaussian_kde_scott(
-    sample_values: np.ndarray,
+    sample_values: NDArray[np.float64],
 ) -> _GaussianKDE:
     """Fit a Gaussian KDE with Scott bandwidth to one-dimensional samples."""
     try:
@@ -151,11 +151,11 @@ def _build_gaussian_kde_scott(
 
 
 def _bnet_kde_x_values(
-    sample_values: np.ndarray,
+    sample_values: NDArray[np.float64],
     kde: _GaussianKDE,
     *,
     trapezium_count: int,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """Build evenly spaced integration points spanning three tail bandwidths."""
     sample_standard_deviation = float(np.std(sample_values, ddof=0))
 
@@ -179,8 +179,8 @@ def _bnet_kde_x_values(
 
 def _split_trapezium_areas(
     *,
-    x_values: np.ndarray,
-    y_values: np.ndarray,
+    x_values: NDArray[np.float64],
+    y_values: NDArray[np.float64],
     split_value: float,
 ) -> tuple[float, float]:
     """Split trapezoidal KDE area according to each interval's left edge."""

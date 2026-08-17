@@ -8,6 +8,7 @@ from numbers import Integral
 from typing import SupportsFloat, SupportsIndex
 
 import numpy as np
+from numpy.typing import NDArray
 
 from rabdam.bnet.reference import BnetReferenceDatabase
 
@@ -199,7 +200,7 @@ def find_resolution_matched_reference_set(
 def _rank_bnet_by_nearest_reference_value(
     bnet: float,
     *,
-    local_bnet_values: np.ndarray,
+    local_bnet_values: NDArray[np.float64],
 ) -> tuple[int, float]:
     """Return the one-based rank and value of the nearest local reference."""
     if local_bnet_values.ndim != 1 or local_bnet_values.size == 0:

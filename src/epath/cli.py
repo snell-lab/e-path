@@ -27,6 +27,7 @@ from epath.workflow import (
 )
 from rabdam.bdamage.score import (
     BDamageScoreError,
+    BDamageScoreResult,
     bdamage_scores_as_tuple,
 )
 from rabdam.bnet.workflow import BnetWorkflowResult, calculate_bnet_workflow
@@ -40,7 +41,7 @@ from rabdam.packing.density import (
     PackingDensityError,
     packing_density_counts_as_tuple,
 )
-from rabdam.structure.models import StructurePreparationOptions
+from rabdam.structure.models import PreparedStructure, StructurePreparationOptions
 from rabdam.workflow import (
     BDamageWorkflowError,
     BDamageWorkflowOptions,
@@ -179,12 +180,6 @@ class EpathBatchCliResult:
         """Return whether any batch item failed."""
 
         return bool(self.errors)
-
-
-def _build_parser() -> argparse.ArgumentParser:
-    """Build the default E-path command-line parser."""
-
-    return _build_epath_parser()
 
 
 def _build_epath_parser() -> argparse.ArgumentParser:
@@ -826,6 +821,11 @@ def calculate_bdamage_workflow_from_args(
     workflow_options = workflow_options_from_args(args)
     preparation_options = preparation_options_from_args(args)
 
+    # A named generic function rather than a lambda so the workflow stage
+    # callback keeps its return type through WorkflowStageRunner.
+    def stage_runner(label: str, callback: Callable[[], T]) -> T:
+        return run_stage(label, callback, stream=stderr, quiet=args.quiet)
+
     resolved = run_stage(
         "Resolving input",
         lambda: resolve_structure_input(structure_input),
@@ -852,12 +852,7 @@ def calculate_bdamage_workflow_from_args(
         structure_data,
         workflow_options=workflow_options,
         preparation_options=preparation_options,
-        stage_runner=lambda label, callback: run_stage(
-            label,
-            callback,
-            stream=stderr,
-            quiet=args.quiet,
-        ),
+        stage_runner=stage_runner,
     )
 
     return local_input, workflow_result
@@ -1277,8 +1272,8 @@ def print_citations(*, stream: TextIO) -> None:
 def write_bdamage_csv(
     *,
     output_path: Path,
-    prepared_structure,
-    bdamage_score_result,
+    prepared_structure: PreparedStructure,
+    bdamage_score_result: BDamageScoreResult,
 ) -> None:
     """Write per-atom BDamage results as a CSV file."""
 
