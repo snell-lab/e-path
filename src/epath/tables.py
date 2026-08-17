@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
 import csv
 import math
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +15,6 @@ from epath.selection import (
     EpathScoredAtom,
     EpathSelectionResult,
 )
-
 
 COMBINED_ATOM_FIELDNAMES = [
     "source_atom_index",
@@ -103,8 +102,7 @@ def write_cluster_csv(
         writer = csv.DictWriter(file, fieldnames=CLUSTER_FIELDNAMES)
         writer.writeheader()
         writer.writerows(
-            _format_row_for_fields(row, CLUSTER_FIELDNAMES)
-            for row in rows
+            _format_row_for_fields(row, CLUSTER_FIELDNAMES) for row in rows
         )
 
     return output_file
@@ -139,9 +137,7 @@ def combined_atom_rows(
         _scored_atom_identity(scored_atom)
         for scored_atom in selection_result.selected_atoms
     }
-    chain_thresholds = _chain_thresholds_by_chain(
-        selection_result.chain_thresholds
-    )
+    chain_thresholds = _chain_thresholds_by_chain(selection_result.chain_thresholds)
     cluster_by_atom = _cluster_membership_by_atom(clusters)
 
     rows: list[dict[str, Any]] = []
@@ -196,19 +192,13 @@ def atom_token(atom: EpathAtom) -> str:
 
     residue_number = "" if atom.residue_number is None else str(atom.residue_number)
     insertion_code = atom.insertion_code.strip()
-    return (
-        f"{atom.chain_id}:{residue_number}{insertion_code}:"
-        f"{atom.atom_name.strip()}"
-    )
+    return f"{atom.chain_id}:{residue_number}{insertion_code}:{atom.atom_name.strip()}"
 
 
 def _chain_thresholds_by_chain(
     chain_thresholds: Iterable[ChainPercentileThreshold],
 ) -> dict[str, ChainPercentileThreshold]:
-    return {
-        threshold.chain_id: threshold
-        for threshold in chain_thresholds
-    }
+    return {threshold.chain_id: threshold for threshold in chain_thresholds}
 
 
 def _cluster_membership_by_atom(
@@ -259,10 +249,7 @@ def _format_row_for_fields(
     row: Mapping[str, Any],
     fieldnames: Iterable[str],
 ) -> dict[str, str]:
-    return {
-        fieldname: _format_cell(row.get(fieldname))
-        for fieldname in fieldnames
-    }
+    return {fieldname: _format_cell(row.get(fieldname)) for fieldname in fieldnames}
 
 
 def _format_cell(value: Any) -> str:

@@ -29,7 +29,6 @@ from epath.selection import (
 from rabdam.bnet.workflow import BnetWorkflowResult, calculate_bnet_workflow
 from rabdam.workflow import BDamageWorkflowResult
 
-
 SelectionMethod = Literal["z_cutoff", "percentile", "percentile_per_chain"]
 
 
@@ -66,7 +65,9 @@ class EpathWorkflowOptions:
     clustering: EpathClusterWorkflowOptions = field(
         default_factory=EpathClusterWorkflowOptions
     )
-    output: EpathOutputWorkflowOptions = field(default_factory=EpathOutputWorkflowOptions)
+    output: EpathOutputWorkflowOptions = field(
+        default_factory=EpathOutputWorkflowOptions
+    )
     allowed_chains: tuple[str, ...] | None = None
 
 
@@ -133,9 +134,7 @@ def analyze_epath_atoms(
         name="minimum_cluster_size",
     )
     clusters = tuple(
-        cluster
-        for cluster in clusters
-        if cluster.atom_count >= minimum_cluster_size
+        cluster for cluster in clusters if cluster.atom_count >= minimum_cluster_size
     )
     if options.clustering.keep_largest_only:
         clusters = keep_largest_cluster(clusters)
@@ -179,9 +178,7 @@ def _filter_atoms_by_chain(
 
     normalized_chains = tuple(
         dict.fromkeys(
-            chain_id.strip()
-            for chain_id in allowed_chains
-            if chain_id.strip()
+            chain_id.strip() for chain_id in allowed_chains if chain_id.strip()
         )
     )
     if not normalized_chains:
@@ -189,9 +186,7 @@ def _filter_atoms_by_chain(
 
     available_chains = {atom.chain_id for atom in atoms}
     missing_chains = tuple(
-        chain_id
-        for chain_id in normalized_chains
-        if chain_id not in available_chains
+        chain_id for chain_id in normalized_chains if chain_id not in available_chains
     )
     if missing_chains:
         missing_text = ", ".join(missing_chains)
@@ -202,11 +197,7 @@ def _filter_atoms_by_chain(
         )
 
     allowed_chain_set = set(normalized_chains)
-    return tuple(
-        atom
-        for atom in atoms
-        if atom.chain_id in allowed_chain_set
-    )
+    return tuple(atom for atom in atoms if atom.chain_id in allowed_chain_set)
 
 
 def _select_atoms(
@@ -239,7 +230,5 @@ def _select_atoms(
 
 def _positive_int(value: int, *, name: str) -> int:
     if type(value) is not int or value <= 0:
-        raise EpathWorkflowError(
-            f"{name} must be a positive integer, got {value!r}."
-        )
+        raise EpathWorkflowError(f"{name} must be a positive integer, got {value!r}.")
     return value

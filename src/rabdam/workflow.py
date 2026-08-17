@@ -7,18 +7,27 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
-from rabdam.bdamage.score import BDamageScoreResult, calculate_bdamage_scores_for_structure
+from rabdam.bdamage.score import (
+    BDamageScoreResult,
+    calculate_bdamage_scores_for_structure,
+)
 from rabdam.crystal.symmetry import (
     SymmetryExpandedStructure,
     expand_prepared_structure_by_symmetry,
 )
-from rabdam.crystal.translate import TranslatedCrystalBlock, translate_expanded_unit_cell
+from rabdam.crystal.translate import (
+    TranslatedCrystalBlock,
+    translate_expanded_unit_cell,
+)
 from rabdam.crystal.trim import (
     TrimmedNeighbourBlock,
     trim_expanded_unit_cell_for_bdamage,
 )
 from rabdam.input.reader import StructureData
-from rabdam.packing.density import PackingDensityResult, calculate_bdamage_packing_density
+from rabdam.packing.density import (
+    PackingDensityResult,
+    calculate_bdamage_packing_density,
+)
 from rabdam.structure.models import PreparedStructure, StructurePreparationOptions
 from rabdam.structure.prepare import prepare_structure
 

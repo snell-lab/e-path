@@ -16,9 +16,7 @@ from numpy.typing import NDArray
 DEFAULT_REFERENCE_SCHEMA_VERSION = "1.0"
 DEFAULT_REFERENCE_METRIC_KIND = "protein_cryo_asp_glu_bnet"
 DEFAULT_REFERENCE_DATABASE_FILENAME = "database.csv"
-DEFAULT_REFERENCE_DATABASE_DIR = (
-    Path(__file__).resolve().parent / "database"
-)
+DEFAULT_REFERENCE_DATABASE_DIR = Path(__file__).resolve().parent / "database"
 DEFAULT_REFERENCE_DATABASE_CSV_PATH = (
     DEFAULT_REFERENCE_DATABASE_DIR / DEFAULT_REFERENCE_DATABASE_FILENAME
 )

@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
-import math
 from pathlib import Path
 from typing import Literal
 
 from epath.atoms import EpathAtom
 from epath.selection import EpathScoredAtom
-
 
 PdbBFactorMode = Literal["bdamage", "b_factor", "z_score"]
 

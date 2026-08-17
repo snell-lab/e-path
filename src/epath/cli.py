@@ -3,28 +3,33 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Sequence
 import csv
-from dataclasses import dataclass
 import math
-from pathlib import Path
 import re
 import sys
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from pathlib import Path
 from time import perf_counter
 from typing import Any, TextIO, TypeVar
 
+from epath import __version__
+from epath.atoms import atoms_from_bdamage_workflow
+from epath.outputs import EpathOutputWorkflowOptions
+from epath.plots import EpathPlotError
+from epath.workflow import (
+    EpathClusterWorkflowOptions,
+    EpathSelectionWorkflowOptions,
+    EpathWorkflowOptions,
+    EpathWorkflowResult,
+    SelectionMethod,
+    analyze_epath_atoms,
+)
 from rabdam.bdamage.score import (
     BDamageScoreError,
     bdamage_scores_as_tuple,
 )
 from rabdam.bnet.workflow import BnetWorkflowResult, calculate_bnet_workflow
-from epath import __version__
-from rabdam.workflow import (
-    BDamageWorkflowError,
-    BDamageWorkflowOptions,
-    BDamageWorkflowResult,
-    calculate_bdamage_for_structure_data,
-)
 from rabdam.crystal.symmetry import CrystalSymmetryError
 from rabdam.crystal.translate import CrystalTranslationError
 from rabdam.crystal.trim import CrystalTrimError
@@ -36,18 +41,12 @@ from rabdam.packing.density import (
     packing_density_counts_as_tuple,
 )
 from rabdam.structure.models import StructurePreparationOptions
-from epath.outputs import EpathOutputWorkflowOptions
-from epath.workflow import (
-    EpathClusterWorkflowOptions,
-    EpathSelectionWorkflowOptions,
-    EpathWorkflowOptions,
-    EpathWorkflowResult,
-    SelectionMethod,
-    analyze_epath_atoms,
+from rabdam.workflow import (
+    BDamageWorkflowError,
+    BDamageWorkflowOptions,
+    BDamageWorkflowResult,
+    calculate_bdamage_for_structure_data,
 )
-from epath.plots import EpathPlotError
-from epath.atoms import atoms_from_bdamage_workflow
-
 
 DEFAULT_OUTPUT_DIR = Path("output")
 DEFAULT_OUTPUT_CSV_PATTERN = "output/<structure>_BDamage.csv"
@@ -748,12 +747,7 @@ def run_from_args(
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
     total_runtime_start: float | None = None,
-) -> (
-    RabdamCliResult
-    | RabdamBatchCliResult
-    | EpathCliResult
-    | EpathBatchCliResult
-):
+) -> RabdamCliResult | RabdamBatchCliResult | EpathCliResult | EpathBatchCliResult:
     """Run the requested workflow from parsed command-line arguments."""
 
     if args.command == "bdamage":
@@ -1371,9 +1365,9 @@ def print_summary(
         packing_density_counts = packing_density_counts_as_tuple(
             workflow_result.packing_density_result
         )[:preview_count]
-        bdamage_scores = bdamage_scores_as_tuple(
-            workflow_result.bdamage_score_result
-        )[:preview_count]
+        bdamage_scores = bdamage_scores_as_tuple(workflow_result.bdamage_score_result)[
+            :preview_count
+        ]
         print(file=stream)
         print("Preview:", file=stream)
         print(f"  Packing-density counts, first {preview_count}:", file=stream)
@@ -1453,9 +1447,9 @@ def print_epath_summary(
         packing_density_counts = packing_density_counts_as_tuple(
             bdamage_result.packing_density_result
         )[:preview_count]
-        bdamage_scores = bdamage_scores_as_tuple(
-            bdamage_result.bdamage_score_result
-        )[:preview_count]
+        bdamage_scores = bdamage_scores_as_tuple(bdamage_result.bdamage_score_result)[
+            :preview_count
+        ]
         print(file=stream)
         print("BDamage preview:", file=stream)
         print(f"  Packing-density counts, first {preview_count}:", file=stream)
@@ -1608,9 +1602,7 @@ def _float_arg(value: str) -> float:
     try:
         return float(value)
     except ValueError as error:
-        raise argparse.ArgumentTypeError(
-            f"expected a number, got {value!r}"
-        ) from error
+        raise argparse.ArgumentTypeError(f"expected a number, got {value!r}") from error
 
 
 def _int_arg(value: str) -> int:

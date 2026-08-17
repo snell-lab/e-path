@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-import math
 
 import numpy as np
 from scipy.spatial import cKDTree  # pyright: ignore[reportAttributeAccessIssue]
 
 from epath.selection import EpathScoredAtom
-
 
 DEFAULT_CLUSTER_DISTANCE_ANGSTROM = 4.0
 
@@ -162,8 +161,9 @@ def mst_length_stats(coordinates: np.ndarray) -> EpathClusterMetrics:
                 coordinate_array[next_index],
                 coordinate_array[candidate_index],
             )
-            if distance < minimum_edges[candidate_index]:
-                minimum_edges[candidate_index] = distance
+            minimum_edges[candidate_index] = min(
+                minimum_edges[candidate_index], distance
+            )
 
     span = maximum_pairwise_distance(coordinate_array)
     mean_step = total_length / float(max(atom_count - 1, 1))
@@ -244,8 +244,7 @@ def _neighbour_indices_by_atom(
         workers=-1,
     )
     return tuple(
-        tuple(int(index) for index in neighbours)
-        for neighbours in raw_neighbours
+        tuple(int(index) for index in neighbours) for neighbours in raw_neighbours
     )
 
 
@@ -285,9 +284,7 @@ def _positive_finite_float(value: float, *, name: str) -> float:
     try:
         number = float(value)
     except (TypeError, ValueError) as error:
-        raise EpathClusteringError(
-            f"{name} must be numeric, got {value!r}."
-        ) from error
+        raise EpathClusteringError(f"{name} must be numeric, got {value!r}.") from error
 
     if not math.isfinite(number) or number <= 0.0:
         raise EpathClusteringError(

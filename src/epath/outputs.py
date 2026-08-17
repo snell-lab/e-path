@@ -90,9 +90,7 @@ def write_epath_outputs(
         else None
     )
     summary_report = (
-        _output_path(prefix, "summary.txt")
-        if options.write_summary_report
-        else None
+        _output_path(prefix, "summary.txt") if options.write_summary_report else None
     )
     output_files = EpathWorkflowOutputFiles(
         combined_csv=combined_csv,
@@ -153,8 +151,7 @@ def write_summary_txt(
     ]
     if selection_result.bdamage_threshold is not None:
         lines.append(
-            "BDamage threshold: "
-            f"{_number(selection_result.bdamage_threshold)}"
+            f"BDamage threshold: {_number(selection_result.bdamage_threshold)}"
         )
     if selection_result.boundary_z_score is not None:
         lines.append(

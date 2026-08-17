@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-import math
 
 import numpy as np
 
 from epath.atoms import EpathAtom
-
 
 DEFAULT_HISTOGRAM_BINS = 60
 
@@ -133,8 +132,7 @@ def select_atoms_by_z(
         selected_atoms=selected_atoms,
         method="z_cutoff",
         description=(
-            f"Z <= {z_cutoff:.3f} "
-            f"(selected {selected_percent:.3f}% of atoms)"
+            f"Z <= {z_cutoff:.3f} (selected {selected_percent:.3f}% of atoms)"
         ),
         selected_percent=selected_percent,
         z_mode=_z_mode(scored_atoms, bins=histogram_bins),
@@ -270,7 +268,7 @@ def _select_lowest_percentile(
     bdamage_threshold = float(
         np.percentile(
             bdamage_values,
-            percentile if percentile < 100.0 else 100.0,
+            min(100.0, percentile),
         )
     )
     selected_atoms = [
@@ -379,9 +377,7 @@ def _finite_float(value: float, *, name: str) -> float:
     try:
         number = float(value)
     except (TypeError, ValueError) as error:
-        raise EpathSelectionError(
-            f"{name} must be numeric, got {value!r}."
-        ) from error
+        raise EpathSelectionError(f"{name} must be numeric, got {value!r}.") from error
 
     if not math.isfinite(number):
         raise EpathSelectionError(f"{name} must be finite, got {number!r}.")

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
 import importlib
 import math
 import os
-from pathlib import Path
 import tempfile
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -17,7 +17,6 @@ from epath.selection import (
     EpathScoredAtom,
     EpathSelectionResult,
 )
-
 
 DEFAULT_Z_HISTOGRAM_DPI = 300
 DEFAULT_Z_HISTOGRAM_FIGSIZE = (6.0, 4.0)
