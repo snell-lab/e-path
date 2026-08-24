@@ -149,6 +149,11 @@ def analyze_epath_atoms(
             if bdamage_workflow_result is not None
             else None
         ),
+        cleaned_atoms=(
+            bdamage_workflow_result.prepared_structure.cleaned_atoms
+            if bdamage_workflow_result is not None
+            else None
+        ),
     )
 
     return EpathWorkflowResult(

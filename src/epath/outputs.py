@@ -13,6 +13,7 @@ from epath.selection import EpathSelectionResult
 from epath.structures import PdbBFactorMode, write_structure_outputs
 from epath.tables import write_cluster_csv, write_combined_atom_csv
 from rabdam.bnet.workflow import BnetWorkflowResult
+from rabdam.structure.models import PreparedAtom
 from xtal.validate import ValidatedCrystal
 
 
@@ -35,6 +36,7 @@ class EpathWorkflowOutputFiles:
 
     combined_csv: Path | None = None
     selected_pdb: Path | None = None
+    model_pdb: Path | None = None
     z_score_histogram: Path | None = None
     cluster_csv: Path | None = None
     summary_report: Path | None = None
@@ -50,6 +52,7 @@ def write_epath_outputs(
     options: EpathOutputWorkflowOptions,
     bnet_workflow_result: BnetWorkflowResult | None = None,
     crystal: ValidatedCrystal | None = None,
+    cleaned_atoms: Sequence[PreparedAtom] | None = None,
 ) -> EpathWorkflowOutputFiles:
     """Write enabled E-path artifacts and return their paths."""
 
@@ -73,12 +76,21 @@ def write_epath_outputs(
     )
 
     selected_pdb: Path | None = None
+    model_pdb: Path | None = None
     if options.write_structure_files:
-        selected_pdb = write_structure_outputs(
+        structure_files = write_structure_outputs(
             prefix,
             selection_result.selected_atoms,
             b_factor_mode=options.structure_b_factor_mode,
-        ).selected_pdb
+            cleaned_atoms=cleaned_atoms,
+            bdamage_by_source_index={
+                scored_atom.atom.source_atom_index: scored_atom.atom.bdamage
+                for scored_atom in selection_result.scored_atoms
+            },
+            bdamage_threshold=selection_result.bdamage_threshold,
+        )
+        selected_pdb = structure_files.selected_pdb
+        model_pdb = structure_files.model_pdb
 
     z_score_histogram = (
         plot_z_hist(
@@ -96,6 +108,7 @@ def write_epath_outputs(
         combined_csv=combined_csv,
         cluster_csv=cluster_csv,
         selected_pdb=selected_pdb,
+        model_pdb=model_pdb,
         z_score_histogram=z_score_histogram,
         summary_report=summary_report,
     )
@@ -310,6 +323,7 @@ def _output_file_entries(
         ("Combined atom CSV", output_files.combined_csv),
         ("Cluster CSV", output_files.cluster_csv),
         ("Selected-atoms PDB", output_files.selected_pdb),
+        ("Cleaned model PDB", output_files.model_pdb),
         ("Z-score histogram", output_files.z_score_histogram),
         ("Summary report", output_files.summary_report),
     )

@@ -20,18 +20,11 @@ class StructurePreparationOptions:
     require_positive_b_factor: bool = True
     resolve_altlocs: bool = True
 
-    include_hetatm_in_selection: bool = False
-    # Modified amino acids are often encoded as HETATM but still belong to the
-    # protein selection.
+    # Only protein atoms are scored. Modified amino acids are often encoded as
+    # HETATM but still belong to the polypeptide, so they stay in the
+    # selection. Solvent, ions, ligands, cofactors, and nucleic acids are never
+    # scored; they still contribute to the packing density of nearby atoms.
     include_protein_like_hetatm_in_selection: bool = True
-    include_nucleic_acid_in_selection: bool = False
-    require_protein_selection: bool = True
-
-    remove_atom_serials: frozenset[int] = frozenset()
-    add_atom_serials: frozenset[int] = frozenset()
-
-    remove_component_names: frozenset[str] = frozenset()
-    add_component_names: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)

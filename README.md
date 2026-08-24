@@ -69,8 +69,18 @@ PDB ID or input filename stem as the output prefix. A normal run writes:
 - `*_clusters.csv`: one row per reported selected-atom cluster (eight or more
   atoms by default).
 - `*_selected.pdb`: selected E-path atoms.
+- `*_model.pdb`: the complete cleaned model with BDamage in the B-factor
+  column.
 - `*_zscores.png`: BDamage Z-score histogram.
 - `*_summary.txt`: persistent human-readable analysis summary.
+
+`*_model.pdb` holds every atom that survived cleaning, so solvent, ions,
+ligands, and cofactors are retained for inspection alongside the E-path results
+even though they are never scored. Scored atoms carry their BDamage value in
+the B-factor column and unscored atoms carry `0.00`, so colouring by B-factor
+shows the BDamage landscape without the excluded atoms distorting the scale.
+The selected atoms are those with a B-factor above zero and at or below the
+reported BDamage threshold, which the file records in a `REMARK 250` line.
 
 The terminal and persistent summaries include raw protein Bnet and, when the
 input contains resolution metadata, its percentile against the bundled
@@ -80,33 +90,36 @@ corresponding RABDAM value is unavailable without stopping ePath.
 
 Use `--output-dir` to choose another output directory or `--output-prefix` for
 a single structure. `--no-csv`, `--no-pdb`, `--no-plot`, and `--no-reports`
-disable the corresponding output groups. The `epath bdamage` subcommand writes
-the standalone per-atom BDamage CSV.
+disable the corresponding output groups. Per-atom BDamage, packing density, and
+window-averaged B-factors are columns of the combined `*_epath.csv` output.
 
-## Selection Defaults
+## Scored Atom Population
 
-By default the full E-path command removes hydrogens, resolves alternate atom
-sites by highest occupancy, and scores protein and HETATM records, including
-water. This is the manuscript-oriented pathway-analysis population and allows
-waters and cofactors to participate without extra flags. The standalone
-`epath bdamage` command retains the RABDAM-style default of excluding
-non-protein HETATM records.
+E-path analyses electron-transfer pathways through proteins, so only protein
+atoms receive BDamage scores. Hydrogens are removed and alternate atom sites
+are resolved by highest occupancy, matching RABDAM. Modified amino acids
+deposited as HETATM stay in the protein selection.
 
-Useful selection options:
+Solvent, ions, ligands, cofactors, and nucleic acids are not scored. They are
+not ignored: packing density counts every non-hydrogen atom in the crystal
+environment whether or not it is scored, so they still shape the BDamage value
+of every protein atom near them.
 
-```bash
-./epath model.cif --include-hetatm
-./epath model.cif --exclude-hetatm
-./epath model.cif --include-nucleic-acid
-./epath model.cif --remove-component HOH
-./epath model.cif --add-component LIG
-./epath model.cif --remove-atom-serial 123 --add-atom-serial 456
-./epath model.cif --minimum-cluster-size 1
-```
+This population is fixed rather than configurable, because it is the single
+choice the whole analysis rests on:
 
-Changing the selected atoms changes the BDamage distribution. Prefer the
-documented manuscript-style default for comparable E-path runs, and record any
-selection overrides used for a particular structure.
+- BDamage compares an atom's B-factor against atoms in a similar packing
+  density environment. Protein, nucleic-acid, and heteroatom B-factors relate
+  to packing density differently, so scoring them together would make an
+  atom's BDamage partly a statement about which population it belongs to.
+- The share of a model that is modelled solvent scales with resolution, from
+  under 2% to over 14% of scored atoms across ordinary structures. Including
+  solvent would make the selection percentile mean something different in
+  every structure, so cluster statistics could not be compared between models.
+- Bnet is defined on Asp/Glu carboxyl oxygens and is protein-only, so a mixed
+  scored population would be inconsistent with the Bnet reported beside it.
+
+There is no option anywhere in the program to score anything else.
 
 The default E-path selection is the lowest 2% of BDamage values. Connected
 components use a 4 A atom-to-atom cutoff and only components containing at least
@@ -160,6 +173,12 @@ These improvements intentionally remove some RABDAM 2 application features.
 E-path does not support the legacy text input file, `-f`, `-i`, `-r`
 dataframe restart modes, interactive overwrite prompts, HTML reports, plots,
 BDamage-colored coordinate files, or restartable dataframe outputs.
+
+E-path also does not expose RABDAM's atom-selection controls. RABDAM allows
+HETATM, nucleic-acid, and per-atom or per-component selection overrides;
+E-path fixes the population at protein atoms, because a pathway analysis that
+compares clusters between structures requires the scored population to be
+defined the same way in every model.
 
 ## Input Validation
 

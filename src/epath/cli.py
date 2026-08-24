@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import math
 import re
 import sys
@@ -27,7 +26,6 @@ from epath.workflow import (
 )
 from rabdam.bdamage.score import (
     BDamageScoreError,
-    BDamageScoreResult,
     bdamage_scores_as_tuple,
 )
 from rabdam.bnet.workflow import BnetWorkflowResult, calculate_bnet_workflow
@@ -38,7 +36,7 @@ from rabdam.packing.density import (
     PackingDensityError,
     packing_density_counts_as_tuple,
 )
-from rabdam.structure.models import PreparedStructure, StructurePreparationOptions
+from rabdam.structure.models import StructurePreparationOptions
 from rabdam.workflow import (
     BDamageWorkflowError,
     BDamageWorkflowOptions,
@@ -51,7 +49,6 @@ from xtal.resolver import ResolvedStructureInput, resolve_structure_input
 from xtal.validate import CrystalMetadataError, ValidatedCrystal
 
 DEFAULT_OUTPUT_DIR = Path("output")
-DEFAULT_OUTPUT_CSV_PATTERN = "output/<structure>_BDamage.csv"
 DEFAULT_DOWNLOAD_DIR = DEFAULT_RCSB_DOWNLOAD_DIR
 CITATIONS_MESSAGE = """Please cite:
 
@@ -66,6 +63,14 @@ BDamage:
 Bnet / Bnet percentile:
   Shelley KL & Garman EF (2022).
   Nat Commun 13, 1314."""
+REMOVED_BDAMAGE_COMMAND_MESSAGE = """\
+epath: error: the 'bdamage' subcommand has been removed.
+
+E-path scores protein atoms only, and that population is no longer
+configurable. Run 'epath STRUCTURE_INPUT' instead; per-atom BDamage,
+packing density, and window-averaged B-factors are written to the
+combined '*_epath.csv' output."""
+
 MISSING_STRUCTURE_INPUT_MESSAGE = """epath: error: missing required argument: structure_input
 
 Usage:
@@ -79,27 +84,6 @@ Examples:
   epath bdamage example.cif -o output/example_BDamage.csv
 
 Run 'epath --help' for all options."""
-
-CSV_FIELDNAMES = [
-    "REC",
-    "ATMNUM",
-    "ATMNAME",
-    "CONFORMER",
-    "RESNAME",
-    "CHAIN",
-    "RESNUM",
-    "INSCODE",
-    "XPOS",
-    "YPOS",
-    "ZPOS",
-    "OCC",
-    "BFAC",
-    "ELEMENT",
-    "CHARGE",
-    "PD",
-    "AVRG_BF",
-    "BDAM",
-]
 
 RABDAM_CLI_ERRORS = (
     BDamageScoreError,
@@ -115,40 +99,6 @@ RABDAM_CLI_ERRORS = (
 )
 
 T = TypeVar("T")
-
-
-@dataclass(frozen=True, slots=True)
-class RabdamCliResult:
-    """Result returned by the CLI runner."""
-
-    local_input: ResolvedStructureInput
-    output_csv: Path
-    workflow_result: BDamageWorkflowResult
-    bnet_workflow_result: BnetWorkflowResult
-
-
-@dataclass(frozen=True, slots=True)
-class RabdamBatchItemError:
-    """Failure for one input in a batch run."""
-
-    structure_input: str
-    error: Exception
-
-
-@dataclass(frozen=True, slots=True)
-class RabdamBatchCliResult:
-    """Result returned by a batch CLI run."""
-
-    results: tuple[RabdamCliResult, ...]
-    errors: tuple[RabdamBatchItemError, ...]
-    output_dir: Path
-    elapsed_seconds: float
-
-    @property
-    def has_errors(self) -> bool:
-        """Return whether any batch item failed."""
-
-        return bool(self.errors)
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,7 +150,6 @@ def _build_epath_parser() -> argparse.ArgumentParser:
     epath_selection = parser.add_argument_group("E-path selection options")
     epath_advanced = parser.add_argument_group("advanced E-path parameters")
     bdamage = parser.add_argument_group("advanced BDamage parameters")
-    bdamage_selection = parser.add_argument_group("advanced BDamage selection options")
     bdamage_debug = parser.add_argument_group("advanced BDamage debugging options")
     download = parser.add_argument_group("download options")
     general = parser.add_argument_group("general options")
@@ -295,61 +244,8 @@ def _build_epath_parser() -> argparse.ArgumentParser:
         help="Keep only the largest selected-atom cluster in E-path outputs.",
     )
     _add_bdamage_calculation_arguments(bdamage, defaults=bdamage_defaults)
-    _add_bdamage_selection_arguments(
-        bdamage_selection,
-        include_hetatm_default=True,
-    )
     _add_bdamage_debug_arguments(bdamage_debug)
     _add_download_arguments(download)
-    _add_general_arguments(general)
-
-    return parser
-
-
-def _build_bdamage_parser() -> argparse.ArgumentParser:
-    """Build the BDamage-only command-line parser."""
-
-    defaults = BDamageWorkflowOptions()
-    parser = argparse.ArgumentParser(
-        prog="epath bdamage",
-        usage="%(prog)s STRUCTURE_INPUT [STRUCTURE_INPUT ...] [options]",
-        description="Run only the BDamage workflow for structure files or PDB IDs.",
-        add_help=False,
-    )
-    input_group = parser.add_argument_group("input")
-    output_download = parser.add_argument_group("output and download options")
-    bdamage = parser.add_argument_group("BDamage calculation parameters")
-    selection = parser.add_argument_group("BDamage selection options")
-    advanced = parser.add_argument_group("advanced/debugging options")
-    general = parser.add_argument_group("general options")
-
-    _add_structure_input_argument(input_group)
-    output_download.add_argument(
-        "-o",
-        "--output-csv",
-        metavar="PATH",
-        default=None,
-        help=(
-            "Path for the per-atom BDamage CSV in a single-structure run. "
-            f"Default: {DEFAULT_OUTPUT_CSV_PATTERN}"
-        ),
-    )
-    output_download.add_argument(
-        "--output-dir",
-        metavar="DIR",
-        default=str(DEFAULT_OUTPUT_DIR),
-        help=(
-            "Directory for default single-run output and batch output CSVs. "
-            f"Default: {DEFAULT_OUTPUT_DIR}"
-        ),
-    )
-    _add_download_arguments(output_download)
-    _add_bdamage_calculation_arguments(bdamage, defaults=defaults)
-    _add_bdamage_selection_arguments(
-        selection,
-        include_hetatm_default=False,
-    )
-    _add_bdamage_debug_arguments(advanced)
     _add_general_arguments(general)
 
     return parser
@@ -458,81 +354,11 @@ def _add_bdamage_calculation_arguments(
     )
 
 
-def _add_bdamage_selection_arguments(
-    group: Any,
-    *,
-    include_hetatm_default: bool,
-) -> None:
-    group.add_argument(
-        "--keep-hydrogens",
-        action="store_true",
-        help="Keep hydrogen atoms during structure preparation.",
-    )
-    group.add_argument(
-        "--include-hetatm",
-        dest="include_hetatm",
-        action="store_true",
-        default=include_hetatm_default,
-        help=(
-            "Include all HETATM records, including solvent, in the BDamage atom "
-            f"selection. Default: {include_hetatm_default}"
-        ),
-    )
-    group.add_argument(
-        "--exclude-hetatm",
-        dest="include_hetatm",
-        action="store_false",
-        help="Exclude non-protein HETATM records from the BDamage atom selection.",
-    )
-    group.add_argument(
-        "--include-nucleic-acid",
-        action="store_true",
-        help="Include nucleic-acid atoms in the BDamage atom selection.",
-    )
-    group.add_argument(
-        "--remove-atom-serial",
-        metavar="INT",
-        action="append",
-        default=[],
-        type=positive_int,
-        help="Remove an atom serial from the BDamage selection. May be used repeatedly.",
-    )
-    group.add_argument(
-        "--add-atom-serial",
-        metavar="INT",
-        action="append",
-        default=[],
-        type=positive_int,
-        help="Add an atom serial to the BDamage selection. May be used repeatedly.",
-    )
-    group.add_argument(
-        "--remove-component",
-        metavar="NAME",
-        action="append",
-        default=[],
-        type=component_name,
-        help="Remove a residue/component name from the BDamage selection.",
-    )
-    group.add_argument(
-        "--add-component",
-        metavar="NAME",
-        action="append",
-        default=[],
-        type=component_name,
-        help="Add a residue/component name to the BDamage selection.",
-    )
-
-
 def _add_bdamage_debug_arguments(group: Any) -> None:
     group.add_argument(
         "--materialize-translated-block",
         action="store_true",
         help="Build the full translated crystal block for debugging.",
-    )
-    group.add_argument(
-        "--allow-non-protein-selection",
-        action="store_true",
-        help="Allow BDamage scoring when the selected atoms contain no protein atoms.",
     )
     group.add_argument(
         "--preview-count",
@@ -548,13 +374,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
     raw_args = list(sys.argv[1:] if argv is None else argv)
     if raw_args and raw_args[0] == "bdamage":
-        parser = _build_bdamage_parser()
-        args = parser.parse_args(raw_args[1:])
-        args.command = "bdamage"
-    else:
-        parser = _build_epath_parser()
-        args = parser.parse_args(raw_args)
-        args.command = "epath"
+        raise SystemExit(REMOVED_BDAMAGE_COMMAND_MESSAGE)
+
+    parser = _build_epath_parser()
+    args = parser.parse_args(raw_args)
 
     args.structure_input = (
         args.structure_inputs[0] if len(args.structure_inputs) == 1 else None
@@ -613,15 +436,6 @@ def non_negative_int(value: str) -> int:
     return parsed
 
 
-def component_name(value: str) -> str:
-    """Return a normalized residue/component name for argparse."""
-
-    cleaned = value.strip().upper()
-    if not cleaned:
-        raise argparse.ArgumentTypeError("component name cannot be empty")
-    return cleaned
-
-
 def workflow_options_from_args(args: argparse.Namespace) -> BDamageWorkflowOptions:
     """Build workflow options from parsed command-line arguments."""
 
@@ -631,23 +445,6 @@ def workflow_options_from_args(args: argparse.Namespace) -> BDamageWorkflowOptio
         minimum_window_size=args.minimum_window_size,
         translation_range=args.translation_range,
         materialize_translated_block=args.materialize_translated_block,
-    )
-
-
-def preparation_options_from_args(
-    args: argparse.Namespace,
-) -> StructurePreparationOptions:
-    """Build structure-preparation options from parsed command-line arguments."""
-
-    return StructurePreparationOptions(
-        remove_hydrogens=not args.keep_hydrogens,
-        include_hetatm_in_selection=args.include_hetatm,
-        include_nucleic_acid_in_selection=args.include_nucleic_acid,
-        require_protein_selection=not args.allow_non_protein_selection,
-        remove_atom_serials=frozenset(args.remove_atom_serial),
-        add_atom_serials=frozenset(args.add_atom_serial),
-        remove_component_names=frozenset(args.remove_component),
-        add_component_names=frozenset(args.add_component),
     )
 
 
@@ -690,54 +487,11 @@ def run_from_args(
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
     total_runtime_start: float | None = None,
-) -> RabdamCliResult | RabdamBatchCliResult | EpathCliResult | EpathBatchCliResult:
+) -> EpathCliResult | EpathBatchCliResult:
     """Run the requested workflow from parsed command-line arguments."""
-
-    if args.command == "bdamage":
-        return run_bdamage_from_args(
-            args,
-            stdout=stdout,
-            stderr=stderr,
-            total_runtime_start=total_runtime_start,
-        )
 
     return run_epath_from_args(
         args,
-        stdout=stdout,
-        stderr=stderr,
-        total_runtime_start=total_runtime_start,
-    )
-
-
-def run_bdamage_from_args(
-    args: argparse.Namespace,
-    *,
-    stdout: TextIO = sys.stdout,
-    stderr: TextIO = sys.stderr,
-    total_runtime_start: float | None = None,
-) -> RabdamCliResult | RabdamBatchCliResult:
-    """Run the BDamage workflow from parsed command-line arguments."""
-
-    if total_runtime_start is None:
-        total_runtime_start = perf_counter()
-
-    structure_inputs = structure_inputs_from_args(args)
-    if not structure_inputs:
-        raise ValueError("At least one structure input is required.")
-
-    if len(structure_inputs) == 1:
-        return run_single_structure_from_args(
-            args,
-            structure_input=structure_inputs[0],
-            output_csv=single_output_csv_from_args(args),
-            stdout=stdout,
-            stderr=stderr,
-            total_runtime_start=total_runtime_start,
-        )
-
-    return run_batch_from_args(
-        args,
-        structure_inputs=structure_inputs,
         stdout=stdout,
         stderr=stderr,
         total_runtime_start=total_runtime_start,
@@ -767,7 +521,9 @@ def calculate_bdamage_workflow_from_args(
     """Run the shared BDamage calculation used by CLI workflows."""
 
     workflow_options = workflow_options_from_args(args)
-    preparation_options = preparation_options_from_args(args)
+    # Structure preparation is not configurable: only protein atoms are
+    # scored, so the RABDAM defaults are the E-path population.
+    preparation_options = StructurePreparationOptions()
 
     # A named generic function rather than a lambda so the workflow stage
     # callback keeps its return type through WorkflowStageRunner.
@@ -804,134 +560,6 @@ def calculate_bdamage_workflow_from_args(
     )
 
     return local_input, workflow_result
-
-
-def run_single_structure_from_args(
-    args: argparse.Namespace,
-    *,
-    structure_input: str,
-    output_csv: Path | None,
-    stdout: TextIO,
-    stderr: TextIO,
-    total_runtime_start: float,
-    used_batch_output_paths: set[Path] | None = None,
-) -> RabdamCliResult:
-    """Run the BDamage workflow for one structure input."""
-
-    local_input, workflow_result = calculate_bdamage_workflow_from_args(
-        args,
-        structure_input=structure_input,
-        stderr=stderr,
-    )
-
-    if output_csv is None:
-        output_csv = batch_output_csv_path(
-            local_input,
-            output_dir=Path(args.output_dir).expanduser(),
-            used_output_paths=used_batch_output_paths,
-        )
-
-    run_stage(
-        "Writing BDamage CSV",
-        lambda: write_bdamage_csv(
-            output_path=output_csv,
-            prepared_structure=workflow_result.prepared_structure,
-            bdamage_score_result=workflow_result.bdamage_score_result,
-        ),
-        stream=stderr,
-        quiet=args.quiet,
-    )
-
-    bnet_workflow_result = run_stage(
-        "Calculating Bnet and Bnet percentile",
-        lambda: calculate_bnet_workflow(
-            prepared_structure=workflow_result.prepared_structure,
-            bdamage_score_result=workflow_result.bdamage_score_result,
-        ),
-        stream=stderr,
-        quiet=args.quiet,
-    )
-
-    cli_result = RabdamCliResult(
-        local_input=local_input,
-        output_csv=output_csv,
-        workflow_result=workflow_result,
-        bnet_workflow_result=bnet_workflow_result,
-    )
-
-    if not args.quiet:
-        total_runtime_seconds = perf_counter() - total_runtime_start
-        print_summary(
-            cli_result,
-            preview_count=args.preview_count,
-            total_runtime_seconds=total_runtime_seconds,
-            stream=stdout,
-        )
-
-    return cli_result
-
-
-def run_batch_from_args(
-    args: argparse.Namespace,
-    *,
-    structure_inputs: tuple[str, ...],
-    stdout: TextIO,
-    stderr: TextIO,
-    total_runtime_start: float,
-) -> RabdamBatchCliResult:
-    """Run the BDamage workflow for multiple structure inputs."""
-
-    if args.output_csv is not None:
-        raise ValueError(
-            "--output-csv can only be used with one structure input. "
-            "Use --output-dir for batch runs."
-        )
-
-    output_dir = Path(args.output_dir).expanduser()
-    results: list[RabdamCliResult] = []
-    errors: list[RabdamBatchItemError] = []
-    used_output_paths: set[Path] = set()
-
-    for index, structure_input in enumerate(structure_inputs, start=1):
-        if not args.quiet:
-            print(
-                f"\nBatch item {index}/{len(structure_inputs)}: {structure_input}",
-                file=stderr,
-            )
-
-        try:
-            result = run_single_structure_from_args(
-                args,
-                structure_input=structure_input,
-                output_csv=None,
-                stdout=stdout,
-                stderr=stderr,
-                total_runtime_start=perf_counter(),
-                used_batch_output_paths=used_output_paths,
-            )
-        except RABDAM_CLI_ERRORS as error:
-            errors.append(
-                RabdamBatchItemError(
-                    structure_input=structure_input,
-                    error=error,
-                )
-            )
-            print(f"epath: error: {structure_input}: {error}", file=stderr)
-        else:
-            results.append(result)
-
-    elapsed_seconds = perf_counter() - total_runtime_start
-    batch_result = RabdamBatchCliResult(
-        results=tuple(results),
-        errors=tuple(errors),
-        output_dir=output_dir,
-        elapsed_seconds=elapsed_seconds,
-    )
-
-    if not args.quiet:
-        print_batch_summary(batch_result, stream=stdout)
-
-    return batch_result
 
 
 def run_epath_from_args(
@@ -1102,15 +730,6 @@ def run_epath_batch_from_args(
     return batch_result
 
 
-def single_output_csv_from_args(args: argparse.Namespace) -> Path | None:
-    """Return the output CSV path for a single-structure run."""
-
-    if args.output_csv is not None:
-        return Path(args.output_csv).expanduser()
-
-    return None
-
-
 def single_output_prefix_from_args(args: argparse.Namespace) -> Path | None:
     """Return the E-path output prefix for a single-structure run."""
 
@@ -1118,28 +737,6 @@ def single_output_prefix_from_args(args: argparse.Namespace) -> Path | None:
         return Path(args.output_prefix).expanduser()
 
     return None
-
-
-def batch_output_csv_path(
-    local_input: ResolvedStructureInput,
-    *,
-    output_dir: Path,
-    used_output_paths: set[Path] | None,
-) -> Path:
-    """Return a unique batch output CSV path for one resolved input."""
-
-    label = output_label_for_input(local_input)
-    candidate = output_dir / f"{label}_BDamage.csv"
-    if used_output_paths is None:
-        return candidate
-
-    suffix = 2
-    while candidate in used_output_paths:
-        candidate = output_dir / f"{label}_{suffix}_BDamage.csv"
-        suffix += 1
-
-    used_output_paths.add(candidate)
-    return candidate
 
 
 def batch_output_prefix_path(
@@ -1217,118 +814,6 @@ def print_citations(*, stream: TextIO) -> None:
     print(CITATIONS_MESSAGE, file=stream)
 
 
-def write_bdamage_csv(
-    *,
-    output_path: Path,
-    prepared_structure: PreparedStructure,
-    bdamage_score_result: BDamageScoreResult,
-) -> None:
-    """Write per-atom BDamage results as a CSV file."""
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with output_path.open("w", newline="") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=CSV_FIELDNAMES)
-        writer.writeheader()
-
-        for atom, score in zip(
-            prepared_structure.selected_atoms,
-            bdamage_score_result.atom_results,
-            strict=True,
-        ):
-            record = atom.record
-            writer.writerow(
-                {
-                    "REC": "HETATM" if record.is_hetatm else "ATOM",
-                    "ATMNUM": record.atom_serial,
-                    "ATMNAME": record.atom_name,
-                    "CONFORMER": record.altloc or ".",
-                    "RESNAME": record.residue_name,
-                    "CHAIN": record.chain_id or ".",
-                    "RESNUM": record.residue_number,
-                    "INSCODE": record.insertion_code or ".",
-                    "XPOS": record.x,
-                    "YPOS": record.y,
-                    "ZPOS": record.z,
-                    "OCC": record.occupancy,
-                    "BFAC": record.b_factor,
-                    "ELEMENT": record.element,
-                    "CHARGE": "?",
-                    "PD": score.packing_density,
-                    "AVRG_BF": score.average_b_factor,
-                    "BDAM": score.bdamage,
-                }
-            )
-
-
-def print_summary(
-    result: RabdamCliResult,
-    *,
-    preview_count: int,
-    total_runtime_seconds: float,
-    stream: TextIO,
-) -> None:
-    """Print a compact successful-run summary."""
-
-    workflow_result = result.workflow_result
-    print(file=stream)
-    print("Done.", file=stream)
-    print(file=stream)
-    print(f"Input: {result.local_input.local_path}", file=stream)
-    print(f"Output CSV: {result.output_csv}", file=stream)
-    print(file=stream)
-    print_crystal_summary(workflow_result.crystal, stream=stream)
-    print(file=stream)
-    print("Crystallographic expansion:", file=stream)
-    print(
-        "  Symmetry-expanded atoms: "
-        f"{len(workflow_result.symmetry_expanded_structure.atoms)}",
-        file=stream,
-    )
-    print(
-        "  Translated atoms before trimming: "
-        f"{workflow_result.trimmed_block.original_atom_count}",
-        file=stream,
-    )
-    print(
-        "  Neighbour-block atoms after trimming: "
-        f"{workflow_result.trimmed_block.atom_count}",
-        file=stream,
-    )
-    print(file=stream)
-    print("BDamage summary:", file=stream)
-    print(
-        f"  Selected atoms: {workflow_result.prepared_structure.report.selected_atom_count}",
-        file=stream,
-    )
-    print(f"  Window size: {workflow_result.window_size}", file=stream)
-
-    print(file=stream)
-    print_bnet_summary(result.bnet_workflow_result, stream=stream)
-
-    if preview_count > 0:
-        packing_density_counts = packing_density_counts_as_tuple(
-            workflow_result.packing_density_result
-        )[:preview_count]
-        bdamage_scores = bdamage_scores_as_tuple(workflow_result.bdamage_score_result)[
-            :preview_count
-        ]
-        print(file=stream)
-        print("Preview:", file=stream)
-        print(f"  Packing-density counts, first {preview_count}:", file=stream)
-        print(f"    {_format_int_values(packing_density_counts)}", file=stream)
-        print(f"  BDamage scores, first {preview_count}:", file=stream)
-        print(f"    {_format_float_values(bdamage_scores)}", file=stream)
-
-    if workflow_result.translated_block is not None:
-        print(file=stream)
-        print("Debug:", file=stream)
-        print("  Translated block materialized: True", file=stream)
-
-    print(file=stream)
-    print(f"Total runtime: {total_runtime_seconds:.1f}s", file=stream)
-
-
 def print_epath_summary(
     result: EpathCliResult,
     *,
@@ -1391,6 +876,7 @@ def print_epath_summary(
     print(f"  Combined CSV: {output_files.combined_csv}", file=stream)
     print(f"  Cluster CSV: {output_files.cluster_csv}", file=stream)
     print(f"  Selected PDB: {output_files.selected_pdb}", file=stream)
+    print(f"  Model PDB: {output_files.model_pdb}", file=stream)
     print(f"  Z-score plot: {output_files.z_score_histogram}", file=stream)
     print(f"  Summary report: {output_files.summary_report}", file=stream)
 
@@ -1491,27 +977,6 @@ def print_bnet_summary(
     )
 
 
-def print_batch_summary(
-    result: RabdamBatchCliResult,
-    *,
-    stream: TextIO,
-) -> None:
-    """Print a compact batch-run summary."""
-
-    print(file=stream)
-    print("Batch summary:", file=stream)
-    print(f"  Successful: {len(result.results)}", file=stream)
-    print(f"  Failed: {len(result.errors)}", file=stream)
-    print(f"  Output directory: {result.output_dir}", file=stream)
-
-    if result.errors:
-        print("  Failed inputs:", file=stream)
-        for item_error in result.errors:
-            print(f"    {item_error.structure_input}", file=stream)
-
-    print(f"  Total runtime: {result.elapsed_seconds:.1f}s", file=stream)
-
-
 def print_epath_batch_summary(
     result: EpathBatchCliResult,
     *,
@@ -1575,10 +1040,7 @@ def main(
         print(f"epath: error: {error}", file=stderr)
         return 1
 
-    if (
-        isinstance(result, (RabdamBatchCliResult, EpathBatchCliResult))
-        and result.has_errors
-    ):
+    if isinstance(result, EpathBatchCliResult) and result.has_errors:
         return 1
 
     return 0
