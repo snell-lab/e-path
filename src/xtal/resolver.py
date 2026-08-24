@@ -2,7 +2,6 @@
 
 import os
 import re
-from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -93,33 +92,6 @@ def resolve_structure_input(raw_input: str) -> ResolvedStructureInput:
         "Expected an existing local .cif, .mmcif, or .pdb file "
         "or a classic 4-character PDB ID such as 1LYZ."
     )
-
-
-def resolve_many_structure_inputs(
-    raw_inputs: Sequence[str],
-) -> list[ResolvedStructureInput]:
-    """Resolve a batch of inputs while collecting all failures.
-
-    Raises:
-        InputResolutionError: If no inputs are provided.
-        InputBatchResolutionError: If any individual input cannot be resolved.
-    """
-    if not raw_inputs:
-        raise InputResolutionError("No structure inputs were provided.")
-
-    resolved_inputs: list[ResolvedStructureInput] = []
-    errors: list[tuple[str, InputResolutionError]] = []
-
-    for raw_input in raw_inputs:
-        try:
-            resolved_inputs.append(resolve_structure_input(raw_input))
-        except InputResolutionError as error:
-            errors.append((raw_input, error))
-
-    if errors:
-        raise InputBatchResolutionError(errors)
-
-    return resolved_inputs
 
 
 def is_valid_classic_pdb_id(value: str) -> bool:

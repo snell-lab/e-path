@@ -11,7 +11,6 @@ from numpy.typing import NDArray
 from rabdam.crystal.symmetry import SymmetryExpandedStructure
 from rabdam.crystal.translate import (
     TranslatedAtom,
-    TranslatedCrystalBlock,
     UnitCellTranslationVectors,
     translation_vector_for_offsets,
     unit_cell_translation_vectors,
@@ -79,20 +78,6 @@ class ArrayTrimmedCrystalBlock:
 
 
 TrimmedNeighbourBlock = TrimmedCrystalBlock | ArrayTrimmedCrystalBlock
-
-
-def trim_translated_block_for_bdamage(
-    *,
-    translated_block: TranslatedCrystalBlock,
-    prepared_structure: PreparedStructure,
-    padding: float,
-) -> TrimmedCrystalBlock:
-    """Trim a materialized translated block around selected BDamage atoms."""
-    return trim_translated_block_to_reference_atoms(
-        translated_block=translated_block,
-        reference_atoms=prepared_structure.selected_atoms,
-        padding=padding,
-    )
 
 
 def trim_expanded_unit_cell_for_bdamage(
@@ -239,48 +224,6 @@ def trim_expanded_unit_cell_to_reference_atoms(
     )
 
 
-def trim_translated_block_to_reference_atoms(
-    *,
-    translated_block: TranslatedCrystalBlock,
-    reference_atoms: Iterable[PreparedAtom],
-    padding: float,
-) -> TrimmedCrystalBlock:
-    """Retain materialized translated atoms near reference atoms.
-
-    The inclusive Cartesian bounds extend `padding` angstroms beyond the
-    reference atoms on every face.
-    """
-    if padding < 0:
-        raise CrystalTrimError(f"padding must be non-negative, got {padding!r}.")
-
-    translated_atom_tuple = tuple(translated_block.atoms)
-    if not translated_atom_tuple:
-        raise CrystalTrimError("Cannot trim an empty translated crystal block.")
-
-    reference_bounds = bounds_from_prepared_atoms(reference_atoms)
-    trim_bounds = expand_bounds(reference_bounds, padding)
-
-    trimmed_atoms = tuple(
-        atom
-        for atom in translated_atom_tuple
-        if translated_atom_is_inside_bounds(atom, trim_bounds)
-    )
-
-    if not trimmed_atoms:
-        raise CrystalTrimError(
-            "Trimmed crystal block contains no atoms. Check unit-cell translation "
-            "and packing-density threshold."
-        )
-
-    return TrimmedCrystalBlock(
-        atoms=trimmed_atoms,
-        reference_bounds=reference_bounds,
-        trim_bounds=trim_bounds,
-        padding=float(padding),
-        original_atom_count=len(translated_atom_tuple),
-    )
-
-
 def bounds_from_prepared_atoms(
     atoms: Iterable[PreparedAtom],
 ) -> CartesianBounds:
@@ -322,25 +265,3 @@ def expand_bounds(bounds: CartesianBounds, padding: float) -> CartesianBounds:
         z_min=float(bounds.z_min - padding),
         z_max=float(bounds.z_max + padding),
     )
-
-
-def translated_atom_is_inside_bounds(
-    atom: TranslatedAtom,
-    bounds: CartesianBounds,
-) -> bool:
-    """Return whether an atom lies inside inclusive Cartesian bounds."""
-    return (
-        bounds.x_min <= atom.x <= bounds.x_max
-        and bounds.y_min <= atom.y <= bounds.y_max
-        and bounds.z_min <= atom.z <= bounds.z_max
-    )
-
-
-def trimmed_coordinates_as_tuples(
-    trimmed_block: TrimmedNeighbourBlock,
-) -> tuple[tuple[float, float, float], ...]:
-    """Return trimmed Cartesian coordinates in row or atom order."""
-    if isinstance(trimmed_block, ArrayTrimmedCrystalBlock):
-        return tuple(tuple(row) for row in trimmed_block.coordinates.tolist())
-
-    return tuple((atom.x, atom.y, atom.z) for atom in trimmed_block.atoms)

@@ -78,18 +78,3 @@ def _classify_normalized_component(component_name: str) -> tuple[bool, bool, boo
         component_name in NUCLEIC_ACID_COMPONENT_OVERRIDES or residue.is_nucleic_acid(),
         component_name in SOLVENTS or residue.is_water(),
     )
-
-
-def is_protein_component(component_name: str) -> bool:
-    """Return whether a component is protein-like."""
-    return classify_component(component_name)[0]
-
-
-def is_nucleic_acid_component(component_name: str) -> bool:
-    """Return whether a component is nucleic-acid-like."""
-    return classify_component(component_name)[1]
-
-
-def is_solvent_component(component_name: str) -> bool:
-    """Return whether a component is solvent."""
-    return classify_component(component_name)[2]

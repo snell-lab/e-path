@@ -133,38 +133,6 @@ def ensure_local_structure_file(
     )
 
 
-def ensure_local_structure_files(
-    resolved_inputs: list[ResolvedStructureInput],
-    *,
-    download_dir: Path | str = DEFAULT_RCSB_DOWNLOAD_DIR,
-    overwrite: bool = False,
-) -> list[ResolvedStructureInput]:
-    """Ensure a batch is local while collecting all download failures.
-
-    Raises:
-        RcsbBatchDownloadError: If any input cannot be downloaded.
-    """
-    local_inputs: list[ResolvedStructureInput] = []
-    errors: list[tuple[ResolvedStructureInput, RcsbDownloadError]] = []
-
-    for resolved_input in resolved_inputs:
-        try:
-            local_inputs.append(
-                ensure_local_structure_file(
-                    resolved_input,
-                    download_dir=download_dir,
-                    overwrite=overwrite,
-                )
-            )
-        except RcsbDownloadError as error:
-            errors.append((resolved_input, error))
-
-    if errors:
-        raise RcsbBatchDownloadError(errors)
-
-    return local_inputs
-
-
 def _as_downloaded_local_input(
     *,
     resolved_input: ResolvedStructureInput,

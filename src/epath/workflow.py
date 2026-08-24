@@ -82,7 +82,12 @@ def run_epath_workflow(
     structure_path: str | Path | None = None,
     options: EpathWorkflowOptions | None = None,
 ) -> EpathWorkflowResult:
-    """Run E-path analysis from a completed RABDAM BDamage workflow."""
+    """Run E-path analysis from a completed RABDAM BDamage workflow.
+
+    This is the library entry point for callers that already hold a BDamage
+    workflow result. The command-line interface calls `analyze_epath_atoms`
+    directly.
+    """
 
     atoms = atoms_from_bdamage_workflow(bdamage_workflow_result)
     if structure_path is None:

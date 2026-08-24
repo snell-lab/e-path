@@ -200,24 +200,3 @@ def _gemmi_transform_vector(transform: gemmi.Transform) -> NDArray[np.float64]:
         (transform.vec.x, transform.vec.y, transform.vec.z),
         dtype=np.float64,
     )
-
-
-def apply_operation_without_wrapping(
-    operation: gemmi.Op,
-    fractional: gemmi.Fractional,
-) -> gemmi.Fractional:
-    """Apply a symmetry operation without wrapping fractional coordinates."""
-    transformed = operation.apply_to_xyz([fractional.x, fractional.y, fractional.z])
-
-    return gemmi.Fractional(
-        float(transformed[0]),
-        float(transformed[1]),
-        float(transformed[2]),
-    )
-
-
-def expanded_coordinates_as_tuples(
-    expanded_structure: SymmetryExpandedStructure,
-) -> tuple[tuple[float, float, float], ...]:
-    """Return expanded Cartesian coordinates in atom order."""
-    return tuple((atom.x, atom.y, atom.z) for atom in expanded_structure.atoms)

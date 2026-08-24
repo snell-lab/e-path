@@ -237,10 +237,3 @@ def translation_vector_for_offsets(
         y=(a_offset * vectors.a.y + b_offset * vectors.b.y + c_offset * vectors.c.y),
         z=(a_offset * vectors.a.z + b_offset * vectors.b.z + c_offset * vectors.c.z),
     )
-
-
-def translated_coordinates_as_tuples(
-    translated_block: TranslatedCrystalBlock,
-) -> tuple[tuple[float, float, float], ...]:
-    """Return translated Cartesian coordinates in atom order."""
-    return tuple((atom.x, atom.y, atom.z) for atom in translated_block.atoms)
