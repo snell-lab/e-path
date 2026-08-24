@@ -71,9 +71,11 @@ PDB ID or input filename stem as the output prefix. A normal run writes:
   `cluster_id`, so neither is repeated per atom.
 - `*_clusters.csv`: one row per reported pathway (eight or more atoms by
   default), holding the pathway table described below.
+- `*_steps.csv`: one row per step of every reported pathway.
 - `*_run.csv`: a single row of run-level results, described under Comparing
   Models.
 - `*_selected.pdb`: selected E-path atoms.
+- `*_path01.pdb`, `*_path02.pdb`, ...: one file per reported pathway.
 - `*_model.pdb`: the complete cleaned model with BDamage in the B-factor
   column.
 - `*_zfalloff.png`: rank-ordered BDamage Z-score falloff.
@@ -221,6 +223,30 @@ chain rather than by a modelled backbone bond, so a chain break numbered
 consecutively counts as peptide-contiguous.
 
 Step provenance is reported but does not feed the classification.
+
+`*_steps.csv` lists every step individually, with its length, its kind, and the
+two atoms it joins. The summary reports the total, mean, and largest step of a
+path, which says that a long step exists but not where it falls or how many
+others come close to it. Because tunnelling efficiency falls away sharply with
+distance, a single long step can limit a whole path, so the individual lengths
+are worth having. Steps are listed in the order the spanning tree was built,
+which is deterministic but is not a walk from one end of a path to the other.
+
+### Pathway Coordinate Files
+
+`*_selected.pdb` holds every selected atom, including those in components too
+small to be reported as pathways. Alongside it, one file per reported pathway
+is written as `*_path01.pdb`, `*_path02.pdb`, and so on, each holding only that
+pathway's atoms, with its class, descriptor, size, and endpoints recorded in
+`REMARK` lines.
+
+The two forms answer different questions. The combined file shows what the
+cutoff selected. The per-pathway files let a viewer load and colour each
+pathway separately, which is what colouring by class requires. Keeping them
+separate avoids encoding a pathway label into the occupancy or B-factor column,
+both of which already carry real values. Path numbers are zero padded so the
+files sort in path order, and they are suppressed by `--no-pdb` along with the
+other coordinate outputs.
 
 ### Classification
 

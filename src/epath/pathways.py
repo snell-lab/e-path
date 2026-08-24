@@ -20,11 +20,18 @@ overridden per run.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from epath.atoms import EpathAtom, format_residue_label, residue_key
+from epath.atoms import (
+    EpathAtom,
+    atom_token,
+    format_residue_label,
+    residue_key,
+    residue_label,
+)
 from epath.clustering import (
     DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
     EpathCluster,
@@ -129,6 +136,26 @@ class PathAnalysisOptions:
     modulatory_charged_fraction: float = DEFAULT_MODULATORY_CHARGED_FRACTION
 
 
+StepKind = Literal["intra_residue", "peptide", "tertiary", "interchain"]
+
+
+@dataclass(frozen=True, slots=True)
+class PathStep:
+    """One step of a path: an edge of its minimum spanning tree.
+
+    Steps are listed in the order the spanning tree was built, which is
+    deterministic but is not a walk from one end of the path to the other.
+    """
+
+    step_index: int
+    length: float
+    kind: StepKind
+    first_atom: str
+    first_residue: str
+    second_atom: str
+    second_residue: str
+
+
 @dataclass(frozen=True, slots=True)
 class EdgeProvenance:
     """How the steps of a path connect the residues it runs through.
@@ -195,9 +222,22 @@ class PathReport:
     end_endpoint: PathEndpoint
     topology: PathTopology
     composition: ResidueComposition
-    edges: EdgeProvenance
+    steps: tuple[PathStep, ...]
     path_class: PathClass
     structural_descriptor: str
+
+    @property
+    def edges(self) -> EdgeProvenance:
+        """Return how the steps of this path connect its residues."""
+
+        counts = Counter(step.kind for step in self.steps)
+
+        return EdgeProvenance(
+            intra_residue=counts["intra_residue"],
+            peptide=counts["peptide"],
+            tertiary=counts["tertiary"],
+            interchain=counts["interchain"],
+        )
 
     @property
     def path_id(self) -> int:
@@ -321,7 +361,7 @@ def _build_path_report(
         linear_ratio=options.linear_ratio,
         branched_node_fraction=options.branched_node_fraction,
     )
-    edges = _edge_provenance(cluster)
+    steps = _path_steps(cluster)
     first_index, second_index, _ = maximum_pairwise_distance_pair(coordinates)
     start_endpoint = annotate_endpoint(cluster.atoms[first_index].atom, context)
     end_endpoint = annotate_endpoint(cluster.atoms[second_index].atom, context)
@@ -342,7 +382,7 @@ def _build_path_report(
         end_endpoint=end_endpoint,
         topology=topology,
         composition=composition,
-        edges=edges,
+        steps=steps,
         path_class=path_class,
         structural_descriptor=_structural_descriptor(
             composition=composition,
@@ -408,23 +448,27 @@ def _path_residues(
     return residues, residue_indices
 
 
-def _edge_provenance(cluster: EpathCluster) -> EdgeProvenance:
-    """Classify each step of a path by how it connects residues."""
+def _path_steps(cluster: EpathCluster) -> tuple[PathStep, ...]:
+    """Return each step of a path with its length and how it connects residues."""
 
     atoms = [scored_atom.atom for scored_atom in cluster.atoms]
-    counts = {"intra_residue": 0, "peptide": 0, "tertiary": 0, "interchain": 0}
-    for edge in minimum_spanning_tree_edges(coordinates_for_atoms(cluster.atoms)):
-        counts[_edge_kind(atoms[edge.first_index], atoms[edge.second_index])] += 1
+    edges = minimum_spanning_tree_edges(coordinates_for_atoms(cluster.atoms))
 
-    return EdgeProvenance(
-        intra_residue=counts["intra_residue"],
-        peptide=counts["peptide"],
-        tertiary=counts["tertiary"],
-        interchain=counts["interchain"],
+    return tuple(
+        PathStep(
+            step_index=step_index,
+            length=edge.length,
+            kind=_edge_kind(atoms[edge.first_index], atoms[edge.second_index]),
+            first_atom=atom_token(atoms[edge.first_index]),
+            first_residue=residue_label(atoms[edge.first_index]),
+            second_atom=atom_token(atoms[edge.second_index]),
+            second_residue=residue_label(atoms[edge.second_index]),
+        )
+        for step_index, edge in enumerate(edges, start=1)
     )
 
 
-def _edge_kind(first: EpathAtom, second: EpathAtom) -> str:
+def _edge_kind(first: EpathAtom, second: EpathAtom) -> StepKind:
     if residue_key(first) == residue_key(second):
         return "intra_residue"
 

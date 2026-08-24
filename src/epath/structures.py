@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from epath.atoms import EpathAtom
+from epath.pathways import PathReport
 from epath.selection import EpathScoredAtom
 from rabdam.structure.models import PreparedAtom
 
@@ -27,22 +28,25 @@ class EpathStructureOutputFiles:
 
     selected_pdb: Path
     model_pdb: Path | None = None
+    path_pdbs: tuple[Path, ...] = ()
 
 
 def write_structure_outputs(
     output_prefix: str | Path,
     selected_atoms: Iterable[EpathScoredAtom],
     *,
+    path_reports: Sequence[PathReport] = (),
     cleaned_atoms: Sequence[PreparedAtom] | None = None,
     bdamage_by_source_index: Mapping[int, float] | None = None,
     bdamage_threshold: float | None = None,
 ) -> EpathStructureOutputFiles:
     """Write the E-path coordinate outputs.
 
-    Always writes the selected-atom subset. When the cleaned model is supplied,
-    also writes the complete cleaned model annotated with BDamage, so that
-    solvent, ions, and cofactors can be inspected alongside the E-path results
-    even though they were not scored.
+    Always writes the selected-atom subset, and one subset per reported
+    pathway. When the cleaned model is supplied, also writes the complete
+    cleaned model annotated with BDamage, so that solvent, ions, and cofactors
+    can be inspected alongside the E-path results even though they were not
+    scored.
     """
 
     prefix = Path(output_prefix)
@@ -66,6 +70,7 @@ def write_structure_outputs(
     return EpathStructureOutputFiles(
         selected_pdb=selected_pdb,
         model_pdb=model_pdb,
+        path_pdbs=write_path_subset_pdbs(prefix, path_reports),
     )
 
 
@@ -160,6 +165,47 @@ def write_selected_atoms_pdb(
         output_path,
         atoms,
         title=title,
+    )
+
+
+def write_path_subset_pdbs(
+    output_prefix: str | Path,
+    path_reports: Sequence[PathReport],
+) -> tuple[Path, ...]:
+    """Write one PDB subset per reported pathway.
+
+    The combined selected-atom file holds every selected atom, including those
+    in components too small to report. These files hold one pathway each, so a
+    viewer can load and colour them separately without a per-atom label being
+    encoded into the occupancy or B-factor column, which both carry real
+    values.
+
+    Path numbers are zero padded so the files sort in path order.
+    """
+
+    if not path_reports:
+        return ()
+
+    prefix = Path(output_prefix)
+    width = max(2, len(str(max(report.path_id for report in path_reports))))
+
+    return tuple(
+        write_atom_subset_pdb(
+            prefix.with_name(f"{prefix.name}_path{report.path_id:0{width}d}.pdb"),
+            report.cluster.atoms,
+            title=f"E-path pathway {report.path_id}",
+            remarks=(
+                f"Pathway {report.path_id}, class {report.path_class}.",
+                f"{report.structural_descriptor}.",
+                (
+                    f"{report.residue_count} residues, {report.node_count} nodes, "
+                    f"{report.total_length:.2f} A."
+                ),
+                f"Start: {report.start_endpoint.label}.",
+                f"End: {report.end_endpoint.label}.",
+            ),
+        )
+        for report in path_reports
     )
 
 

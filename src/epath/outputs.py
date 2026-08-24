@@ -15,7 +15,12 @@ from epath.residues import RESIDUE_CLASS_ORDER
 from epath.runs import EpathRunRecord
 from epath.selection import EpathSelectionResult
 from epath.structures import write_structure_outputs
-from epath.tables import write_cluster_csv, write_combined_atom_csv, write_run_csv
+from epath.tables import (
+    write_cluster_csv,
+    write_combined_atom_csv,
+    write_run_csv,
+    write_step_csv,
+)
 from rabdam.bnet.workflow import BnetWorkflowResult
 from rabdam.structure.models import PreparedAtom
 from rabdam.workflow import BDamageWorkflowResult
@@ -31,6 +36,7 @@ class EpathOutputWorkflowOptions:
     write_structure_files: bool = True
     write_z_score_plot: bool = True
     write_cluster_csv: bool = True
+    write_step_csv: bool = True
     write_run_csv: bool = True
     write_summary_report: bool = True
 
@@ -42,8 +48,10 @@ class EpathWorkflowOutputFiles:
     combined_csv: Path | None = None
     selected_pdb: Path | None = None
     model_pdb: Path | None = None
+    path_pdbs: tuple[Path, ...] = ()
     z_score_falloff: Path | None = None
     cluster_csv: Path | None = None
+    step_csv: Path | None = None
     run_csv: Path | None = None
     summary_report: Path | None = None
 
@@ -85,6 +93,11 @@ def write_epath_outputs(
         if options.write_cluster_csv
         else None
     )
+    step_csv = (
+        write_step_csv(_output_path(prefix, "steps.csv"), path_reports)
+        if options.write_step_csv
+        else None
+    )
     run_csv = (
         write_run_csv(_output_path(prefix, "run.csv"), (run_record,))
         if options.write_run_csv
@@ -93,10 +106,12 @@ def write_epath_outputs(
 
     selected_pdb: Path | None = None
     model_pdb: Path | None = None
+    path_pdbs: tuple[Path, ...] = ()
     if options.write_structure_files:
         structure_files = write_structure_outputs(
             prefix,
             selection_result.selected_atoms,
+            path_reports=path_reports,
             cleaned_atoms=cleaned_atoms,
             bdamage_by_source_index={
                 scored_atom.atom.source_atom_index: scored_atom.atom.bdamage
@@ -106,6 +121,7 @@ def write_epath_outputs(
         )
         selected_pdb = structure_files.selected_pdb
         model_pdb = structure_files.model_pdb
+        path_pdbs = structure_files.path_pdbs
 
     z_score_falloff = (
         plot_z_falloff(prefix, selection_result) if options.write_z_score_plot else None
@@ -116,9 +132,11 @@ def write_epath_outputs(
     output_files = EpathWorkflowOutputFiles(
         combined_csv=combined_csv,
         cluster_csv=cluster_csv,
+        step_csv=step_csv,
         run_csv=run_csv,
         selected_pdb=selected_pdb,
         model_pdb=model_pdb,
+        path_pdbs=path_pdbs,
         z_score_falloff=z_score_falloff,
         summary_report=summary_report,
     )
@@ -479,14 +497,19 @@ def _bnet_summary_lines(
 def _output_file_entries(
     output_files: EpathWorkflowOutputFiles,
 ) -> tuple[tuple[str, Path], ...]:
-    entries = (
+    entries: tuple[tuple[str, Path | None], ...] = (
         ("Combined atom CSV", output_files.combined_csv),
         ("Cluster CSV", output_files.cluster_csv),
+        ("Step CSV", output_files.step_csv),
         ("Run CSV", output_files.run_csv),
         ("Selected-atoms PDB", output_files.selected_pdb),
         ("Cleaned model PDB", output_files.model_pdb),
         ("Z-score falloff plot", output_files.z_score_falloff),
         ("Summary report", output_files.summary_report),
+        *(
+            (f"Pathway PDB {index}", path)
+            for index, path in enumerate(output_files.path_pdbs, start=1)
+        ),
     )
     return tuple((label, path) for label, path in entries if path is not None)
 

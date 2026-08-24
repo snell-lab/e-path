@@ -468,6 +468,7 @@ def epath_workflow_options_from_args(
             write_structure_files=not args.no_pdb,
             write_z_score_plot=not args.no_plot,
             write_cluster_csv=not args.no_reports,
+            write_step_csv=not args.no_reports,
             write_run_csv=not args.no_reports,
             write_summary_report=not args.no_reports,
         ),
@@ -912,8 +913,10 @@ def print_epath_summary(
     print("Outputs:", file=stream)
     print(f"  Combined CSV: {output_files.combined_csv}", file=stream)
     print(f"  Cluster CSV: {output_files.cluster_csv}", file=stream)
+    print(f"  Step CSV: {output_files.step_csv}", file=stream)
     print(f"  Run CSV: {output_files.run_csv}", file=stream)
     print(f"  Selected PDB: {output_files.selected_pdb}", file=stream)
+    print(f"  Pathway PDBs: {len(output_files.path_pdbs)}", file=stream)
     print(f"  Model PDB: {output_files.model_pdb}", file=stream)
     print(f"  Z-score falloff: {output_files.z_score_falloff}", file=stream)
     print(f"  Summary report: {output_files.summary_report}", file=stream)

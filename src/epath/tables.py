@@ -66,6 +66,17 @@ RUN_FIELDNAMES = [
     "largest_component_span",
 ]
 
+STEP_FIELDNAMES = [
+    "cluster_id",
+    "step_index",
+    "length",
+    "kind",
+    "first_atom",
+    "first_residue",
+    "second_atom",
+    "second_residue",
+]
+
 CLUSTER_FIELDNAMES = [
     "cluster_id",
     "endpoint_start",
@@ -169,6 +180,45 @@ def _run_row(record: EpathRunRecord) -> dict[str, Any]:
         "largest_component_largest_edge": record.largest_component_largest_edge,
         "largest_component_span": record.largest_component_span,
     }
+
+
+def write_step_csv(
+    output_path: str | Path,
+    path_reports: Iterable[PathReport],
+) -> Path:
+    """Write one CSV row per step of every reported pathway.
+
+    The summary reports the total, mean, and largest step of a path. This
+    records each step individually, because electron tunnelling falls away
+    sharply with distance and a single long step can limit a whole path.
+    """
+
+    output_file = Path(output_path)
+    if output_file.parent != Path("."):
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with output_file.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=STEP_FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(
+            _format_row_for_fields(
+                {
+                    "cluster_id": report.path_id,
+                    "step_index": step.step_index,
+                    "length": step.length,
+                    "kind": step.kind,
+                    "first_atom": step.first_atom,
+                    "first_residue": step.first_residue,
+                    "second_atom": step.second_atom,
+                    "second_residue": step.second_residue,
+                },
+                STEP_FIELDNAMES,
+            )
+            for report in path_reports
+            for step in report.steps
+        )
+
+    return output_file
 
 
 def write_cluster_csv(
