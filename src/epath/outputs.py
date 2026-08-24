@@ -7,14 +7,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from epath.clustering import EpathCluster
+from epath.clustering import ComponentStatistics, EpathCluster
 from epath.endpoints import CofactorSite, cofactor_site_summary
 from epath.pathways import PATH_CLASS_ORDER, PathReport
 from epath.plots import plot_z_falloff
 from epath.residues import RESIDUE_CLASS_ORDER
+from epath.runs import EpathRunRecord
 from epath.selection import EpathSelectionResult
 from epath.structures import write_structure_outputs
-from epath.tables import write_cluster_csv, write_combined_atom_csv
+from epath.tables import write_cluster_csv, write_combined_atom_csv, write_run_csv
 from rabdam.bnet.workflow import BnetWorkflowResult
 from rabdam.structure.models import PreparedAtom
 from rabdam.workflow import BDamageWorkflowResult
@@ -30,6 +31,7 @@ class EpathOutputWorkflowOptions:
     write_structure_files: bool = True
     write_z_score_plot: bool = True
     write_cluster_csv: bool = True
+    write_run_csv: bool = True
     write_summary_report: bool = True
 
 
@@ -42,6 +44,7 @@ class EpathWorkflowOutputFiles:
     model_pdb: Path | None = None
     z_score_falloff: Path | None = None
     cluster_csv: Path | None = None
+    run_csv: Path | None = None
     summary_report: Path | None = None
 
 
@@ -51,6 +54,8 @@ def write_epath_outputs(
     clusters: tuple[EpathCluster, ...],
     path_reports: Sequence[PathReport],
     cofactor_sites: Sequence[CofactorSite],
+    component_statistics: ComponentStatistics,
+    run_record: EpathRunRecord,
     analyzed_chains: Sequence[str],
     structure_path: str | Path | None,
     minimum_cluster_size: int,
@@ -80,6 +85,11 @@ def write_epath_outputs(
         if options.write_cluster_csv
         else None
     )
+    run_csv = (
+        write_run_csv(_output_path(prefix, "run.csv"), (run_record,))
+        if options.write_run_csv
+        else None
+    )
 
     selected_pdb: Path | None = None
     model_pdb: Path | None = None
@@ -106,6 +116,7 @@ def write_epath_outputs(
     output_files = EpathWorkflowOutputFiles(
         combined_csv=combined_csv,
         cluster_csv=cluster_csv,
+        run_csv=run_csv,
         selected_pdb=selected_pdb,
         model_pdb=model_pdb,
         z_score_falloff=z_score_falloff,
@@ -120,6 +131,7 @@ def write_epath_outputs(
             selection_result=selection_result,
             path_reports=path_reports,
             cofactor_sites=cofactor_sites,
+            component_statistics=component_statistics,
             minimum_cluster_size=minimum_cluster_size,
             output_files=output_files,
             bnet_workflow_result=bnet_workflow_result,
@@ -138,6 +150,7 @@ def write_summary_txt(
     selection_result: EpathSelectionResult,
     path_reports: Sequence[PathReport],
     cofactor_sites: Sequence[CofactorSite],
+    component_statistics: ComponentStatistics,
     minimum_cluster_size: int,
     output_files: EpathWorkflowOutputFiles,
     bnet_workflow_result: BnetWorkflowResult | None = None,
@@ -240,6 +253,7 @@ def write_summary_txt(
         _pathway_summary_lines(
             path_reports,
             cofactor_sites=cofactor_sites,
+            statistics=component_statistics,
             minimum_cluster_size=minimum_cluster_size,
         )
     )
@@ -258,6 +272,7 @@ def _pathway_summary_lines(
     path_reports: Sequence[PathReport],
     *,
     cofactor_sites: Sequence[CofactorSite],
+    statistics: ComponentStatistics,
     minimum_cluster_size: int,
 ) -> tuple[str, ...]:
     """Render the reported pathways, one block per path."""
@@ -267,11 +282,12 @@ def _pathway_summary_lines(
         "Pathways",
         "--------",
         f"Minimum reported cluster size: {minimum_cluster_size} atoms",
+        f"Connected components found: {statistics.total_count}",
         f"Cofactor sites: {cofactor_site_summary(cofactor_sites)}",
         f"Path count: {len(path_reports)}{_path_class_counts(path_reports)}",
     ]
     if not path_reports:
-        lines.append("No selected-atom clusters reached the reporting threshold.")
+        lines.extend(_unreported_component_lines(statistics))
         return tuple(lines)
 
     for report in path_reports:
@@ -313,6 +329,27 @@ def _pathway_summary_lines(
         )
 
     return tuple(lines)
+
+
+def _unreported_component_lines(
+    statistics: ComponentStatistics,
+) -> tuple[str, ...]:
+    """Describe the largest component when none reached the threshold."""
+
+    if statistics.largest_metrics is None:
+        return ("No selected atoms were connected into a component.",)
+
+    metrics = statistics.largest_metrics
+    return (
+        "No connected component reached the reporting threshold.",
+        (
+            f"Largest component: {statistics.largest_atom_count} atoms, "
+            f"length {_number(metrics.mst_total_length)} A, "
+            f"mean step {_number(metrics.mean_step)} A, "
+            f"largest edge {_number(metrics.mst_largest_edge)} A, "
+            f"span {_number(metrics.span)} A"
+        ),
+    )
 
 
 def _path_class_counts(path_reports: Sequence[PathReport]) -> str:
@@ -436,6 +473,7 @@ def _output_file_entries(
     entries = (
         ("Combined atom CSV", output_files.combined_csv),
         ("Cluster CSV", output_files.cluster_csv),
+        ("Run CSV", output_files.run_csv),
         ("Selected-atoms PDB", output_files.selected_pdb),
         ("Cleaned model PDB", output_files.model_pdb),
         ("Z-score falloff plot", output_files.z_score_falloff),

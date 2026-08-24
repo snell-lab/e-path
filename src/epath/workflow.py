@@ -10,8 +10,10 @@ from typing import Literal
 from epath.atoms import EpathAtom, atoms_from_bdamage_workflow
 from epath.clustering import (
     DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
+    ComponentStatistics,
     EpathCluster,
     cluster_selected_atoms,
+    component_statistics,
 )
 from epath.endpoints import CofactorSite
 from epath.outputs import (
@@ -20,6 +22,7 @@ from epath.outputs import (
     write_epath_outputs,
 )
 from epath.pathways import PathAnalysisOptions, PathReport, analyze_paths
+from epath.runs import EpathRunRecord, build_run_record
 from epath.selection import (
     EpathSelectionResult,
     select_atoms_by_percentile,
@@ -74,8 +77,10 @@ class EpathWorkflowResult:
     atoms: tuple[EpathAtom, ...]
     selection_result: EpathSelectionResult
     clusters: tuple[EpathCluster, ...]
+    component_statistics: ComponentStatistics
     path_reports: tuple[PathReport, ...]
     cofactor_sites: tuple[CofactorSite, ...]
+    run_record: EpathRunRecord
     output_files: EpathWorkflowOutputFiles
     bdamage_workflow_result: BDamageWorkflowResult | None = None
     bnet_workflow_result: BnetWorkflowResult | None = None
@@ -124,7 +129,7 @@ def analyze_epath_atoms(
         raise EpathWorkflowError("E-path analysis requires at least one atom.")
 
     selection_result = _select_atoms(atom_tuple, options.selection)
-    clusters = cluster_selected_atoms(
+    components = cluster_selected_atoms(
         selection_result.selected_atoms,
         distance_cutoff=options.clustering.distance_cutoff,
     )
@@ -132,8 +137,12 @@ def analyze_epath_atoms(
         options.clustering.minimum_cluster_size,
         name="minimum_cluster_size",
     )
+    # Components below the reporting threshold are not pathways, but the
+    # connectivity analysis still found them, so their count and the geometry
+    # of the largest one are recorded before they are dropped.
+    statistics = component_statistics(components)
     clusters = tuple(
-        cluster for cluster in clusters if cluster.atom_count >= minimum_cluster_size
+        cluster for cluster in components if cluster.atom_count >= minimum_cluster_size
     )
     cleaned_atoms = (
         bdamage_workflow_result.prepared_structure.cleaned_atoms
@@ -154,11 +163,22 @@ def analyze_epath_atoms(
             prepared_structure=bdamage_workflow_result.prepared_structure,
             bdamage_score_result=bdamage_workflow_result.bdamage_score_result,
         )
+    run_record = build_run_record(
+        structure_path=structure_path,
+        selection_result=selection_result,
+        clusters=clusters,
+        statistics=statistics,
+        minimum_cluster_size=minimum_cluster_size,
+        cutoff_percent=options.selection.percentile,
+        bnet_workflow_result=bnet_workflow_result,
+    )
     output_files = write_epath_outputs(
         selection_result=selection_result,
         clusters=clusters,
         path_reports=path_reports,
         cofactor_sites=path_analysis.cofactor_sites,
+        component_statistics=statistics,
+        run_record=run_record,
         analyzed_chains=analyzed_chains,
         structure_path=structure_path,
         minimum_cluster_size=minimum_cluster_size,
@@ -177,8 +197,10 @@ def analyze_epath_atoms(
         atoms=atom_tuple,
         selection_result=selection_result,
         clusters=clusters,
+        component_statistics=statistics,
         path_reports=path_reports,
         cofactor_sites=path_analysis.cofactor_sites,
+        run_record=run_record,
         output_files=output_files,
         bdamage_workflow_result=bdamage_workflow_result,
         bnet_workflow_result=bnet_workflow_result,

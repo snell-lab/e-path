@@ -19,6 +19,7 @@ from epath.endpoints import cofactor_site_summary
 from epath.outputs import EpathOutputWorkflowOptions
 from epath.pathways import PATH_CLASS_ORDER
 from epath.plots import EpathPlotError
+from epath.tables import write_run_csv
 from epath.workflow import (
     EpathClusterWorkflowOptions,
     EpathSelectionWorkflowOptions,
@@ -52,6 +53,9 @@ from xtal.resolver import ResolvedStructureInput, resolve_structure_input
 from xtal.validate import CrystalMetadataError, ValidatedCrystal
 
 DEFAULT_OUTPUT_DIR = Path("output")
+
+# One row per structure in a batch, written alongside the per-structure output.
+BATCH_COHORT_CSV_NAME = "epath_runs.csv"
 DEFAULT_DOWNLOAD_DIR = DEFAULT_RCSB_DOWNLOAD_DIR
 CITATIONS_MESSAGE = """Please cite:
 
@@ -129,6 +133,7 @@ class EpathBatchCliResult:
     errors: tuple[EpathBatchItemError, ...]
     output_dir: Path
     elapsed_seconds: float
+    cohort_csv: Path | None = None
 
     @property
     def has_errors(self) -> bool:
@@ -463,6 +468,7 @@ def epath_workflow_options_from_args(
             write_structure_files=not args.no_pdb,
             write_z_score_plot=not args.no_plot,
             write_cluster_csv=not args.no_reports,
+            write_run_csv=not args.no_reports,
             write_summary_report=not args.no_reports,
         ),
     )
@@ -703,12 +709,22 @@ def run_epath_batch_from_args(
         else:
             results.append(result)
 
+    # One row per structure, so a batch is directly comparable across models.
+    cohort_csv = (
+        write_run_csv(
+            output_dir / BATCH_COHORT_CSV_NAME,
+            (result.workflow_result.run_record for result in results),
+        )
+        if results and not args.no_reports
+        else None
+    )
     elapsed_seconds = perf_counter() - total_runtime_start
     batch_result = EpathBatchCliResult(
         results=tuple(results),
         errors=tuple(errors),
         output_dir=output_dir,
         elapsed_seconds=elapsed_seconds,
+        cohort_csv=cohort_csv,
     )
 
     if not args.quiet:
@@ -863,6 +879,10 @@ def print_epath_summary(
     print_bnet_summary(workflow_result.bnet_workflow_result, stream=stream)
     print(file=stream)
     print("Pathways:", file=stream)
+    print(
+        f"  Connected components: {workflow_result.component_statistics.total_count}",
+        file=stream,
+    )
     print(f"  Count: {len(workflow_result.path_reports)}", file=stream)
     class_counts = Counter(report.path_class for report in workflow_result.path_reports)
     if class_counts:
@@ -892,6 +912,7 @@ def print_epath_summary(
     print("Outputs:", file=stream)
     print(f"  Combined CSV: {output_files.combined_csv}", file=stream)
     print(f"  Cluster CSV: {output_files.cluster_csv}", file=stream)
+    print(f"  Run CSV: {output_files.run_csv}", file=stream)
     print(f"  Selected PDB: {output_files.selected_pdb}", file=stream)
     print(f"  Model PDB: {output_files.model_pdb}", file=stream)
     print(f"  Z-score falloff: {output_files.z_score_falloff}", file=stream)
@@ -1035,6 +1056,8 @@ def print_epath_batch_summary(
     print(f"  Successful: {len(result.results)}", file=stream)
     print(f"  Failed: {len(result.errors)}", file=stream)
     print(f"  Output directory: {result.output_dir}", file=stream)
+    if result.cohort_csv is not None:
+        print(f"  Cohort CSV: {result.cohort_csv}", file=stream)
 
     if result.errors:
         print("  Failed inputs:", file=stream)

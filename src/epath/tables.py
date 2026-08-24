@@ -11,6 +11,7 @@ from typing import Any
 from epath.atoms import EpathAtom, atom_token
 from epath.clustering import EpathCluster
 from epath.pathways import PathReport
+from epath.runs import EpathRunRecord
 from epath.selection import EpathScoredAtom, EpathSelectionResult
 
 COMBINED_ATOM_FIELDNAMES = [
@@ -42,6 +43,29 @@ COMBINED_ATOM_FIELDNAMES = [
 # The leading columns are the published pathway table: the path, where it
 # starts and ends, what it is made of, and how it was classified. The columns
 # after them are the geometry and the measurements the class was assigned from.
+RUN_FIELDNAMES = [
+    "structure",
+    "input_path",
+    "selection_method",
+    "cutoff_percent",
+    "total_atoms",
+    "atoms_selected",
+    "selected_percent",
+    "equivalent_z_score",
+    "bdamage_threshold",
+    "bnet",
+    "bnet_percentile",
+    "total_components",
+    "minimum_cluster_size",
+    "clusters_reported",
+    "largest_component_atoms",
+    "largest_component_reported",
+    "largest_component_length",
+    "largest_component_mean_step",
+    "largest_component_largest_edge",
+    "largest_component_span",
+]
+
 CLUSTER_FIELDNAMES = [
     "cluster_id",
     "endpoint_start",
@@ -90,6 +114,56 @@ def write_combined_atom_csv(
         writer.writerows(_format_row(row) for row in rows)
 
     return output_file
+
+
+def write_run_csv(
+    output_path: str | Path,
+    records: Iterable[EpathRunRecord],
+) -> Path:
+    """Write one CSV row per run.
+
+    A single run writes one row. Passing the records of a batch writes the
+    cohort table for those structures.
+    """
+
+    output_file = Path(output_path)
+    if output_file.parent != Path("."):
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with output_file.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=RUN_FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(
+            _format_row_for_fields(_run_row(record), RUN_FIELDNAMES)
+            for record in records
+        )
+
+    return output_file
+
+
+def _run_row(record: EpathRunRecord) -> dict[str, Any]:
+    return {
+        "structure": record.structure,
+        "input_path": record.input_path,
+        "selection_method": record.selection_method,
+        "cutoff_percent": record.cutoff_percent,
+        "total_atoms": record.total_atoms,
+        "atoms_selected": record.atoms_selected,
+        "selected_percent": record.selected_percent,
+        "equivalent_z_score": record.equivalent_z_score,
+        "bdamage_threshold": record.bdamage_threshold,
+        "bnet": record.bnet,
+        "bnet_percentile": record.bnet_percentile,
+        "total_components": record.total_components,
+        "minimum_cluster_size": record.minimum_cluster_size,
+        "clusters_reported": record.clusters_reported,
+        "largest_component_atoms": record.largest_component_atoms,
+        "largest_component_reported": record.largest_component_reported,
+        "largest_component_length": record.largest_component_length,
+        "largest_component_mean_step": record.largest_component_mean_step,
+        "largest_component_largest_edge": record.largest_component_largest_edge,
+        "largest_component_span": record.largest_component_span,
+    }
 
 
 def write_cluster_csv(

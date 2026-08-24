@@ -71,6 +71,8 @@ PDB ID or input filename stem as the output prefix. A normal run writes:
   `cluster_id`, so neither is repeated per atom.
 - `*_clusters.csv`: one row per reported pathway (eight or more atoms by
   default), holding the pathway table described below.
+- `*_run.csv`: a single row of run-level results, described under Comparing
+  Models.
 - `*_selected.pdb`: selected E-path atoms.
 - `*_model.pdb`: the complete cleaned model with BDamage in the B-factor
   column.
@@ -88,6 +90,9 @@ plateau indicates that many atoms share a protection level.
 The summaries report the mean and standard deviation of BDamage for the whole
 model, which are the values the Z-scores are derived from, and again for the
 selected atoms alone.
+
+A batch run additionally writes `epath_runs.csv` in the output directory, with
+one row per structure.
 
 `*_model.pdb` holds every atom that survived cleaning, so solvent, ions,
 ligands, and cofactors are retained for inspection alongside the E-path results
@@ -239,6 +244,34 @@ Structural descriptors are generated from the same measurements, naming what
 the path is mostly made of, its topology, and the classes it is enriched in,
 which gives phrasings such as `Hydrophobic corridor with aromatic/sulfur
 enrichment` or `Single aromatic hotspot`.
+
+## Comparing Models
+
+Comparing many structures means reading the same run-level values back out
+again, so each run records them once in `*_run.csv`: the input, selection
+method and cutoff, scored atom count, atoms selected, the equivalent Z-score
+and BDamage threshold, Bnet and its percentile, the connected-component counts,
+and the geometry of the largest component. A batch run writes the same rows
+combined into `epath_runs.csv`, which is the comparison table for that cohort.
+Rows from separate single-structure runs concatenate to the same thing.
+
+Two of those columns describe components that are never reported as pathways:
+
+- `total_components` counts every connected component the selected atoms form,
+  not just the ones large enough to report.
+- `largest_component_*` describes the largest component whether or not it
+  reached the reporting threshold, with `largest_component_reported` recording
+  which. A model where nothing qualified still reports what its connectivity
+  analysis found, so a largest component of seven atoms is distinguishable from
+  one of two.
+
+The run summary reports the same component count, and names the largest
+component when no pathway reached the threshold.
+
+Grouping those rows into cohorts, and taking medians within a group, is left to
+whoever assembles the comparison. Which group a structure belongs to is a prior
+judgement about its biology rather than something the analysis can determine,
+so the software emits the per-structure rows and stops there.
 
 ## Differences From RABDAM 2
 

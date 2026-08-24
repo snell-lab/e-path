@@ -65,6 +65,50 @@ class EpathCluster:
         return len(self.atoms)
 
 
+@dataclass(frozen=True, slots=True)
+class ComponentStatistics:
+    """Connectivity statistics for every component found, before size filtering.
+
+    Components smaller than the reporting threshold are not pathways, but the
+    largest one still describes what the connectivity analysis found. Recording
+    it keeps a model that reported nothing distinguishable from a model whose
+    largest component fell just short.
+    """
+
+    total_count: int
+    largest_atom_count: int
+    largest_metrics: EpathClusterMetrics | None
+
+
+def component_statistics(
+    clusters: Sequence[EpathCluster],
+) -> ComponentStatistics:
+    """Summarize every connected component, whether or not it is reportable.
+
+    Args:
+        clusters: All components, before the reporting threshold is applied.
+            They are ordered largest first by `cluster_selected_atoms`.
+
+    Returns:
+        The component count and the geometry of the largest component.
+    """
+
+    if not clusters:
+        return ComponentStatistics(
+            total_count=0,
+            largest_atom_count=0,
+            largest_metrics=None,
+        )
+
+    largest = max(clusters, key=lambda cluster: cluster.atom_count)
+
+    return ComponentStatistics(
+        total_count=len(clusters),
+        largest_atom_count=largest.atom_count,
+        largest_metrics=largest.metrics,
+    )
+
+
 def cluster_selected_atoms(
     atoms: Iterable[EpathScoredAtom],
     *,
