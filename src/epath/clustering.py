@@ -11,6 +11,11 @@ from typing import Protocol, cast
 import numpy as np
 from numpy.typing import NDArray
 
+from epath.geometry import (
+    maximum_pairwise_distance_pair,
+    minimum_spanning_tree_edges,
+    validated_coordinates,
+)
 from epath.selection import EpathScoredAtom
 
 DEFAULT_CLUSTER_DISTANCE_ANGSTROM = 4.0
@@ -75,7 +80,7 @@ def cluster_selected_atoms(
     if not atom_tuple:
         return ()
 
-    coordinates = _coordinates(atom_tuple)
+    coordinates = coordinates_for_atoms(atom_tuple)
     neighbours_by_index = _neighbour_indices_by_atom(
         coordinates,
         distance_cutoff=distance_cutoff,
@@ -108,19 +113,13 @@ def cluster_metrics_for_atoms(
             mean_step=0.0,
         )
 
-    return mst_length_stats(_coordinates(atoms))
+    return mst_length_stats(coordinates_for_atoms(atoms))
 
 
 def mst_length_stats(coordinates: NDArray[np.float64]) -> EpathClusterMetrics:
     """Return Prim-style MST metrics for a coordinate array."""
 
-    coordinate_array = np.asarray(coordinates, dtype=float)
-    if coordinate_array.ndim != 2 or coordinate_array.shape[1] != 3:
-        raise EpathClusteringError("coordinates must have shape (N, 3).")
-
-    if not np.all(np.isfinite(coordinate_array)):
-        raise EpathClusteringError("coordinates must contain only finite numbers.")
-
+    coordinate_array = validated_coordinates(coordinates)
     atom_count = int(coordinate_array.shape[0])
     if atom_count <= 1:
         return EpathClusterMetrics(
@@ -130,40 +129,14 @@ def mst_length_stats(coordinates: NDArray[np.float64]) -> EpathClusterMetrics:
             mean_step=0.0,
         )
 
-    in_tree = np.zeros(atom_count, dtype=bool)
-    minimum_edges = np.full(atom_count, np.inf)
-    in_tree[0] = True
-    for index in range(1, atom_count):
-        minimum_edges[index] = euclidean_distance(
-            coordinate_array[0],
-            coordinate_array[index],
-        )
-
+    edges = minimum_spanning_tree_edges(coordinate_array)
     total_length = 0.0
     largest_edge = 0.0
-    for _ in range(atom_count - 1):
-        next_index = int(np.argmin(np.where(in_tree, np.inf, minimum_edges)))
-        if in_tree[next_index]:
-            break
+    for edge in edges:
+        total_length += edge.length
+        largest_edge = max(largest_edge, edge.length)
 
-        in_tree[next_index] = True
-        edge_length = float(minimum_edges[next_index])
-        total_length += edge_length
-        largest_edge = max(largest_edge, edge_length)
-
-        for candidate_index in range(atom_count):
-            if in_tree[candidate_index]:
-                continue
-
-            distance = euclidean_distance(
-                coordinate_array[next_index],
-                coordinate_array[candidate_index],
-            )
-            minimum_edges[candidate_index] = min(
-                minimum_edges[candidate_index], distance
-            )
-
-    span = maximum_pairwise_distance(coordinate_array)
+    _, _, span = maximum_pairwise_distance_pair(coordinate_array)
     mean_step = total_length / float(max(atom_count - 1, 1))
 
     return EpathClusterMetrics(
@@ -174,41 +147,11 @@ def mst_length_stats(coordinates: NDArray[np.float64]) -> EpathClusterMetrics:
     )
 
 
-def euclidean_distance(
-    first_coordinate: Sequence[float] | NDArray[np.float64],
-    second_coordinate: Sequence[float] | NDArray[np.float64],
-) -> float:
-    """Return the Euclidean distance between two 3D coordinates."""
+def coordinates_for_atoms(
+    atoms: Sequence[EpathScoredAtom],
+) -> NDArray[np.float64]:
+    """Return the coordinate array for a sequence of scored atoms."""
 
-    first = np.asarray(first_coordinate, dtype=float)
-    second = np.asarray(second_coordinate, dtype=float)
-    if first.shape != (3,) or second.shape != (3,):
-        raise EpathClusteringError("coordinates must contain exactly 3 values.")
-
-    difference = first - second
-    return float(np.sqrt(np.dot(difference, difference)))
-
-
-def maximum_pairwise_distance(coordinates: NDArray[np.float64]) -> float:
-    """Return the largest pairwise distance in a coordinate array."""
-
-    coordinate_array = np.asarray(coordinates, dtype=float)
-    atom_count = int(coordinate_array.shape[0])
-    maximum_distance = 0.0
-    for first_index in range(atom_count):
-        for second_index in range(first_index + 1, atom_count):
-            maximum_distance = max(
-                maximum_distance,
-                euclidean_distance(
-                    coordinate_array[first_index],
-                    coordinate_array[second_index],
-                ),
-            )
-
-    return maximum_distance
-
-
-def _coordinates(atoms: Sequence[EpathScoredAtom]) -> NDArray[np.float64]:
     coordinates = np.asarray(
         [
             (

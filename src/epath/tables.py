@@ -8,8 +8,9 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from epath.atoms import EpathAtom
+from epath.atoms import EpathAtom, atom_token
 from epath.clustering import EpathCluster
+from epath.pathways import PathReport
 from epath.selection import EpathScoredAtom, EpathSelectionResult
 
 COMBINED_ATOM_FIELDNAMES = [
@@ -38,13 +39,35 @@ COMBINED_ATOM_FIELDNAMES = [
     "cluster_member_index",
 ]
 
+# The leading columns are the published pathway table: the path, where it
+# starts and ends, what it is made of, and how it was classified. The columns
+# after them are the geometry and the measurements the class was assigned from.
 CLUSTER_FIELDNAMES = [
     "cluster_id",
+    "endpoint_start",
+    "endpoint_end",
+    "residue_path",
+    "residue_count",
     "atom_count",
     "mst_total_length",
+    "path_class",
+    "structural_descriptor",
+    "chains",
     "mean_step",
     "largest_edge",
     "span",
+    "topology",
+    "linearity",
+    "branch_fraction",
+    "aromatic_fraction",
+    "sulfur_fraction",
+    "charged_fraction",
+    "polar_fraction",
+    "hydrophobic_fraction",
+    "endpoint_start_kind",
+    "endpoint_start_atom",
+    "endpoint_end_kind",
+    "endpoint_end_atom",
 ]
 
 
@@ -71,15 +94,15 @@ def write_combined_atom_csv(
 
 def write_cluster_csv(
     output_path: str | Path,
-    clusters: Iterable[EpathCluster],
+    path_reports: Iterable[PathReport],
 ) -> Path:
-    """Write one CSV row per reported E-path cluster."""
+    """Write one CSV row per reported E-path pathway."""
 
     output_file = Path(output_path)
     if output_file.parent != Path("."):
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    rows = cluster_rows(clusters)
+    rows = cluster_rows(path_reports)
     with output_file.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=CLUSTER_FIELDNAMES)
         writer.writeheader()
@@ -91,21 +114,44 @@ def write_cluster_csv(
 
 
 def cluster_rows(
-    clusters: Iterable[EpathCluster],
+    path_reports: Iterable[PathReport],
 ) -> tuple[dict[str, Any], ...]:
-    """Return one standalone CSV row for each E-path cluster."""
+    """Return one standalone CSV row for each classified E-path pathway."""
 
-    return tuple(
-        {
-            "cluster_id": cluster.cluster_id,
-            "atom_count": cluster.atom_count,
-            "mst_total_length": cluster.metrics.mst_total_length,
-            "mean_step": cluster.metrics.mean_step,
-            "largest_edge": cluster.metrics.mst_largest_edge,
-            "span": cluster.metrics.span,
-        }
-        for cluster in clusters
-    )
+    return tuple(_cluster_row(report) for report in path_reports)
+
+
+def _cluster_row(report: PathReport) -> dict[str, Any]:
+    metrics = report.cluster.metrics
+    fractions = report.composition.fractions
+
+    return {
+        "cluster_id": report.path_id,
+        "endpoint_start": report.start_endpoint.label,
+        "endpoint_end": report.end_endpoint.label,
+        "residue_path": report.residue_path,
+        "residue_count": report.residue_count,
+        "atom_count": report.node_count,
+        "mst_total_length": metrics.mst_total_length,
+        "path_class": report.path_class,
+        "structural_descriptor": report.structural_descriptor,
+        "chains": "/".join(report.chains),
+        "mean_step": metrics.mean_step,
+        "largest_edge": metrics.mst_largest_edge,
+        "span": metrics.span,
+        "topology": report.topology.topology,
+        "linearity": report.topology.linearity,
+        "branch_fraction": report.topology.branch_fraction,
+        "aromatic_fraction": fractions["aromatic"],
+        "sulfur_fraction": fractions["sulfur"],
+        "charged_fraction": fractions["charged"],
+        "polar_fraction": fractions["polar"],
+        "hydrophobic_fraction": fractions["hydrophobic"],
+        "endpoint_start_kind": report.start_endpoint.kind,
+        "endpoint_start_atom": report.start_endpoint.atom_token,
+        "endpoint_end_kind": report.end_endpoint.kind,
+        "endpoint_end_atom": report.end_endpoint.atom_token,
+    }
 
 
 def combined_atom_rows(
@@ -152,14 +198,6 @@ def combined_atom_rows(
         rows.append(row)
 
     return tuple(rows)
-
-
-def atom_token(atom: EpathAtom) -> str:
-    """Return an atom token in Chain:Resnum[icode]:Atom form."""
-
-    residue_number = "" if atom.residue_number is None else str(atom.residue_number)
-    insertion_code = atom.insertion_code.strip()
-    return f"{atom.chain_id}:{residue_number}{insertion_code}:{atom.atom_name.strip()}"
 
 
 def _cluster_membership_by_atom(

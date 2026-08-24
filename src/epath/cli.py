@@ -6,6 +6,7 @@ import argparse
 import math
 import re
 import sys
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +15,9 @@ from typing import Any, TextIO, TypeVar
 
 from epath import __version__
 from epath.atoms import atoms_from_bdamage_workflow
+from epath.endpoints import cofactor_site_summary
 from epath.outputs import EpathOutputWorkflowOptions
+from epath.pathways import PATH_CLASS_ORDER
 from epath.plots import EpathPlotError
 from epath.workflow import (
     EpathClusterWorkflowOptions,
@@ -859,17 +862,29 @@ def print_epath_summary(
     print(file=stream)
     print_bnet_summary(workflow_result.bnet_workflow_result, stream=stream)
     print(file=stream)
-    print("Clusters:", file=stream)
-    print(f"  Count: {len(workflow_result.clusters)}", file=stream)
-    largest_cluster = max(
-        workflow_result.clusters,
-        key=lambda cluster: cluster.atom_count,
-        default=None,
-    )
-    if largest_cluster is not None:
-        print(f"  Largest atom count: {largest_cluster.atom_count}", file=stream)
+    print("Pathways:", file=stream)
+    print(f"  Count: {len(workflow_result.path_reports)}", file=stream)
+    class_counts = Counter(report.path_class for report in workflow_result.path_reports)
+    if class_counts:
         print(
-            f"  Largest MST length: {largest_cluster.metrics.mst_total_length:.3f} A",
+            "  Classes: "
+            + ", ".join(
+                f"{name} {class_counts[name]}"
+                for name in PATH_CLASS_ORDER
+                if class_counts[name] > 0
+            ),
+            file=stream,
+        )
+    print(
+        f"  Cofactor sites: {cofactor_site_summary(workflow_result.cofactor_sites)}",
+        file=stream,
+    )
+    for report in workflow_result.path_reports:
+        print(
+            f"  Path {report.path_id} [{report.class_label}] "
+            f"{report.start_endpoint.label} -> {report.end_endpoint.label}: "
+            f"{report.residue_count} residues, {report.node_count} nodes, "
+            f"{report.total_length:.2f} A, {report.structural_descriptor}",
             file=stream,
         )
 

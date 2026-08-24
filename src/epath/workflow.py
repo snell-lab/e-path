@@ -13,11 +13,13 @@ from epath.clustering import (
     EpathCluster,
     cluster_selected_atoms,
 )
+from epath.endpoints import CofactorSite
 from epath.outputs import (
     EpathOutputWorkflowOptions,
     EpathWorkflowOutputFiles,
     write_epath_outputs,
 )
+from epath.pathways import PathAnalysisOptions, PathReport, analyze_paths
 from epath.selection import (
     EpathSelectionResult,
     select_atoms_by_percentile,
@@ -59,6 +61,7 @@ class EpathWorkflowOptions:
     clustering: EpathClusterWorkflowOptions = field(
         default_factory=EpathClusterWorkflowOptions
     )
+    paths: PathAnalysisOptions = field(default_factory=PathAnalysisOptions)
     output: EpathOutputWorkflowOptions = field(
         default_factory=EpathOutputWorkflowOptions
     )
@@ -71,6 +74,8 @@ class EpathWorkflowResult:
     atoms: tuple[EpathAtom, ...]
     selection_result: EpathSelectionResult
     clusters: tuple[EpathCluster, ...]
+    path_reports: tuple[PathReport, ...]
+    cofactor_sites: tuple[CofactorSite, ...]
     output_files: EpathWorkflowOutputFiles
     bdamage_workflow_result: BDamageWorkflowResult | None = None
     bnet_workflow_result: BnetWorkflowResult | None = None
@@ -130,6 +135,19 @@ def analyze_epath_atoms(
     clusters = tuple(
         cluster for cluster in clusters if cluster.atom_count >= minimum_cluster_size
     )
+    cleaned_atoms = (
+        bdamage_workflow_result.prepared_structure.cleaned_atoms
+        if bdamage_workflow_result is not None
+        else None
+    )
+    path_analysis = analyze_paths(
+        clusters,
+        scored_atoms=atom_tuple,
+        cleaned_atoms=cleaned_atoms,
+        distance_cutoff=options.clustering.distance_cutoff,
+        options=options.paths,
+    )
+    path_reports = path_analysis.reports
     analyzed_chains = tuple(dict.fromkeys(atom.chain_id for atom in atom_tuple))
     if bnet_workflow_result is None and bdamage_workflow_result is not None:
         bnet_workflow_result = calculate_bnet_workflow(
@@ -139,6 +157,8 @@ def analyze_epath_atoms(
     output_files = write_epath_outputs(
         selection_result=selection_result,
         clusters=clusters,
+        path_reports=path_reports,
+        cofactor_sites=path_analysis.cofactor_sites,
         analyzed_chains=analyzed_chains,
         structure_path=structure_path,
         minimum_cluster_size=minimum_cluster_size,
@@ -149,11 +169,7 @@ def analyze_epath_atoms(
             if bdamage_workflow_result is not None
             else None
         ),
-        cleaned_atoms=(
-            bdamage_workflow_result.prepared_structure.cleaned_atoms
-            if bdamage_workflow_result is not None
-            else None
-        ),
+        cleaned_atoms=cleaned_atoms,
         bdamage_workflow_result=bdamage_workflow_result,
     )
 
@@ -161,6 +177,8 @@ def analyze_epath_atoms(
         atoms=atom_tuple,
         selection_result=selection_result,
         clusters=clusters,
+        path_reports=path_reports,
+        cofactor_sites=path_analysis.cofactor_sites,
         output_files=output_files,
         bdamage_workflow_result=bdamage_workflow_result,
         bnet_workflow_result=bnet_workflow_result,

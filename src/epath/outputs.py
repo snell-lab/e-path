@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from epath.clustering import EpathCluster
+from epath.endpoints import CofactorSite, cofactor_site_summary
+from epath.pathways import PATH_CLASS_ORDER, PathReport
 from epath.plots import plot_z_falloff
+from epath.residues import RESIDUE_CLASS_ORDER
 from epath.selection import EpathSelectionResult
 from epath.structures import write_structure_outputs
 from epath.tables import write_cluster_csv, write_combined_atom_csv
@@ -46,6 +49,8 @@ def write_epath_outputs(
     *,
     selection_result: EpathSelectionResult,
     clusters: tuple[EpathCluster, ...],
+    path_reports: Sequence[PathReport],
+    cofactor_sites: Sequence[CofactorSite],
     analyzed_chains: Sequence[str],
     structure_path: str | Path | None,
     minimum_cluster_size: int,
@@ -71,7 +76,7 @@ def write_epath_outputs(
         else None
     )
     cluster_csv = (
-        write_cluster_csv(_output_path(prefix, "clusters.csv"), clusters)
+        write_cluster_csv(_output_path(prefix, "clusters.csv"), path_reports)
         if options.write_cluster_csv
         else None
     )
@@ -113,7 +118,8 @@ def write_epath_outputs(
             structure_path=structure_path,
             analyzed_chains=analyzed_chains,
             selection_result=selection_result,
-            clusters=clusters,
+            path_reports=path_reports,
+            cofactor_sites=cofactor_sites,
             minimum_cluster_size=minimum_cluster_size,
             output_files=output_files,
             bnet_workflow_result=bnet_workflow_result,
@@ -130,7 +136,8 @@ def write_summary_txt(
     structure_path: str | Path | None,
     analyzed_chains: Sequence[str],
     selection_result: EpathSelectionResult,
-    clusters: Sequence[EpathCluster],
+    path_reports: Sequence[PathReport],
+    cofactor_sites: Sequence[CofactorSite],
     minimum_cluster_size: int,
     output_files: EpathWorkflowOutputFiles,
     bnet_workflow_result: BnetWorkflowResult | None = None,
@@ -230,29 +237,12 @@ def write_summary_txt(
     lines.extend(_bnet_summary_lines(bnet_workflow_result))
 
     lines.extend(
-        (
-            "",
-            "Clusters",
-            "--------",
-            f"Minimum reported cluster size: {minimum_cluster_size} atoms",
-            f"Cluster count: {len(clusters)}",
+        _pathway_summary_lines(
+            path_reports,
+            cofactor_sites=cofactor_sites,
+            minimum_cluster_size=minimum_cluster_size,
         )
     )
-    if not clusters:
-        lines.append("No selected-atom clusters.")
-    for cluster in clusters:
-        metrics = cluster.metrics
-        lines.extend(
-            (
-                "",
-                f"Cluster {cluster.cluster_id}",
-                f"  Atoms: {cluster.atom_count}",
-                f"  MST total length: {_number(metrics.mst_total_length)} A",
-                f"  MST mean step: {_number(metrics.mean_step)} A",
-                f"  MST largest edge: {_number(metrics.mst_largest_edge)} A",
-                f"  Span: {_number(metrics.span)} A",
-            )
-        )
 
     lines.extend(("", "Files written", "-------------"))
     file_entries = _output_file_entries(output_files)
@@ -262,6 +252,89 @@ def write_summary_txt(
         lines.append("None.")
 
     return _write_text(output_path, lines)
+
+
+def _pathway_summary_lines(
+    path_reports: Sequence[PathReport],
+    *,
+    cofactor_sites: Sequence[CofactorSite],
+    minimum_cluster_size: int,
+) -> tuple[str, ...]:
+    """Render the reported pathways, one block per path."""
+
+    lines = [
+        "",
+        "Pathways",
+        "--------",
+        f"Minimum reported cluster size: {minimum_cluster_size} atoms",
+        f"Cofactor sites: {cofactor_site_summary(cofactor_sites)}",
+        f"Path count: {len(path_reports)}{_path_class_counts(path_reports)}",
+    ]
+    if not path_reports:
+        lines.append("No selected-atom clusters reached the reporting threshold.")
+        return tuple(lines)
+
+    for report in path_reports:
+        metrics = report.cluster.metrics
+        topology = report.topology
+        lines.extend(
+            (
+                "",
+                (
+                    f"Path {report.path_id} [{report.class_label}] "
+                    f"{report.start_endpoint.label} -> {report.end_endpoint.label}"
+                ),
+                (
+                    f"  Endpoint atoms: {report.start_endpoint.atom_token} "
+                    f"({report.start_endpoint.residue}) to "
+                    f"{report.end_endpoint.atom_token} "
+                    f"({report.end_endpoint.residue})"
+                ),
+                f"  Chains: {_chain_text(report.chains)}",
+                (
+                    f"  Residues: {report.residue_count}   "
+                    f"Nodes: {report.node_count}   "
+                    f"Length: {_number(metrics.mst_total_length)} A"
+                ),
+                (
+                    f"  MST mean step: {_number(metrics.mean_step)} A   "
+                    f"largest edge: {_number(metrics.mst_largest_edge)} A   "
+                    f"span: {_number(metrics.span)} A"
+                ),
+                (
+                    f"  Topology: {topology.topology} "
+                    f"(span/length {_number(topology.linearity)}, "
+                    f"junction nodes {_number(topology.branch_fraction)})"
+                ),
+                f"  Composition: {_composition_text(report)}",
+                f"  Descriptor: {report.structural_descriptor}",
+                f"  Path: {report.residue_path}",
+            )
+        )
+
+    return tuple(lines)
+
+
+def _path_class_counts(path_reports: Sequence[PathReport]) -> str:
+    if not path_reports:
+        return ""
+
+    counts = Counter(report.path_class for report in path_reports)
+    reported = [
+        f"{name} {counts[name]}" for name in PATH_CLASS_ORDER if counts[name] > 0
+    ]
+    return f" ({', '.join(reported)})"
+
+
+def _composition_text(report: PathReport) -> str:
+    fractions = report.composition.fractions
+    counts = report.composition.counts
+    reported = [
+        f"{name} {counts[name]}/{report.residue_count} ({_number(fractions[name])})"
+        for name in RESIDUE_CLASS_ORDER
+        if counts[name] > 0
+    ]
+    return ", ".join(reported) if reported else "no residues"
 
 
 def _bdamage_parameter_lines(
