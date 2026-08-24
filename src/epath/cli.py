@@ -833,6 +833,11 @@ def print_epath_summary(
         stream=stream,
     )
     print(file=stream)
+    print_bdamage_parameter_summary(
+        workflow_result.bdamage_workflow_result,
+        stream=stream,
+    )
+    print(file=stream)
     print("E-path selection:", file=stream)
     analyzed_chains = tuple(
         dict.fromkeys(atom.chain_id for atom in workflow_result.atoms)
@@ -891,6 +896,35 @@ def print_epath_summary(
 
     print(file=stream)
     print(f"Total runtime: {total_runtime_seconds:.1f}s", file=stream)
+
+
+def print_bdamage_parameter_summary(
+    workflow_result: BDamageWorkflowResult | None,
+    *,
+    stream: TextIO,
+) -> None:
+    """Print the BDamage calculation parameters actually used."""
+
+    print("BDamage calculation:", file=stream)
+    if workflow_result is None:
+        print("  Parameters: not recorded", file=stream)
+        return
+
+    options = workflow_result.options
+    print(
+        f"  Packing density threshold: {options.packing_density_threshold:g} A",
+        file=stream,
+    )
+    print(f"  Window size fraction: {options.window_size_fraction:g}", file=stream)
+    print(
+        f"  Window size used: {workflow_result.window_size} atoms "
+        f"(minimum {options.minimum_window_size})",
+        file=stream,
+    )
+    print(
+        f"  Unit-cell translation range: {options.translation_range}",
+        file=stream,
+    )
 
 
 def print_crystal_summary(

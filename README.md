@@ -82,6 +82,11 @@ shows the BDamage landscape without the excluded atoms distorting the scale.
 The selected atoms are those with a B-factor above zero and at or below the
 reported BDamage threshold, which the file records in a `REMARK 250` line.
 
+Both summaries record the BDamage calculation parameters actually used, so a
+run made with non-default values is identifiable from its output alone. The
+window size is reported as well as the fraction it came from, since it is
+derived from the scored atom count rather than set directly.
+
 The terminal and persistent summaries include raw protein Bnet and, when the
 input contains resolution metadata, its percentile against the bundled
 resolution-matched reference database. If a structure has no usable Asp/Glu

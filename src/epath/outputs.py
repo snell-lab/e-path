@@ -14,6 +14,7 @@ from epath.structures import PdbBFactorMode, write_structure_outputs
 from epath.tables import write_cluster_csv, write_combined_atom_csv
 from rabdam.bnet.workflow import BnetWorkflowResult
 from rabdam.structure.models import PreparedAtom
+from rabdam.workflow import BDamageWorkflowResult
 from xtal.validate import ValidatedCrystal
 
 
@@ -53,6 +54,7 @@ def write_epath_outputs(
     bnet_workflow_result: BnetWorkflowResult | None = None,
     crystal: ValidatedCrystal | None = None,
     cleaned_atoms: Sequence[PreparedAtom] | None = None,
+    bdamage_workflow_result: BDamageWorkflowResult | None = None,
 ) -> EpathWorkflowOutputFiles:
     """Write enabled E-path artifacts and return their paths."""
 
@@ -124,6 +126,7 @@ def write_epath_outputs(
             output_files=output_files,
             bnet_workflow_result=bnet_workflow_result,
             crystal=crystal,
+            bdamage_workflow_result=bdamage_workflow_result,
         )
 
     return output_files
@@ -140,6 +143,7 @@ def write_summary_txt(
     output_files: EpathWorkflowOutputFiles,
     bnet_workflow_result: BnetWorkflowResult | None = None,
     crystal: ValidatedCrystal | None = None,
+    bdamage_workflow_result: BDamageWorkflowResult | None = None,
 ) -> Path:
     """Write a persistent human-readable E-path analysis summary."""
 
@@ -198,6 +202,9 @@ def write_summary_txt(
                 f"Z threshold={_number(threshold.z_threshold)}"
             )
 
+    lines.extend(("", "BDamage calculation", "-------------------"))
+    lines.extend(_bdamage_parameter_lines(bdamage_workflow_result))
+
     lines.extend(("", "Crystal", "-------"))
     lines.extend(_crystal_summary_lines(crystal))
 
@@ -237,6 +244,22 @@ def write_summary_txt(
         lines.append("None.")
 
     return _write_text(output_path, lines)
+
+
+def _bdamage_parameter_lines(
+    workflow_result: BDamageWorkflowResult | None,
+) -> tuple[str, ...]:
+    if workflow_result is None:
+        return ("BDamage parameters: not recorded",)
+
+    options = workflow_result.options
+    return (
+        f"Packing density threshold: {_number(options.packing_density_threshold)} A",
+        f"Window size fraction: {_number(options.window_size_fraction)}",
+        f"Minimum window size: {options.minimum_window_size} atoms",
+        f"Window size used: {workflow_result.window_size} atoms",
+        f"Unit-cell translation range: {options.translation_range}",
+    )
 
 
 def _crystal_summary_lines(
