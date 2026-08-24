@@ -322,6 +322,15 @@ def _pathway_summary_lines(
                     f"(span/length {_number(topology.linearity)}, "
                     f"junction nodes {_number(topology.branch_fraction)})"
                 ),
+                (
+                    f"  Steps: {report.edges.intra_residue} within residues, "
+                    f"{report.edges.peptide} peptide, "
+                    f"{report.edges.tertiary} tertiary, "
+                    f"{report.edges.interchain} interchain "
+                    f"(peptide share of the "
+                    f"{report.edges.between_residues} between-residue steps: "
+                    f"{_number(report.edges.peptide_fraction)})"
+                ),
                 f"  Composition: {_composition_text(report)}",
                 f"  Descriptor: {report.structural_descriptor}",
                 f"  Path: {report.residue_path}",

@@ -172,7 +172,8 @@ run summary, giving the columns of the pathway table in the PNAS analysis:
 - the residue count, the node (atom) count, and the total path length.
 - the environments the two ends of the path terminate in.
 - the class and a structural descriptor.
-- the topology and residue-chemistry measurements the class was assigned from.
+- the topology, step provenance, and residue-chemistry measurements the class
+  was assigned from.
 
 ### Endpoints
 
@@ -197,6 +198,29 @@ cofactors, because terminating beside a glycerol does not make a path an
 electron conduit; they are still in the model and still contribute to packing
 density. The summaries list every cofactor site found, so an endpoint that
 reports no cofactor can be told apart from a model that has none.
+
+### Step Provenance
+
+Each step of a path is one edge of its minimum spanning tree, so the steps
+counted here are the same ones the reported length and mean step describe. They
+are classified by how they connect residues:
+
+- `intra_residue_edges`: both ends in the same residue, which is side-chain
+  shape rather than progress along the path.
+- `peptide_edges`: consecutive residues of one chain.
+- `tertiary_edges`: the same chain, but residues far apart in sequence.
+- `interchain_edges`: different chains.
+
+`peptide_edge_fraction` is the share of between-residue steps that follow the
+sequence. It separates two paths that geometry alone reports as identical: a
+rigid stretch of backbone, and a path of the same size whose steps jump between
+residues that are distant in sequence. The second is the stronger coupling
+candidate, and the analysis in the published supplement repeatedly rests on
+this distinction. Peptide steps are identified by sequence adjacency within a
+chain rather than by a modelled backbone bond, so a chain break numbered
+consecutively counts as peptide-contiguous.
+
+Step provenance is reported but does not feed the classification.
 
 ### Classification
 

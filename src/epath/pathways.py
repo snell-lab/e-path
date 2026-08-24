@@ -41,7 +41,7 @@ from epath.endpoints import (
     annotate_endpoint,
     build_endpoint_context,
 )
-from epath.geometry import maximum_pairwise_distance_pair
+from epath.geometry import maximum_pairwise_distance_pair, minimum_spanning_tree_edges
 from epath.residues import (
     ResidueClass,
     ResidueComposition,
@@ -130,6 +130,39 @@ class PathAnalysisOptions:
 
 
 @dataclass(frozen=True, slots=True)
+class EdgeProvenance:
+    """How the steps of a path connect the residues it runs through.
+
+    A path that only follows the backbone is a rigid stretch of chain, which is
+    a much weaker coupling candidate than one of the same size whose steps jump
+    between residues that are far apart in sequence. Steps are counted on the
+    minimum spanning tree, so they are the same steps the reported length and
+    mean step describe.
+
+    Peptide steps are identified by sequence adjacency within a chain rather
+    than by a modelled backbone bond, so a chain break numbered consecutively
+    counts as peptide-contiguous.
+    """
+
+    intra_residue: int
+    peptide: int
+    tertiary: int
+    interchain: int
+
+    @property
+    def between_residues(self) -> int:
+        """Return the number of steps that leave the residue they start in."""
+
+        return self.peptide + self.tertiary + self.interchain
+
+    @property
+    def peptide_fraction(self) -> float:
+        """Return the share of between-residue steps that follow the sequence."""
+
+        return self.peptide / self.between_residues if self.between_residues else 0.0
+
+
+@dataclass(frozen=True, slots=True)
 class PathResidue:
     """One residue of a path and the atoms of it that were selected."""
 
@@ -162,6 +195,7 @@ class PathReport:
     end_endpoint: PathEndpoint
     topology: PathTopology
     composition: ResidueComposition
+    edges: EdgeProvenance
     path_class: PathClass
     structural_descriptor: str
 
@@ -287,6 +321,7 @@ def _build_path_report(
         linear_ratio=options.linear_ratio,
         branched_node_fraction=options.branched_node_fraction,
     )
+    edges = _edge_provenance(cluster)
     first_index, second_index, _ = maximum_pairwise_distance_pair(coordinates)
     start_endpoint = annotate_endpoint(cluster.atoms[first_index].atom, context)
     end_endpoint = annotate_endpoint(cluster.atoms[second_index].atom, context)
@@ -307,6 +342,7 @@ def _build_path_report(
         end_endpoint=end_endpoint,
         topology=topology,
         composition=composition,
+        edges=edges,
         path_class=path_class,
         structural_descriptor=_structural_descriptor(
             composition=composition,
@@ -370,6 +406,44 @@ def _path_residues(
     ]
 
     return residues, residue_indices
+
+
+def _edge_provenance(cluster: EpathCluster) -> EdgeProvenance:
+    """Classify each step of a path by how it connects residues."""
+
+    atoms = [scored_atom.atom for scored_atom in cluster.atoms]
+    counts = {"intra_residue": 0, "peptide": 0, "tertiary": 0, "interchain": 0}
+    for edge in minimum_spanning_tree_edges(coordinates_for_atoms(cluster.atoms)):
+        counts[_edge_kind(atoms[edge.first_index], atoms[edge.second_index])] += 1
+
+    return EdgeProvenance(
+        intra_residue=counts["intra_residue"],
+        peptide=counts["peptide"],
+        tertiary=counts["tertiary"],
+        interchain=counts["interchain"],
+    )
+
+
+def _edge_kind(first: EpathAtom, second: EpathAtom) -> str:
+    if residue_key(first) == residue_key(second):
+        return "intra_residue"
+
+    if first.chain_id != second.chain_id:
+        return "interchain"
+
+    if first.residue_number is None or second.residue_number is None:
+        return "tertiary"
+
+    difference = abs(first.residue_number - second.residue_number)
+    if difference == 1:
+        return "peptide"
+
+    # Residues sharing a number and separated by an insertion code are also
+    # sequence neighbours.
+    if difference == 0:
+        return "peptide"
+
+    return "tertiary"
 
 
 def _format_residue_path(residues: Sequence[PathResidue]) -> str:
