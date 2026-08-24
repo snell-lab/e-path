@@ -1,4 +1,10 @@
-"""Plot outputs for E-path analysis."""
+"""Plot outputs for E-path analysis.
+
+The falloff plot ranks atoms by ascending BDamage Z-score and shows the
+negative tail, which is the region E-path selects from. A plateau in that
+falloff, where many consecutive atoms share a Z-score, indicates a commonly
+protected region rather than a smooth decay.
+"""
 
 from __future__ import annotations
 
@@ -6,137 +12,108 @@ import importlib
 import math
 import os
 import tempfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from epath.selection import (
-    DEFAULT_HISTOGRAM_BINS,
-    EpathScoredAtom,
-    EpathSelectionResult,
-)
+from epath.selection import EpathSelectionResult, ZScorePlateau
 
-DEFAULT_Z_HISTOGRAM_DPI = 300
-DEFAULT_Z_HISTOGRAM_FIGSIZE = (6.0, 4.0)
+DEFAULT_PLOT_DPI = 300
+DEFAULT_PLOT_FIGSIZE = (6.0, 4.0)
 
 
 class EpathPlotError(RuntimeError):
     """Raised when an E-path plot cannot be generated."""
 
 
-def plot_z_hist(
+def plot_z_falloff(
     prefix: str | Path,
-    z_all: Sequence[float] | NDArray[np.float64],
-    z_mode: float,
+    selection_result: EpathSelectionResult,
     *,
-    bins: int = DEFAULT_HISTOGRAM_BINS,
-    dpi: int = DEFAULT_Z_HISTOGRAM_DPI,
+    dpi: int = DEFAULT_PLOT_DPI,
 ) -> Path | None:
-    """Write the E-path Z-score histogram beside an output prefix."""
+    """Write the Z-score falloff plot beside an output prefix."""
 
     output_prefix = Path(prefix)
-    return write_z_score_histogram(
-        output_prefix.with_name(f"{output_prefix.name}_zscores.png"),
-        z_all,
-        z_mode=z_mode,
-        bins=bins,
+    return write_z_score_falloff(
+        output_prefix.with_name(f"{output_prefix.name}_zfalloff.png"),
+        selection_result,
         dpi=dpi,
     )
 
 
-def write_selection_z_score_histogram(
+def write_z_score_falloff(
     output_path: str | Path,
     selection_result: EpathSelectionResult,
     *,
-    bins: int = DEFAULT_HISTOGRAM_BINS,
-    dpi: int = DEFAULT_Z_HISTOGRAM_DPI,
+    dpi: int = DEFAULT_PLOT_DPI,
 ) -> Path | None:
-    """Write the Z-score histogram for a selection result."""
+    """Write rank-ordered BDamage Z-scores for the negative tail.
 
-    return write_z_score_histogram(
-        output_path,
-        [scored_atom.bdamage_z_score for scored_atom in selection_result.scored_atoms],
-        z_mode=selection_result.z_mode,
-        bins=bins,
-        dpi=dpi,
+    The selection threshold and any detected plateau are marked, so the plot
+    shows both what was selected and whether the falloff flattens within it.
+    """
+
+    z_scores = _z_score_array(
+        [scored_atom.bdamage_z_score for scored_atom in selection_result.scored_atoms]
     )
-
-
-def write_scored_atom_z_score_histogram(
-    output_path: str | Path,
-    scored_atoms: Iterable[EpathScoredAtom],
-    *,
-    z_mode: float,
-    bins: int = DEFAULT_HISTOGRAM_BINS,
-    dpi: int = DEFAULT_Z_HISTOGRAM_DPI,
-) -> Path | None:
-    """Write the Z-score histogram for scored atoms."""
-
-    return write_z_score_histogram(
-        output_path,
-        [scored_atom.bdamage_z_score for scored_atom in scored_atoms],
-        z_mode=z_mode,
-        bins=bins,
-        dpi=dpi,
-    )
-
-
-def write_z_score_histogram(
-    output_path: str | Path,
-    z_scores: Sequence[float] | NDArray[np.float64],
-    *,
-    z_mode: float,
-    bins: int = DEFAULT_HISTOGRAM_BINS,
-    dpi: int = DEFAULT_Z_HISTOGRAM_DPI,
-) -> Path | None:
-    """Write a Z-score histogram with the histogram mode marked."""
-
-    z_score_array = _z_score_array(z_scores)
-    if z_score_array.size == 0:
+    if z_scores.size == 0:
         return None
 
-    bins = _positive_int(bins, name="bins")
     dpi = _positive_int(dpi, name="dpi")
-    z_mode = _float_value(z_mode, name="z_mode")
     output_file = Path(output_path)
     if output_file.parent != Path("."):
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
+    ranked = np.sort(z_scores)
+    # The method only ever selects from the negative tail, so plotting the full
+    # range would compress the region of interest into the left edge.
+    tail = ranked[ranked <= 0.0]
+    if tail.size == 0:
+        tail = ranked[: max(1, ranked.size // 50)]
+
+    ranks = np.arange(1, tail.size + 1)
+    threshold = selection_result.z_threshold
+
     pyplot = _pyplot()
-    figure = pyplot.figure(figsize=DEFAULT_Z_HISTOGRAM_FIGSIZE)
+    figure = pyplot.figure(figsize=DEFAULT_PLOT_FIGSIZE)
     try:
-        pyplot.hist(
-            z_score_array,
-            bins=bins,
-            color="lightgray",
-            edgecolor="black",
-        )
-        if not math.isnan(z_mode):
-            pyplot.axvline(
-                z_mode,
+        pyplot.plot(ranks, tail, color="black", linewidth=1.0)
+        if math.isfinite(threshold):
+            pyplot.axhline(
+                threshold,
                 color="red",
                 linestyle="--",
-                linewidth=1.5,
+                linewidth=1.0,
+                label=f"selection threshold Z = {threshold:.3f}",
             )
-            pyplot.axvspan(
-                float(np.min(z_score_array)),
-                z_mode,
-                color="steelblue",
-                alpha=0.20,
-            )
-
-        pyplot.xlabel("Z-score (Bdam)")
-        pyplot.ylabel("Count")
-        pyplot.title("Z-score distribution (mode shown)")
-        pyplot.tight_layout()
+        _mark_plateau(pyplot, selection_result.plateau)
+        pyplot.xlabel("Atom rank by ascending BDamage Z-score")
+        pyplot.ylabel("BDamage Z-score")
+        pyplot.title("BDamage Z-score falloff")
+        pyplot.legend(loc="lower right", fontsize="small")
+        figure.tight_layout()
         figure.savefig(output_file, dpi=dpi)
     finally:
         pyplot.close(figure)
 
     return output_file
+
+
+def _mark_plateau(pyplot: Any, plateau: ZScorePlateau | None) -> None:
+    if plateau is None:
+        return
+
+    pyplot.axvspan(
+        plateau.first_rank,
+        plateau.first_rank + plateau.atom_count - 1,
+        color="tab:blue",
+        alpha=0.2,
+        label=f"plateau, {plateau.atom_count} atoms",
+    )
 
 
 def _pyplot() -> Any:
@@ -191,13 +168,3 @@ def _positive_int(value: int, *, name: str) -> int:
         raise EpathPlotError(f"{name} must be a positive integer, got {number!r}.")
 
     return number
-
-
-def _float_value(value: float, *, name: str) -> float:
-    if isinstance(value, bool):
-        raise EpathPlotError(f"{name} must be numeric, got {value!r}.")
-
-    try:
-        return float(value)
-    except (TypeError, ValueError) as error:
-        raise EpathPlotError(f"{name} must be numeric, got {value!r}.") from error

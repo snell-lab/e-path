@@ -11,7 +11,13 @@ from numpy.typing import NDArray
 
 from epath.atoms import EpathAtom
 
-DEFAULT_HISTOGRAM_BINS = 60
+# A plateau is a run of rank-ordered atoms packed more densely in Z than the
+# runs on either side of it, which is a local shelf in the falloff rather than
+# part of its overall slope. Atom density always rises toward the selection
+# threshold, so an absolute flatness test would fire on that gradient alone;
+# requiring the run to be denser than both neighbours avoids that.
+PLATEAU_DENSITY_FACTOR = 1.5
+MINIMUM_PLATEAU_ATOMS = 5
 
 
 class EpathSelectionError(ValueError):
@@ -50,6 +56,16 @@ class ChainPercentileThreshold:
 
 
 @dataclass(frozen=True, slots=True)
+class ZScorePlateau:
+    """A run of rank-ordered atoms sharing essentially the same Z-score."""
+
+    atom_count: int
+    first_rank: int
+    lowest_z_score: float
+    highest_z_score: float
+
+
+@dataclass(frozen=True, slots=True)
 class EpathSelectionResult:
     """Result of selecting candidate E-path atoms."""
 
@@ -58,11 +74,15 @@ class EpathSelectionResult:
     method: str
     description: str
     selected_percent: float
-    z_mode: float
+    bdamage_mean: float
+    bdamage_standard_deviation: float
     z_threshold: float
     bdamage_threshold: float | None = None
     boundary_z_score: float | None = None
     chain_thresholds: tuple[ChainPercentileThreshold, ...] = ()
+    selected_bdamage_mean: float = float("nan")
+    selected_bdamage_standard_deviation: float = float("nan")
+    plateau: ZScorePlateau | None = None
 
 
 def score_bdamage_atoms(
@@ -81,31 +101,6 @@ def score_bdamage_atoms(
         EpathScoredAtom(atom=atom, bdamage_z_score=float(z_score))
         for atom, z_score in zip(atom_tuple, z_scores, strict=True)
     )
-
-
-def histogram_mode(
-    values: Sequence[float] | NDArray[np.float64],
-    *,
-    bins: int = DEFAULT_HISTOGRAM_BINS,
-) -> float:
-    """Return the midpoint of the most populated histogram bin."""
-
-    if type(bins) is not int or bins <= 0:
-        raise EpathSelectionError(f"bins must be a positive integer, got {bins!r}.")
-
-    array = np.asarray(values, dtype=float)
-    if array.ndim != 1:
-        raise EpathSelectionError("values must be one-dimensional.")
-
-    if array.size == 0:
-        return float("nan")
-
-    if not np.all(np.isfinite(array)):
-        raise EpathSelectionError("values must contain only finite numbers.")
-
-    counts, edges = np.histogram(array, bins=bins)
-    max_index = int(np.argmax(counts))
-    return float(0.5 * (edges[max_index] + edges[max_index + 1]))
 
 
 def select_atoms_by_percentile(
@@ -144,10 +139,14 @@ def select_atoms_by_percentile(
             f"selected {len(selected_atoms)} of {len(scored_atoms)})"
         ),
         selected_percent=selected_percent,
-        z_mode=_z_mode(scored_atoms),
+        bdamage_mean=_mean(scored_atoms),
+        bdamage_standard_deviation=_standard_deviation(scored_atoms),
         z_threshold=z_threshold,
         bdamage_threshold=bdamage_threshold,
         boundary_z_score=boundary_z_score,
+        selected_bdamage_mean=_mean(selected_atoms),
+        selected_bdamage_standard_deviation=_standard_deviation(selected_atoms),
+        plateau=find_z_score_plateau(selected_atoms),
     )
 
 
@@ -208,9 +207,13 @@ def select_atoms_by_percentile_per_chain(
             f"(selected {len(selected_atom_tuple)} of {len(scored_atoms)})"
         ),
         selected_percent=selected_percent,
-        z_mode=_z_mode(scored_atoms),
+        bdamage_mean=_mean(scored_atoms),
+        bdamage_standard_deviation=_standard_deviation(scored_atoms),
         z_threshold=z_threshold,
         chain_thresholds=tuple(chain_thresholds),
+        selected_bdamage_mean=_mean(selected_atom_tuple),
+        selected_bdamage_standard_deviation=_standard_deviation(selected_atom_tuple),
+        plateau=find_z_score_plateau(selected_atom_tuple),
     )
 
 
@@ -310,8 +313,59 @@ def _z_score_for_bdamage_value(
     return float((bdamage - mean) / standard_deviation)
 
 
-def _z_mode(scored_atoms: Sequence[EpathScoredAtom]) -> float:
-    return histogram_mode([scored_atom.bdamage_z_score for scored_atom in scored_atoms])
+def find_z_score_plateau(
+    scored_atoms: Sequence[EpathScoredAtom],
+) -> ZScorePlateau | None:
+    """Return the longest local shelf in the rank-ordered Z-score falloff.
+
+    Atoms are ranked by ascending Z-score. A run qualifies when its atom
+    density, in atoms per Z unit, is at least `PLATEAU_DENSITY_FACTOR` times
+    the density of the equally sized runs immediately before and after it. A
+    smooth falloff has no such run, because its density increases steadily
+    toward the selection threshold.
+
+    Returns:
+        The longest qualifying run, or None when the falloff is smooth.
+    """
+    z_scores = sorted(scored_atom.bdamage_z_score for scored_atom in scored_atoms)
+    atom_count = len(z_scores)
+    if atom_count < 3 * MINIMUM_PLATEAU_ATOMS:
+        return None
+
+    def density(start: int, length: int) -> float:
+        span = z_scores[start + length - 1] - z_scores[start]
+        if span <= 0.0:
+            return float("inf")
+        return length / span
+
+    for length in range(atom_count // 3, MINIMUM_PLATEAU_ATOMS - 1, -1):
+        for start in range(length, atom_count - 2 * length + 1):
+            inner = density(start, length)
+            before = density(start - length, length)
+            after = density(start + length, length)
+            if inner >= PLATEAU_DENSITY_FACTOR * max(before, after):
+                return ZScorePlateau(
+                    atom_count=length,
+                    first_rank=start + 1,
+                    lowest_z_score=z_scores[start],
+                    highest_z_score=z_scores[start + length - 1],
+                )
+
+    return None
+
+
+def _mean(scored_atoms: Sequence[EpathScoredAtom]) -> float:
+    if not scored_atoms:
+        return float("nan")
+
+    return float(np.mean([scored_atom.bdamage for scored_atom in scored_atoms]))
+
+
+def _standard_deviation(scored_atoms: Sequence[EpathScoredAtom]) -> float:
+    if not scored_atoms:
+        return float("nan")
+
+    return float(np.std([scored_atom.bdamage for scored_atom in scored_atoms]))
 
 
 def _selected_percent(*, selected_count: int, total_count: int) -> float:

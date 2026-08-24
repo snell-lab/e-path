@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from epath.clustering import EpathCluster
-from epath.plots import plot_z_hist
+from epath.plots import plot_z_falloff
 from epath.selection import EpathSelectionResult
-from epath.structures import PdbBFactorMode, write_structure_outputs
+from epath.structures import write_structure_outputs
 from epath.tables import write_cluster_csv, write_combined_atom_csv
 from rabdam.bnet.workflow import BnetWorkflowResult
 from rabdam.structure.models import PreparedAtom
@@ -26,7 +26,6 @@ class EpathOutputWorkflowOptions:
     write_combined_csv: bool = True
     write_structure_files: bool = True
     write_z_score_plot: bool = True
-    structure_b_factor_mode: PdbBFactorMode = "bdamage"
     write_cluster_csv: bool = True
     write_summary_report: bool = True
 
@@ -38,7 +37,7 @@ class EpathWorkflowOutputFiles:
     combined_csv: Path | None = None
     selected_pdb: Path | None = None
     model_pdb: Path | None = None
-    z_score_histogram: Path | None = None
+    z_score_falloff: Path | None = None
     cluster_csv: Path | None = None
     summary_report: Path | None = None
 
@@ -83,7 +82,6 @@ def write_epath_outputs(
         structure_files = write_structure_outputs(
             prefix,
             selection_result.selected_atoms,
-            b_factor_mode=options.structure_b_factor_mode,
             cleaned_atoms=cleaned_atoms,
             bdamage_by_source_index={
                 scored_atom.atom.source_atom_index: scored_atom.atom.bdamage
@@ -94,14 +92,8 @@ def write_epath_outputs(
         selected_pdb = structure_files.selected_pdb
         model_pdb = structure_files.model_pdb
 
-    z_score_histogram = (
-        plot_z_hist(
-            prefix,
-            [atom.bdamage_z_score for atom in selection_result.scored_atoms],
-            selection_result.z_mode,
-        )
-        if options.write_z_score_plot
-        else None
+    z_score_falloff = (
+        plot_z_falloff(prefix, selection_result) if options.write_z_score_plot else None
     )
     summary_report = (
         _output_path(prefix, "summary.txt") if options.write_summary_report else None
@@ -111,7 +103,7 @@ def write_epath_outputs(
         cluster_csv=cluster_csv,
         selected_pdb=selected_pdb,
         model_pdb=model_pdb,
-        z_score_histogram=z_score_histogram,
+        z_score_falloff=z_score_falloff,
         summary_report=summary_report,
     )
 
@@ -165,7 +157,11 @@ def write_summary_txt(
             f"{len(selection_result.scored_atoms)} "
             f"({_number(selection_result.selected_percent)}%)"
         ),
-        f"Z-score mode: {_number(selection_result.z_mode)}",
+        f"BDamage mean: {_number(selection_result.bdamage_mean)}",
+        (
+            "BDamage standard deviation: "
+            f"{_number(selection_result.bdamage_standard_deviation)}"
+        ),
         f"Z threshold: {_number(selection_result.z_threshold)}",
     ]
     if selection_result.bdamage_threshold is not None:
@@ -176,6 +172,28 @@ def write_summary_txt(
         lines.append(
             "Boundary Z-score among selected atoms: "
             f"{_number(selection_result.boundary_z_score)}"
+        )
+
+    lines.extend(
+        (
+            (
+                "Selected BDamage mean: "
+                f"{_number(selection_result.selected_bdamage_mean)}"
+            ),
+            (
+                "Selected BDamage standard deviation: "
+                f"{_number(selection_result.selected_bdamage_standard_deviation)}"
+            ),
+        )
+    )
+    plateau = selection_result.plateau
+    if plateau is None:
+        lines.append("Z-score plateau: none detected in the selected atoms")
+    else:
+        lines.append(
+            f"Z-score plateau: {plateau.atom_count} atoms from rank "
+            f"{plateau.first_rank}, Z {_number(plateau.lowest_z_score)} to "
+            f"{_number(plateau.highest_z_score)}"
         )
 
     selected_chain_counts = Counter(
@@ -347,7 +365,7 @@ def _output_file_entries(
         ("Cluster CSV", output_files.cluster_csv),
         ("Selected-atoms PDB", output_files.selected_pdb),
         ("Cleaned model PDB", output_files.model_pdb),
-        ("Z-score histogram", output_files.z_score_histogram),
+        ("Z-score falloff plot", output_files.z_score_falloff),
         ("Summary report", output_files.summary_report),
     )
     return tuple((label, path) for label, path in entries if path is not None)

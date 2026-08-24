@@ -187,21 +187,12 @@ def _build_epath_parser() -> argparse.ArgumentParser:
     output.add_argument(
         "--no-plot",
         action="store_true",
-        help="Do not write the BDamage Z-score histogram plot.",
+        help="Do not write the BDamage Z-score falloff plot.",
     )
     output.add_argument(
         "--no-reports",
         action="store_true",
         help="Do not write the cluster CSV or summary report.",
-    )
-    output.add_argument(
-        "--structure-b-factor",
-        choices=("bdamage", "b_factor", "z_score"),
-        default=epath_defaults.output.structure_b_factor_mode,
-        help=(
-            "Value written to the B-factor column in E-path PDB outputs. "
-            f"Default: {epath_defaults.output.structure_b_factor_mode}"
-        ),
     )
     epath_selection.add_argument(
         "--percentile",
@@ -468,7 +459,6 @@ def epath_workflow_options_from_args(
             write_combined_csv=not args.no_csv,
             write_structure_files=not args.no_pdb,
             write_z_score_plot=not args.no_plot,
-            structure_b_factor_mode=args.structure_b_factor,
             write_cluster_csv=not args.no_reports,
             write_summary_report=not args.no_reports,
         ),
@@ -852,7 +842,20 @@ def print_epath_summary(
         f"of {len(selection_result.scored_atoms)}",
         file=stream,
     )
-    print(f"  Z-score mode: {selection_result.z_mode:.3f}", file=stream)
+    print(
+        f"  BDamage mean: {selection_result.bdamage_mean:.4f}, "
+        f"SD: {selection_result.bdamage_standard_deviation:.4f}",
+        file=stream,
+    )
+    plateau = selection_result.plateau
+    if plateau is None:
+        print("  Z-score plateau: none detected", file=stream)
+    else:
+        print(
+            f"  Z-score plateau: {plateau.atom_count} atoms at Z "
+            f"{plateau.lowest_z_score:.3f} to {plateau.highest_z_score:.3f}",
+            file=stream,
+        )
     print(file=stream)
     print_bnet_summary(workflow_result.bnet_workflow_result, stream=stream)
     print(file=stream)
@@ -876,7 +879,7 @@ def print_epath_summary(
     print(f"  Cluster CSV: {output_files.cluster_csv}", file=stream)
     print(f"  Selected PDB: {output_files.selected_pdb}", file=stream)
     print(f"  Model PDB: {output_files.model_pdb}", file=stream)
-    print(f"  Z-score plot: {output_files.z_score_histogram}", file=stream)
+    print(f"  Z-score falloff: {output_files.z_score_falloff}", file=stream)
     print(f"  Summary report: {output_files.summary_report}", file=stream)
 
     if preview_count > 0 and workflow_result.bdamage_workflow_result is not None:

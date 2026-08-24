@@ -6,13 +6,10 @@ import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from epath.atoms import EpathAtom
 from epath.selection import EpathScoredAtom
 from rabdam.structure.models import PreparedAtom
-
-PdbBFactorMode = Literal["bdamage", "b_factor", "z_score"]
 
 
 class EpathStructureOutputError(ValueError):
@@ -36,7 +33,6 @@ def write_structure_outputs(
     output_prefix: str | Path,
     selected_atoms: Iterable[EpathScoredAtom],
     *,
-    b_factor_mode: PdbBFactorMode = "bdamage",
     cleaned_atoms: Sequence[PreparedAtom] | None = None,
     bdamage_by_source_index: Mapping[int, float] | None = None,
     bdamage_threshold: float | None = None,
@@ -54,7 +50,6 @@ def write_structure_outputs(
     write_selected_atoms_pdb(
         selected_pdb,
         selected_atoms,
-        b_factor_mode=b_factor_mode,
         title="E-path selected atoms",
     )
 
@@ -157,7 +152,6 @@ def write_selected_atoms_pdb(
     output_path: str | Path,
     atoms: Iterable[EpathScoredAtom | EpathAtom],
     *,
-    b_factor_mode: PdbBFactorMode = "bdamage",
     title: str = "E-path selected atoms",
 ) -> Path:
     """Write selected atoms as a PDB subset."""
@@ -165,7 +159,6 @@ def write_selected_atoms_pdb(
     return write_atom_subset_pdb(
         output_path,
         atoms,
-        b_factor_mode=b_factor_mode,
         title=title,
     )
 
@@ -174,7 +167,6 @@ def write_atom_subset_pdb(
     output_path: str | Path,
     atoms: Iterable[EpathScoredAtom | EpathAtom],
     *,
-    b_factor_mode: PdbBFactorMode = "bdamage",
     title: str = "E-path atom subset",
     remarks: Iterable[str] = (),
 ) -> Path:
@@ -194,18 +186,12 @@ def write_atom_subset_pdb(
     with output_file.open("w", encoding="utf-8", newline="\n") as file:
         file.write(_pdb_title_line(title))
         file.write(_pdb_remark_line("E-path coordinate subset."))
-        file.write(_pdb_remark_line(f"B-factor column stores {b_factor_mode}."))
+        file.write(_pdb_remark_line("B-factor column stores BDamage."))
         for remark in remarks:
             file.write(_pdb_remark_line(remark))
 
         for output_index, atom_record in enumerate(atom_tuple, start=1):
-            file.write(
-                _pdb_atom_line(
-                    atom_record,
-                    output_serial=output_index,
-                    b_factor_mode=b_factor_mode,
-                )
-            )
+            file.write(_pdb_atom_line(atom_record, output_serial=output_index))
 
         file.write("END\n")
 
@@ -216,7 +202,6 @@ def _pdb_atom_line(
     atom_record: EpathScoredAtom | EpathAtom,
     *,
     output_serial: int,
-    b_factor_mode: PdbBFactorMode,
 ) -> str:
     atom = _atom_from_record(atom_record)
     return _pdb_atom_line_from_fields(
@@ -231,7 +216,7 @@ def _pdb_atom_line(
         y=atom.y,
         z=atom.z,
         occupancy=atom.occupancy,
-        b_factor=_b_factor_value(atom_record, b_factor_mode),
+        b_factor=atom.bdamage,
         output_serial=output_serial,
     )
 
@@ -273,28 +258,6 @@ def _pdb_atom_line_from_fields(
         f"{_pdb_element(element)}"
         f"\n"
     )
-
-
-def _b_factor_value(
-    atom_record: EpathScoredAtom | EpathAtom,
-    b_factor_mode: PdbBFactorMode,
-) -> float:
-    atom = _atom_from_record(atom_record)
-    if b_factor_mode == "bdamage":
-        return atom.bdamage
-
-    if b_factor_mode == "b_factor":
-        return atom.b_factor
-
-    if b_factor_mode == "z_score":
-        if isinstance(atom_record, EpathScoredAtom):
-            return atom_record.bdamage_z_score
-
-        raise EpathStructureOutputError(
-            "b_factor_mode='z_score' requires EpathScoredAtom records."
-        )
-
-    raise EpathStructureOutputError(f"Unknown B-factor mode: {b_factor_mode!r}.")
 
 
 def _atom_from_record(atom_record: EpathScoredAtom | EpathAtom) -> EpathAtom:

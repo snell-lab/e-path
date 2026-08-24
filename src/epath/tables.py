@@ -41,7 +41,8 @@ COMBINED_ATOM_FIELDNAMES = [
     "selection_method",
     "selection_description",
     "selection_selected_percent",
-    "selection_z_mode",
+    "selection_bdamage_mean",
+    "selection_bdamage_standard_deviation",
     "selection_z_threshold",
     "selection_bdamage_threshold",
     "selection_boundary_z_score",
@@ -170,7 +171,10 @@ def combined_atom_rows(
             "selection_method": selection_result.method,
             "selection_description": selection_result.description,
             "selection_selected_percent": selection_result.selected_percent,
-            "selection_z_mode": selection_result.z_mode,
+            "selection_bdamage_mean": selection_result.bdamage_mean,
+            "selection_bdamage_standard_deviation": (
+                selection_result.bdamage_standard_deviation
+            ),
             "selection_z_threshold": selection_result.z_threshold,
             "selection_bdamage_threshold": selection_result.bdamage_threshold,
             "selection_boundary_z_score": selection_result.boundary_z_score,
