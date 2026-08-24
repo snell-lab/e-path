@@ -10,11 +10,7 @@ from typing import Any
 
 from epath.atoms import EpathAtom
 from epath.clustering import EpathCluster
-from epath.selection import (
-    ChainPercentileThreshold,
-    EpathScoredAtom,
-    EpathSelectionResult,
-)
+from epath.selection import EpathScoredAtom, EpathSelectionResult
 
 COMBINED_ATOM_FIELDNAMES = [
     "source_atom_index",
@@ -38,23 +34,8 @@ COMBINED_ATOM_FIELDNAMES = [
     "bdamage",
     "bdamage_z_score",
     "selected",
-    "selection_method",
-    "selection_description",
-    "selection_selected_percent",
-    "selection_bdamage_mean",
-    "selection_bdamage_standard_deviation",
-    "selection_z_threshold",
-    "selection_bdamage_threshold",
-    "selection_boundary_z_score",
-    "chain_bdamage_threshold",
-    "chain_z_threshold",
     "cluster_id",
     "cluster_member_index",
-    "cluster_atom_count",
-    "cluster_mst_total_length",
-    "cluster_mean_step",
-    "cluster_largest_edge",
-    "cluster_span",
 ]
 
 CLUSTER_FIELDNAMES = [
@@ -138,14 +119,12 @@ def combined_atom_rows(
         _scored_atom_identity(scored_atom)
         for scored_atom in selection_result.selected_atoms
     }
-    chain_thresholds = _chain_thresholds_by_chain(selection_result.chain_thresholds)
     cluster_by_atom = _cluster_membership_by_atom(clusters)
 
     rows: list[dict[str, Any]] = []
     for scored_atom in selection_result.scored_atoms:
         atom = scored_atom.atom
         atom_id = _atom_identity(atom)
-        chain_threshold = chain_thresholds.get(atom.chain_id)
         row: dict[str, Any] = {
             "source_atom_index": atom.source_atom_index,
             "bdamage_atom_index": atom.bdamage_atom_index,
@@ -168,22 +147,6 @@ def combined_atom_rows(
             "bdamage": scored_atom.bdamage,
             "bdamage_z_score": scored_atom.bdamage_z_score,
             "selected": atom_id in selected_keys,
-            "selection_method": selection_result.method,
-            "selection_description": selection_result.description,
-            "selection_selected_percent": selection_result.selected_percent,
-            "selection_bdamage_mean": selection_result.bdamage_mean,
-            "selection_bdamage_standard_deviation": (
-                selection_result.bdamage_standard_deviation
-            ),
-            "selection_z_threshold": selection_result.z_threshold,
-            "selection_bdamage_threshold": selection_result.bdamage_threshold,
-            "selection_boundary_z_score": selection_result.boundary_z_score,
-            "chain_bdamage_threshold": (
-                chain_threshold.bdamage_threshold if chain_threshold else None
-            ),
-            "chain_z_threshold": (
-                chain_threshold.z_threshold if chain_threshold else None
-            ),
         }
         row.update(_cluster_columns(cluster_by_atom.get(atom_id)))
         rows.append(row)
@@ -197,12 +160,6 @@ def atom_token(atom: EpathAtom) -> str:
     residue_number = "" if atom.residue_number is None else str(atom.residue_number)
     insertion_code = atom.insertion_code.strip()
     return f"{atom.chain_id}:{residue_number}{insertion_code}:{atom.atom_name.strip()}"
-
-
-def _chain_thresholds_by_chain(
-    chain_thresholds: Iterable[ChainPercentileThreshold],
-) -> dict[str, ChainPercentileThreshold]:
-    return {threshold.chain_id: threshold for threshold in chain_thresholds}
 
 
 def _cluster_membership_by_atom(
@@ -223,25 +180,12 @@ def _cluster_columns(
     cluster_membership: tuple[EpathCluster, int] | None,
 ) -> dict[str, Any]:
     if cluster_membership is None:
-        return {
-            "cluster_id": None,
-            "cluster_member_index": None,
-            "cluster_atom_count": None,
-            "cluster_mst_total_length": None,
-            "cluster_mean_step": None,
-            "cluster_largest_edge": None,
-            "cluster_span": None,
-        }
+        return {"cluster_id": None, "cluster_member_index": None}
 
     cluster, member_index = cluster_membership
     return {
         "cluster_id": cluster.cluster_id,
         "cluster_member_index": member_index,
-        "cluster_atom_count": cluster.atom_count,
-        "cluster_mst_total_length": cluster.metrics.mst_total_length,
-        "cluster_mean_step": cluster.metrics.mean_step,
-        "cluster_largest_edge": cluster.metrics.mst_largest_edge,
-        "cluster_span": cluster.metrics.span,
     }
 
 

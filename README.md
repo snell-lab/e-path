@@ -65,7 +65,10 @@ Pass one input for a single run or multiple inputs for a batch run.
 Single and batch E-path runs write results in `output/` by default, using the
 PDB ID or input filename stem as the output prefix. A normal run writes:
 
-- `*_epath.csv`: combined per-atom BDamage and E-path results.
+- `*_epath.csv`: one row per scored atom, with its BDamage, Z-score, whether
+  it was selected, and its cluster membership. Run-level statistics are in the
+  summary and cluster geometry is in `*_clusters.csv`, joinable on
+  `cluster_id`, so neither is repeated per atom.
 - `*_clusters.csv`: one row per reported selected-atom cluster (eight or more
   atoms by default).
 - `*_selected.pdb`: selected E-path atoms.
