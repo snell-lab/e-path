@@ -12,7 +12,6 @@ from epath.clustering import (
     DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
     EpathCluster,
     cluster_selected_atoms,
-    keep_largest_cluster,
 )
 from epath.outputs import (
     EpathOutputWorkflowOptions,
@@ -48,7 +47,6 @@ class EpathClusterWorkflowOptions:
 
     distance_cutoff: float = DEFAULT_CLUSTER_DISTANCE_ANGSTROM
     minimum_cluster_size: int = 8
-    keep_largest_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,9 +125,6 @@ def analyze_epath_atoms(
     clusters = tuple(
         cluster for cluster in clusters if cluster.atom_count >= minimum_cluster_size
     )
-    if options.clustering.keep_largest_only:
-        clusters = keep_largest_cluster(clusters)
-
     analyzed_chains = tuple(dict.fromkeys(atom.chain_id for atom in atom_tuple))
     if bnet_workflow_result is None and bdamage_workflow_result is not None:
         bnet_workflow_result = calculate_bnet_workflow(

@@ -238,11 +238,6 @@ def _build_epath_parser() -> argparse.ArgumentParser:
             f"Default: {epath_defaults.clustering.minimum_cluster_size}"
         ),
     )
-    epath_advanced.add_argument(
-        "--keep-largest-cluster",
-        action="store_true",
-        help="Keep only the largest selected-atom cluster in E-path outputs.",
-    )
     _add_bdamage_calculation_arguments(bdamage, defaults=bdamage_defaults)
     _add_bdamage_debug_arguments(bdamage_debug)
     _add_download_arguments(download)
@@ -467,7 +462,6 @@ def epath_workflow_options_from_args(
         clustering=EpathClusterWorkflowOptions(
             distance_cutoff=args.cluster_distance,
             minimum_cluster_size=args.minimum_cluster_size,
-            keep_largest_only=args.keep_largest_cluster,
         ),
         output=EpathOutputWorkflowOptions(
             output_prefix=output_prefix,

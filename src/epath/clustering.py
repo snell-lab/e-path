@@ -95,25 +95,6 @@ def cluster_selected_atoms(
     )
 
 
-def keep_largest_cluster(
-    clusters: Iterable[EpathCluster],
-) -> tuple[EpathCluster, ...]:
-    """Return only the largest cluster, preserving an empty input."""
-
-    cluster_tuple = tuple(clusters)
-    if not cluster_tuple:
-        return ()
-
-    largest_cluster = max(cluster_tuple, key=lambda cluster: cluster.atom_count)
-    return (
-        EpathCluster(
-            cluster_id=1,
-            atoms=largest_cluster.atoms,
-            metrics=largest_cluster.metrics,
-        ),
-    )
-
-
 def cluster_metrics_for_atoms(
     atoms: Sequence[EpathScoredAtom],
 ) -> EpathClusterMetrics:
