@@ -4,7 +4,7 @@ import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from rabdam.input.reader import AtomRecord
+from xtal.reader import AtomRecord
 
 
 @dataclass(frozen=True, slots=True)

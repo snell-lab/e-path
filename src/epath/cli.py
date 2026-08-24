@@ -34,9 +34,6 @@ from rabdam.bnet.workflow import BnetWorkflowResult, calculate_bnet_workflow
 from rabdam.crystal.symmetry import CrystalSymmetryError
 from rabdam.crystal.translate import CrystalTranslationError
 from rabdam.crystal.trim import CrystalTrimError
-from rabdam.input.rcsb import DEFAULT_RCSB_DOWNLOAD_DIR, ensure_local_structure_file
-from rabdam.input.reader import read_structure
-from rabdam.input.resolver import ResolvedStructureInput, resolve_structure_input
 from rabdam.packing.density import (
     PackingDensityError,
     packing_density_counts_as_tuple,
@@ -48,6 +45,10 @@ from rabdam.workflow import (
     BDamageWorkflowResult,
     calculate_bdamage_for_structure_data,
 )
+from xtal.rcsb import DEFAULT_RCSB_DOWNLOAD_DIR, ensure_local_structure_file
+from xtal.reader import read_structure
+from xtal.resolver import ResolvedStructureInput, resolve_structure_input
+from xtal.validate import CrystalMetadataError, ValidatedCrystal
 
 DEFAULT_OUTPUT_DIR = Path("output")
 DEFAULT_OUTPUT_CSV_PATTERN = "output/<structure>_BDamage.csv"
@@ -103,6 +104,7 @@ CSV_FIELDNAMES = [
 RABDAM_CLI_ERRORS = (
     BDamageScoreError,
     BDamageWorkflowError,
+    CrystalMetadataError,
     CrystalSymmetryError,
     CrystalTranslationError,
     CrystalTrimError,
@@ -266,34 +268,6 @@ def _build_epath_parser() -> argparse.ArgumentParser:
         "--per-chain-percentile",
         action="store_true",
         help="Apply the percentile cutoff separately within each chain.",
-    )
-    epath_selection.add_argument(
-        "--z-cutoff",
-        metavar="FLOAT",
-        type=finite_float,
-        default=None,
-        help="Select atoms with BDamage Z-score less than or equal to this value.",
-    )
-    epath_selection.add_argument(
-        "--chains",
-        metavar="CHAIN[,CHAIN...]",
-        type=chain_selection,
-        default=None,
-        help=(
-            "Restrict downstream E-path analysis to these comma-separated chain "
-            "IDs (quoted whitespace-separated IDs are also accepted). BDamage is "
-            "still calculated from the complete structure."
-        ),
-    )
-    epath_advanced.add_argument(
-        "--histogram-bins",
-        metavar="INT",
-        type=positive_int,
-        default=epath_defaults.selection.histogram_bins,
-        help=(
-            "Number of bins for BDamage Z-score histogram summaries. "
-            f"Default: {epath_defaults.selection.histogram_bins}"
-        ),
     )
     epath_advanced.add_argument(
         "--cluster-distance",
@@ -619,15 +593,6 @@ def percent_float(value: str) -> float:
     return parsed
 
 
-def finite_float(value: str) -> float:
-    """Return a finite float for argparse."""
-
-    parsed = _float_arg(value)
-    if not math.isfinite(parsed):
-        raise argparse.ArgumentTypeError(f"expected a finite number, got {value!r}")
-    return parsed
-
-
 def positive_int(value: str) -> int:
     """Return a positive integer for argparse."""
 
@@ -655,15 +620,6 @@ def component_name(value: str) -> str:
     if not cleaned:
         raise argparse.ArgumentTypeError("component name cannot be empty")
     return cleaned
-
-
-def chain_selection(value: str) -> tuple[str, ...]:
-    """Return unique chain IDs from a comma- or space-separated CLI value."""
-
-    chain_ids = tuple(dict.fromkeys(value.replace(",", " ").split()))
-    if not chain_ids:
-        raise argparse.ArgumentTypeError("at least one chain ID is required")
-    return chain_ids
 
 
 def workflow_options_from_args(args: argparse.Namespace) -> BDamageWorkflowOptions:
@@ -702,22 +658,14 @@ def epath_workflow_options_from_args(
 ) -> EpathWorkflowOptions:
     """Build full E-path workflow options from parsed command-line arguments."""
 
-    if args.z_cutoff is not None and args.per_chain_percentile:
-        raise ValueError("--z-cutoff cannot be combined with --per-chain-percentile.")
-
-    selection_method: SelectionMethod = "percentile"
-    if args.z_cutoff is not None:
-        selection_method = "z_cutoff"
-    elif args.per_chain_percentile:
-        selection_method = "percentile_per_chain"
+    selection_method: SelectionMethod = (
+        "percentile_per_chain" if args.per_chain_percentile else "percentile"
+    )
 
     return EpathWorkflowOptions(
-        allowed_chains=args.chains,
         selection=EpathSelectionWorkflowOptions(
             method=selection_method,
-            z_cutoff=0.0 if args.z_cutoff is None else args.z_cutoff,
             percentile=args.percentile,
-            histogram_bins=args.histogram_bins,
         ),
         clustering=EpathClusterWorkflowOptions(
             distance_cutoff=args.cluster_distance,
@@ -1329,6 +1277,8 @@ def print_summary(
     print(f"Input: {result.local_input.local_path}", file=stream)
     print(f"Output CSV: {result.output_csv}", file=stream)
     print(file=stream)
+    print_crystal_summary(workflow_result.crystal, stream=stream)
+    print(file=stream)
     print("Crystallographic expansion:", file=stream)
     print(
         "  Symmetry-expanded atoms: "
@@ -1397,6 +1347,13 @@ def print_epath_summary(
     print(f"Input: {result.local_input.local_path}", file=stream)
     print(f"Output prefix: {result.output_prefix}", file=stream)
     print(file=stream)
+    print_crystal_summary(
+        workflow_result.bdamage_workflow_result.crystal
+        if workflow_result.bdamage_workflow_result is not None
+        else None,
+        stream=stream,
+    )
+    print(file=stream)
     print("E-path selection:", file=stream)
     analyzed_chains = tuple(
         dict.fromkeys(atom.chain_id for atom in workflow_result.atoms)
@@ -1454,6 +1411,40 @@ def print_epath_summary(
 
     print(file=stream)
     print(f"Total runtime: {total_runtime_seconds:.1f}s", file=stream)
+
+
+def print_crystal_summary(
+    crystal: ValidatedCrystal | None,
+    *,
+    stream: TextIO,
+) -> None:
+    """Print the validated crystal and asymmetric-unit content."""
+
+    print("Crystal:", file=stream)
+    if crystal is None:
+        print("  Not validated", file=stream)
+        return
+
+    print(f"  Space group: {crystal.space_group_name}", file=stream)
+    print(
+        f"  Asymmetric units per unit cell: {crystal.operation_count}",
+        file=stream,
+    )
+    content = crystal.content
+    if content is None:
+        print("  Asymmetric-unit content: not calculated", file=stream)
+        return
+
+    print(
+        f"  Matthews coefficient: {content.matthews_coefficient:.2f} A^3/Da",
+        file=stream,
+    )
+    print(
+        f"  Estimated solvent content: {100.0 * content.solvent_fraction:.1f}%",
+        file=stream,
+    )
+    for warning in crystal.warnings:
+        print(f"  WARNING: {warning}", file=stream)
 
 
 def print_bnet_summary(

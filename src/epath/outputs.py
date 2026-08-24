@@ -13,6 +13,7 @@ from epath.selection import EpathSelectionResult
 from epath.structures import PdbBFactorMode, write_structure_outputs
 from epath.tables import write_cluster_csv, write_combined_atom_csv
 from rabdam.bnet.workflow import BnetWorkflowResult
+from xtal.validate import ValidatedCrystal
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,8 +48,8 @@ def write_epath_outputs(
     structure_path: str | Path | None,
     minimum_cluster_size: int,
     options: EpathOutputWorkflowOptions,
-    histogram_bins: int,
     bnet_workflow_result: BnetWorkflowResult | None = None,
+    crystal: ValidatedCrystal | None = None,
 ) -> EpathWorkflowOutputFiles:
     """Write enabled E-path artifacts and return their paths."""
 
@@ -84,7 +85,6 @@ def write_epath_outputs(
             prefix,
             [atom.bdamage_z_score for atom in selection_result.scored_atoms],
             selection_result.z_mode,
-            bins=histogram_bins,
         )
         if options.write_z_score_plot
         else None
@@ -110,6 +110,7 @@ def write_epath_outputs(
             minimum_cluster_size=minimum_cluster_size,
             output_files=output_files,
             bnet_workflow_result=bnet_workflow_result,
+            crystal=crystal,
         )
 
     return output_files
@@ -125,6 +126,7 @@ def write_summary_txt(
     minimum_cluster_size: int,
     output_files: EpathWorkflowOutputFiles,
     bnet_workflow_result: BnetWorkflowResult | None = None,
+    crystal: ValidatedCrystal | None = None,
 ) -> Path:
     """Write a persistent human-readable E-path analysis summary."""
 
@@ -183,6 +185,9 @@ def write_summary_txt(
                 f"Z threshold={_number(threshold.z_threshold)}"
             )
 
+    lines.extend(("", "Crystal", "-------"))
+    lines.extend(_crystal_summary_lines(crystal))
+
     lines.extend(("", "RABDAM Bnet results", "--------------------"))
     lines.extend(_bnet_summary_lines(bnet_workflow_result))
 
@@ -219,6 +224,41 @@ def write_summary_txt(
         lines.append("None.")
 
     return _write_text(output_path, lines)
+
+
+def _crystal_summary_lines(
+    crystal: ValidatedCrystal | None,
+) -> tuple[str, ...]:
+    if crystal is None:
+        return ("Crystal: not validated",)
+
+    lines = [
+        f"Space group: {crystal.space_group_name}",
+        f"Asymmetric units per unit cell: {crystal.operation_count}",
+        f"Unit-cell volume: {_number(crystal.unit_cell_volume_angstrom3)} A^3",
+    ]
+    content = crystal.content
+    if content is None:
+        lines.append("Asymmetric-unit content: not calculated")
+        return tuple(lines)
+
+    lines.extend(
+        (
+            (
+                "Modelled macromolecule mass: "
+                f"{_number(content.macromolecule_mass_dalton)} Da "
+                f"({content.macromolecule_atom_count} atoms"
+                f"{', hydrogens excluded' if content.hydrogens_excluded else ''})"
+            ),
+            (f"Matthews coefficient: {_number(content.matthews_coefficient)} A^3/Da"),
+            (
+                "Estimated solvent content: "
+                f"{_number(100.0 * content.solvent_fraction)}%"
+            ),
+        )
+    )
+    lines.extend(f"WARNING: {warning}" for warning in crystal.warnings)
+    return tuple(lines)
 
 
 def _bnet_summary_lines(

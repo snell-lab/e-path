@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from rabdam.input.reader import AtomRecord, StructureMetadata
+from xtal.reader import AtomRecord, StructureMetadata
 
 
 class StructurePreparationError(ValueError):

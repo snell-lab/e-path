@@ -7,7 +7,7 @@ from pathlib import Path
 
 import gemmi
 
-from rabdam.input.resolver import (
+from xtal.resolver import (
     InputResolutionError,
     ResolvedStructureInput,
     StructureFileFormat,

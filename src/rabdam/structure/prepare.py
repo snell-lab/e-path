@@ -1,6 +1,5 @@
 """Run the structure-cleaning and atom-selection pipeline."""
 
-from rabdam.input.reader import StructureData
 from rabdam.structure.altlocs import select_altlocs
 from rabdam.structure.checks import check_prepared_structure
 from rabdam.structure.classify import classify_atoms
@@ -13,6 +12,7 @@ from rabdam.structure.models import (
     StructurePreparationReport,
 )
 from rabdam.structure.selection import select_bdamage_atoms
+from xtal.reader import StructureData
 
 __all__ = (
     "PreparedAtom",

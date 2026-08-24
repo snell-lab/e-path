@@ -5,9 +5,9 @@ from functools import cache
 
 import gemmi
 
-from rabdam.input.reader import AtomRecord
 from rabdam.structure.filters import is_hydrogen
 from rabdam.structure.models import PreparedAtom
+from xtal.reader import AtomRecord
 
 # Gemmi does not classify several force-field protonation variants and modified
 # nucleotides in the way RABDAM needs for atom selection.

@@ -20,16 +20,14 @@ from epath.outputs import (
     write_epath_outputs,
 )
 from epath.selection import (
-    DEFAULT_HISTOGRAM_BINS,
     EpathSelectionResult,
     select_atoms_by_percentile,
     select_atoms_by_percentile_per_chain,
-    select_atoms_by_z,
 )
 from rabdam.bnet.workflow import BnetWorkflowResult, calculate_bnet_workflow
 from rabdam.workflow import BDamageWorkflowResult
 
-SelectionMethod = Literal["z_cutoff", "percentile", "percentile_per_chain"]
+SelectionMethod = Literal["percentile", "percentile_per_chain"]
 
 
 class EpathWorkflowError(ValueError):
@@ -41,9 +39,7 @@ class EpathSelectionWorkflowOptions:
     """Options controlling E-path atom selection."""
 
     method: SelectionMethod = "percentile"
-    z_cutoff: float = 0.0
     percentile: float = 2.0
-    histogram_bins: int = DEFAULT_HISTOGRAM_BINS
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +64,6 @@ class EpathWorkflowOptions:
     output: EpathOutputWorkflowOptions = field(
         default_factory=EpathOutputWorkflowOptions
     )
-    allowed_chains: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,13 +111,9 @@ def analyze_epath_atoms(
     if options is None:
         options = EpathWorkflowOptions()
 
-    all_atoms = tuple(atoms)
-    if not all_atoms:
+    atom_tuple = tuple(atoms)
+    if not atom_tuple:
         raise EpathWorkflowError("E-path analysis requires at least one atom.")
-    atom_tuple = _filter_atoms_by_chain(
-        all_atoms,
-        allowed_chains=options.allowed_chains,
-    )
 
     selection_result = _select_atoms(atom_tuple, options.selection)
     clusters = cluster_selected_atoms(
@@ -152,8 +143,12 @@ def analyze_epath_atoms(
         structure_path=structure_path,
         minimum_cluster_size=minimum_cluster_size,
         options=options.output,
-        histogram_bins=options.selection.histogram_bins,
         bnet_workflow_result=bnet_workflow_result,
+        crystal=(
+            bdamage_workflow_result.crystal
+            if bdamage_workflow_result is not None
+            else None
+        ),
     )
 
     return EpathWorkflowResult(
@@ -166,63 +161,17 @@ def analyze_epath_atoms(
     )
 
 
-def _filter_atoms_by_chain(
-    atoms: tuple[EpathAtom, ...],
-    *,
-    allowed_chains: tuple[str, ...] | None,
-) -> tuple[EpathAtom, ...]:
-    """Restrict downstream E-path analysis to requested chain identifiers."""
-
-    if allowed_chains is None:
-        return atoms
-
-    normalized_chains = tuple(
-        dict.fromkeys(
-            chain_id.strip() for chain_id in allowed_chains if chain_id.strip()
-        )
-    )
-    if not normalized_chains:
-        raise EpathWorkflowError("At least one non-empty chain ID is required.")
-
-    available_chains = {atom.chain_id for atom in atoms}
-    missing_chains = tuple(
-        chain_id for chain_id in normalized_chains if chain_id not in available_chains
-    )
-    if missing_chains:
-        missing_text = ", ".join(missing_chains)
-        available_text = ", ".join(sorted(available_chains)) or "none"
-        raise EpathWorkflowError(
-            f"Requested chain(s) have no BDamage-scored atoms: {missing_text}. "
-            f"Chains available for E-path analysis: {available_text}."
-        )
-
-    allowed_chain_set = set(normalized_chains)
-    return tuple(atom for atom in atoms if atom.chain_id in allowed_chain_set)
-
-
 def _select_atoms(
     atoms: tuple[EpathAtom, ...],
     options: EpathSelectionWorkflowOptions,
 ) -> EpathSelectionResult:
-    if options.method == "z_cutoff":
-        return select_atoms_by_z(
-            atoms,
-            z_cutoff=options.z_cutoff,
-            histogram_bins=options.histogram_bins,
-        )
-
     if options.method == "percentile":
-        return select_atoms_by_percentile(
-            atoms,
-            percentile=options.percentile,
-            histogram_bins=options.histogram_bins,
-        )
+        return select_atoms_by_percentile(atoms, percentile=options.percentile)
 
     if options.method == "percentile_per_chain":
         return select_atoms_by_percentile_per_chain(
             atoms,
             percentile=options.percentile,
-            histogram_bins=options.histogram_bins,
         )
 
     raise EpathWorkflowError(f"Unknown selection method: {options.method!r}.")

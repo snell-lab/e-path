@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
-from rabdam.input.resolver import (
+from xtal.resolver import (
     InputResolutionError,
     ResolvedStructureInput,
     StructureFileFormat,

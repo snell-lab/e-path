@@ -15,8 +15,8 @@ BDamage is a per-atom score that compares an atom's B-factor with atoms in a
 similar local packing-density environment. By default, packing density is the
 number of non-hydrogen crystal-environment atoms within 7.0 A.
 
-The E-path pipeline builds on these per-atom BDamage values with Z-score or
-percentile selection, 4 A connectivity clustering, and minimum-spanning-tree
+The E-path pipeline builds on these per-atom BDamage values with lowest-percentile
+selection, 4 A connectivity clustering, and minimum-spanning-tree
 (MST) geometry metrics. The complete RABDAM stage also calculates raw protein
 Bnet and a resolution-matched Bnet percentile. ePath consumes BDamage only;
 Bnet and its percentile are reported alongside the ePath results but do not
@@ -98,7 +98,6 @@ Useful selection options:
 ./epath model.cif --include-hetatm
 ./epath model.cif --exclude-hetatm
 ./epath model.cif --include-nucleic-acid
-./epath model.cif --chains A,C
 ./epath model.cif --remove-component HOH
 ./epath model.cif --add-component LIG
 ./epath model.cif --remove-atom-serial 123 --add-atom-serial 456
@@ -115,9 +114,13 @@ eight atoms are reported as clusters. `--minimum-cluster-size` changes that
 reporting threshold. Each reported cluster includes the atom count, MST total
 length, mean step, largest edge, and span used in the PNAS analysis.
 
-`--chains` restricts the downstream E-path Z-score distribution, selection,
-clustering, and outputs. BDamage itself is still calculated first from the
-complete prepared crystallographic structure.
+E-path analysis always runs over the complete prepared model. Restricting the
+analysis to a subset of chains would change both the BDamage Z-score
+distribution the percentile is taken from and the cross-chain connectivity that
+produces interface clusters, so no chain-restriction option is provided. Use
+`--per-chain-percentile` to stratify the percentile cutoff within each chain
+while keeping every atom in the connectivity graph, and restrict chains at the
+visualization stage when preparing figures.
 
 ## Differences From RABDAM 2
 
@@ -157,6 +160,44 @@ These improvements intentionally remove some RABDAM 2 application features.
 E-path does not support the legacy text input file, `-f`, `-i`, `-r`
 dataframe restart modes, interactive overwrite prompts, HTML reports, plots,
 BDamage-colored coordinate files, or restartable dataframe outputs.
+
+## Input Validation
+
+BDamage compares an atom's B-factor with atoms at a similar local packing
+density, and packing density is counted in a crystal environment rebuilt from
+the model by symmetry expansion and unit-cell translation. That rebuilt
+environment is only correct when the model fills exactly one asymmetric unit.
+
+Symmetry expansion cannot detect a violation on its own, because it faithfully
+rebuilds a crystal from whatever the file contains. E-path therefore validates
+the asymmetric-unit content against the unit-cell volume using the Matthews
+coefficient before any calculation runs:
+
+- A model that cannot physically fit in the cell is rejected. This usually
+  means a biological-assembly file was supplied instead of the asymmetric unit.
+- A Matthews coefficient outside roughly 1.5 to 4.5 A^3/Da is reported as a
+  warning. A high value suggests chains are missing, which makes packing
+  densities too low at the missing interfaces; a low value suggests the model
+  holds more than one asymmetric unit.
+
+The space group, unit-cell volume, Matthews coefficient, and estimated solvent
+content are recorded in every run summary. Only protein and nucleic-acid atoms
+contribute to the modelled mass, as for a conventional Matthews calculation.
+Hydrogens are removed before scoring, so the reported solvent content is a
+slight overestimate.
+
+## Package Layout
+
+- `xtal`: crystallographic intake and validation. Input resolution, RCSB
+  download, file reading, unit-cell and space-group accessors, and
+  asymmetric-unit validation. Contains no damage calculation.
+- `rabdam`: the from-scratch reimplementation of the RABDAM 2 BDamage and Bnet
+  calculations, and nothing else, so it can be compared against RABDAM 2
+  directly.
+- `epath`: the pathway analysis built on per-atom BDamage values.
+
+Dependencies run in one direction only: `epath` uses `rabdam`, and `rabdam`
+uses `xtal`.
 
 ## Limits And Assumptions
 

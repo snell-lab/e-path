@@ -23,13 +23,14 @@ from rabdam.crystal.trim import (
     TrimmedNeighbourBlock,
     trim_expanded_unit_cell_for_bdamage,
 )
-from rabdam.input.reader import StructureData
 from rabdam.packing.density import (
     PackingDensityResult,
     calculate_bdamage_packing_density,
 )
 from rabdam.structure.models import PreparedStructure, StructurePreparationOptions
 from rabdam.structure.prepare import prepare_structure
+from xtal.reader import StructureData
+from xtal.validate import ValidatedCrystal, validate_crystal
 
 T = TypeVar("T")
 
@@ -64,6 +65,7 @@ class BDamageWorkflowResult:
     """Store every materialized result from the BDamage workflow."""
 
     prepared_structure: PreparedStructure
+    crystal: ValidatedCrystal
     symmetry_expanded_structure: SymmetryExpandedStructure
     translated_block: TranslatedCrystalBlock | None
     trimmed_block: TrimmedNeighbourBlock
@@ -147,9 +149,17 @@ def calculate_bdamage_for_prepared_structure(
             f"window_size={window_size!r}, selected_atom_count={selected_atom_count!r}."
         )
 
+    crystal = _run_workflow_stage(
+        "Validating crystal",
+        lambda: validate_crystal_for_prepared_structure(prepared_structure),
+        stage_runner=stage_runner,
+    )
     symmetry_expanded_structure = _run_workflow_stage(
         "Expanding crystallographic symmetry",
-        lambda: expand_prepared_structure_by_symmetry(prepared_structure),
+        lambda: expand_prepared_structure_by_symmetry(
+            prepared_structure,
+            crystal=crystal,
+        ),
         stage_runner=stage_runner,
     )
     # The fused trimming path avoids allocating all 27 translated cells;
@@ -197,6 +207,7 @@ def calculate_bdamage_for_prepared_structure(
 
     return BDamageWorkflowResult(
         prepared_structure=prepared_structure,
+        crystal=crystal,
         symmetry_expanded_structure=symmetry_expanded_structure,
         translated_block=translated_block,
         trimmed_block=trimmed_block,
@@ -204,6 +215,31 @@ def calculate_bdamage_for_prepared_structure(
         bdamage_score_result=bdamage_score_result,
         options=options,
         window_size=window_size,
+    )
+
+
+def validate_crystal_for_prepared_structure(
+    prepared_structure: PreparedStructure,
+) -> ValidatedCrystal:
+    """Validate the crystal metadata and asymmetric-unit content of a model.
+
+    Only protein and nucleic-acid atoms contribute to the modelled mass, as
+    they do for a conventional Matthews calculation. Solvent, ions, and other
+    heteroatoms are excluded even when they are scored.
+    """
+    macromolecule_elements = tuple(
+        atom.record.element
+        for atom in prepared_structure.cleaned_atoms
+        if atom.is_protein or atom.is_nucleic_acid
+    )
+    hydrogens_excluded = not any(
+        atom.is_hydrogen for atom in prepared_structure.cleaned_atoms
+    )
+
+    return validate_crystal(
+        prepared_structure.metadata,
+        macromolecule_elements=macromolecule_elements,
+        hydrogens_excluded=hydrogens_excluded,
     )
 
 

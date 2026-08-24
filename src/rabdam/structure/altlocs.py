@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
-from rabdam.input.reader import AtomRecord
 from rabdam.structure.models import StructurePreparationOptions
+from xtal.reader import AtomRecord
 
 
 @dataclass(frozen=True, slots=True)

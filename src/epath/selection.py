@@ -108,44 +108,10 @@ def histogram_mode(
     return float(0.5 * (edges[max_index] + edges[max_index + 1]))
 
 
-def select_atoms_by_z(
-    atoms: Iterable[EpathAtom],
-    *,
-    z_cutoff: float,
-    histogram_bins: int = DEFAULT_HISTOGRAM_BINS,
-) -> EpathSelectionResult:
-    """Select atoms whose BDamage Z-score is less than or equal to z_cutoff."""
-
-    z_cutoff = _finite_float(z_cutoff, name="z_cutoff")
-    scored_atoms = score_bdamage_atoms(atoms)
-    selected_atoms = tuple(
-        scored_atom
-        for scored_atom in scored_atoms
-        if scored_atom.bdamage_z_score <= z_cutoff
-    )
-    selected_percent = _selected_percent(
-        selected_count=len(selected_atoms),
-        total_count=len(scored_atoms),
-    )
-
-    return EpathSelectionResult(
-        scored_atoms=scored_atoms,
-        selected_atoms=selected_atoms,
-        method="z_cutoff",
-        description=(
-            f"Z <= {z_cutoff:.3f} (selected {selected_percent:.3f}% of atoms)"
-        ),
-        selected_percent=selected_percent,
-        z_mode=_z_mode(scored_atoms, bins=histogram_bins),
-        z_threshold=z_cutoff,
-    )
-
-
 def select_atoms_by_percentile(
     atoms: Iterable[EpathAtom],
     *,
     percentile: float,
-    histogram_bins: int = DEFAULT_HISTOGRAM_BINS,
 ) -> EpathSelectionResult:
     """Select the lowest percentile of atoms by BDamage."""
 
@@ -178,7 +144,7 @@ def select_atoms_by_percentile(
             f"selected {len(selected_atoms)} of {len(scored_atoms)})"
         ),
         selected_percent=selected_percent,
-        z_mode=_z_mode(scored_atoms, bins=histogram_bins),
+        z_mode=_z_mode(scored_atoms),
         z_threshold=z_threshold,
         bdamage_threshold=bdamage_threshold,
         boundary_z_score=boundary_z_score,
@@ -189,7 +155,6 @@ def select_atoms_by_percentile_per_chain(
     atoms: Iterable[EpathAtom],
     *,
     percentile: float,
-    histogram_bins: int = DEFAULT_HISTOGRAM_BINS,
 ) -> EpathSelectionResult:
     """Select the lowest BDamage percentile separately within each chain."""
 
@@ -243,7 +208,7 @@ def select_atoms_by_percentile_per_chain(
             f"(selected {len(selected_atom_tuple)} of {len(scored_atoms)})"
         ),
         selected_percent=selected_percent,
-        z_mode=_z_mode(scored_atoms, bins=histogram_bins),
+        z_mode=_z_mode(scored_atoms),
         z_threshold=z_threshold,
         chain_thresholds=tuple(chain_thresholds),
     )
@@ -345,15 +310,8 @@ def _z_score_for_bdamage_value(
     return float((bdamage - mean) / standard_deviation)
 
 
-def _z_mode(
-    scored_atoms: Sequence[EpathScoredAtom],
-    *,
-    bins: int,
-) -> float:
-    return histogram_mode(
-        [scored_atom.bdamage_z_score for scored_atom in scored_atoms],
-        bins=bins,
-    )
+def _z_mode(scored_atoms: Sequence[EpathScoredAtom]) -> float:
+    return histogram_mode([scored_atom.bdamage_z_score for scored_atom in scored_atoms])
 
 
 def _selected_percent(*, selected_count: int, total_count: int) -> float:

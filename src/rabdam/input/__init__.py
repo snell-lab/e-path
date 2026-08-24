@@ -1,1 +1,0 @@
-"""Structure input handling package."""
