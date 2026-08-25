@@ -6,14 +6,13 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from epath.clustering import ComponentStatistics, EpathCluster
+from epath.clustering import ComponentStatistics
 from epath.endpoints import CofactorSite, cofactor_site_summary
 from epath.pathways import PATH_CLASS_ORDER, PathReport
 from epath.plots import plot_z_falloff
 from epath.residues import RESIDUE_CLASS_ORDER
-from epath.runs import EpathRunRecord
-from epath.selection import EpathSelectionResult
 from epath.structures import write_structure_outputs
 from epath.tables import (
     write_cluster_csv,
@@ -22,9 +21,11 @@ from epath.tables import (
     write_step_csv,
 )
 from rabdam.bnet.workflow import BnetWorkflowResult
-from rabdam.structure.models import PreparedAtom
 from rabdam.workflow import BDamageWorkflowResult
 from xtal.validate import ValidatedCrystal
+
+if TYPE_CHECKING:
+    from epath.workflow import EpathWorkflowResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,33 +58,22 @@ class EpathWorkflowOutputFiles:
 
 
 def write_epath_outputs(
-    *,
-    selection_result: EpathSelectionResult,
-    clusters: tuple[EpathCluster, ...],
-    path_reports: Sequence[PathReport],
-    cofactor_sites: Sequence[CofactorSite],
-    component_statistics: ComponentStatistics,
-    run_record: EpathRunRecord,
-    analyzed_chains: Sequence[str],
-    structure_path: str | Path | None,
-    minimum_cluster_size: int,
+    result: EpathWorkflowResult,
     options: EpathOutputWorkflowOptions,
-    bnet_workflow_result: BnetWorkflowResult | None = None,
-    crystal: ValidatedCrystal | None = None,
-    cleaned_atoms: Sequence[PreparedAtom] | None = None,
-    bdamage_workflow_result: BDamageWorkflowResult | None = None,
 ) -> EpathWorkflowOutputFiles:
-    """Write enabled E-path artifacts and return their paths."""
+    """Write enabled E-path artifacts for a result and return their paths."""
 
     if options.output_prefix is None:
         return EpathWorkflowOutputFiles()
 
     prefix = Path(options.output_prefix)
+    selection_result = result.selection_result
+    path_reports = result.path_reports
     combined_csv = (
         write_combined_atom_csv(
             _output_path(prefix, "epath.csv"),
             selection_result,
-            clusters=clusters,
+            clusters=result.clusters,
         )
         if options.write_combined_csv
         else None
@@ -99,7 +89,7 @@ def write_epath_outputs(
         else None
     )
     run_csv = (
-        write_run_csv(_output_path(prefix, "run.csv"), (run_record,))
+        write_run_csv(_output_path(prefix, "run.csv"), (result.run_record,))
         if options.write_run_csv
         else None
     )
@@ -112,7 +102,7 @@ def write_epath_outputs(
             prefix,
             selection_result.selected_atoms,
             path_reports=path_reports,
-            cleaned_atoms=cleaned_atoms,
+            cleaned_atoms=result.cleaned_atoms,
             bdamage_by_source_index={
                 scored_atom.atom.source_atom_index: scored_atom.atom.bdamage
                 for scored_atom in selection_result.scored_atoms
@@ -142,41 +132,21 @@ def write_epath_outputs(
     )
 
     if summary_report is not None:
-        write_summary_txt(
-            summary_report,
-            structure_path=structure_path,
-            analyzed_chains=analyzed_chains,
-            selection_result=selection_result,
-            path_reports=path_reports,
-            cofactor_sites=cofactor_sites,
-            component_statistics=component_statistics,
-            minimum_cluster_size=minimum_cluster_size,
-            output_files=output_files,
-            bnet_workflow_result=bnet_workflow_result,
-            crystal=crystal,
-            bdamage_workflow_result=bdamage_workflow_result,
-        )
+        write_summary_txt(summary_report, result, output_files=output_files)
 
     return output_files
 
 
 def write_summary_txt(
     output_path: str | Path,
+    result: EpathWorkflowResult,
     *,
-    structure_path: str | Path | None,
-    analyzed_chains: Sequence[str],
-    selection_result: EpathSelectionResult,
-    path_reports: Sequence[PathReport],
-    cofactor_sites: Sequence[CofactorSite],
-    component_statistics: ComponentStatistics,
-    minimum_cluster_size: int,
     output_files: EpathWorkflowOutputFiles,
-    bnet_workflow_result: BnetWorkflowResult | None = None,
-    crystal: ValidatedCrystal | None = None,
-    bdamage_workflow_result: BDamageWorkflowResult | None = None,
 ) -> Path:
     """Write a persistent human-readable E-path analysis summary."""
 
+    selection_result = result.selection_result
+    structure_path = result.structure_path
     lines = [
         "E-path Analysis Summary",
         "=======================",
@@ -185,7 +155,7 @@ def write_summary_txt(
             "Input structure: "
             f"{structure_path if structure_path is not None else 'not provided'}"
         ),
-        f"Chains analyzed: {_chain_text(analyzed_chains)}",
+        f"Chains analyzed: {_chain_text(result.analyzed_chains)}",
         "",
         "Selection",
         "---------",
@@ -259,20 +229,20 @@ def write_summary_txt(
             )
 
     lines.extend(("", "BDamage calculation", "-------------------"))
-    lines.extend(bdamage_parameter_lines(bdamage_workflow_result))
+    lines.extend(bdamage_parameter_lines(result.bdamage_workflow_result))
 
     lines.extend(("", "Crystal", "-------"))
-    lines.extend(crystal_summary_lines(crystal))
+    lines.extend(crystal_summary_lines(result.crystal))
 
     lines.extend(("", "RABDAM Bnet results", "--------------------"))
-    lines.extend(bnet_summary_lines(bnet_workflow_result))
+    lines.extend(bnet_summary_lines(result.bnet_workflow_result))
 
     lines.extend(
         _pathway_summary_lines(
-            path_reports,
-            cofactor_sites=cofactor_sites,
-            statistics=component_statistics,
-            minimum_cluster_size=minimum_cluster_size,
+            result.path_reports,
+            cofactor_sites=result.cofactor_sites,
+            statistics=result.component_statistics,
+            minimum_cluster_size=result.run_record.minimum_cluster_size,
         )
     )
 

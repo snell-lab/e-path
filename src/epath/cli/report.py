@@ -107,7 +107,7 @@ def print_epath_summary(
         "Outputs:",
         (
             f"{label}: {path}"
-            for label, path in output_file_entries(workflow_result.output_files)
+            for label, path in output_file_entries(result.output_files)
         ),
         stream=stream,
     )
@@ -158,9 +158,7 @@ def print_epath_batch_summary(
 
 def _selection_lines(workflow_result: EpathWorkflowResult) -> tuple[str, ...]:
     selection_result = workflow_result.selection_result
-    analyzed_chains = tuple(
-        dict.fromkeys(atom.chain_id for atom in workflow_result.atoms)
-    )
+    analyzed_chains = workflow_result.analyzed_chains
     plateau = selection_result.plateau
     plateau_text = (
         "none detected"

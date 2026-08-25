@@ -25,6 +25,7 @@ from epath.cli.args import (
 from epath.cli.report import print_epath_batch_summary, print_epath_summary
 from epath.plots import EpathPlotError
 from epath.tables import write_run_csv
+from epath.outputs import EpathWorkflowOutputFiles
 from epath.workflow import EpathWorkflowResult, run_epath_workflow
 from rabdam.bdamage.score import BDamageScoreError
 from rabdam.crystal.symmetry import CrystalSymmetryError
@@ -69,6 +70,7 @@ class EpathCliResult:
     local_input: ResolvedStructureInput
     output_prefix: Path
     workflow_result: EpathWorkflowResult
+    output_files: EpathWorkflowOutputFiles
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,7 +167,7 @@ def run_single_structure(
         args,
         output_prefix=output_prefix,
     )
-    workflow_result = run_epath_workflow(
+    workflow_result, output_files = run_epath_workflow(
         bdamage_result,
         structure_path=local_input.local_path,
         options=options,
@@ -175,6 +177,7 @@ def run_single_structure(
         local_input=local_input,
         output_prefix=output_prefix,
         workflow_result=workflow_result,
+        output_files=output_files,
     )
 
     if not args.quiet:
