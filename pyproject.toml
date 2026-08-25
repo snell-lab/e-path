@@ -27,6 +27,3 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-
-[project.scripts]
-epath = "epath.cli:main"

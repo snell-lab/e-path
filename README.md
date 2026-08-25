@@ -24,18 +24,20 @@ change ePath selection or clustering.
 
 ## Install
 
-E-path requires Python 3.10 or newer. Install the package and its normal
-runtime dependencies, including Matplotlib for the default Z-score plot, with:
+E-path runs directly from a clone of this repository; there is no package to
+install. It requires Python 3.10 or newer and four libraries: Gemmi, NumPy,
+SciPy, and Matplotlib (for the default Z-score plot).
 
 ```bash
-python3 -m pip install .
-```
-
-From the repository root:
-
-```bash
+git clone https://github.com/Aspartyl/e-path.git
+cd e-path
+python3 -m pip install -r requirements.txt
 ./epath --help
 ```
+
+The `./epath` launcher adds `src/` to the Python path and runs the `epath`
+package, so edits to the source take effect immediately. Run it from any
+directory by its full path, or add the repository root to your `PATH`.
 
 ## Run
 

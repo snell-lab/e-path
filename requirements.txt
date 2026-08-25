@@ -1,0 +1,4 @@
+gemmi
+matplotlib
+numpy
+scipy
