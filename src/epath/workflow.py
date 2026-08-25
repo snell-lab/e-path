@@ -156,6 +156,18 @@ def analyze_epath_atoms(
 
     Returns the analysis result and, separately, the files written from it.
 
+    Selection, clustering, and pathway geometry need only the scored `atoms`.
+    Everything that must see the rest of the model depends on
+    `bdamage_workflow_result`, whose cleaned `PreparedAtom`s carry the
+    cofactor, solvent, and chain information that E-path atoms do not:
+
+    - endpoint classification (cofactor sites, chain interfaces, surface)
+    - the cleaned model PDB with BDamage in the B-factor column
+    - Bnet and the Bnet percentile
+
+    Without it those degrade quietly: paths are still reported, but with no
+    cofactor or interface detection, and no model PDB or Bnet.
+
     Bnet is calculated here whenever a BDamage workflow result is available,
     so every caller sees the same sequence of stages. `stage_runner` wraps
     each named stage for timing or progress reporting; without it the stages
