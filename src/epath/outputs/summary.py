@@ -32,7 +32,6 @@ def write_summary_txt(
     output_files: EpathWorkflowOutputFiles,
 ) -> Path:
     """Write a persistent human-readable E-path analysis summary."""
-
     selection_result = result.selection_result
     structure_path = result.structure_path
     lines = [
@@ -152,7 +151,6 @@ def _pathway_summary_lines(
     minimum_cluster_size: int,
 ) -> tuple[str, ...]:
     """Render the reported pathways, one block per path."""
-
     lines = [
         "",
         "Pathways",
@@ -220,7 +218,6 @@ def _unreported_component_lines(
     statistics: ComponentStatistics,
 ) -> tuple[str, ...]:
     """Describe the largest component when none reached the threshold."""
-
     if statistics.largest_metrics is None:
         return ("No selected atoms were connected into a component.",)
 
@@ -263,7 +260,6 @@ def bdamage_parameter_lines(
     workflow_result: BDamageWorkflowResult | None,
 ) -> tuple[str, ...]:
     """Return the BDamage calculation parameters as report lines."""
-
     if workflow_result is None:
         return ("BDamage parameters: not recorded",)
 
@@ -281,7 +277,6 @@ def crystal_summary_lines(
     crystal: ValidatedCrystal | None,
 ) -> tuple[str, ...]:
     """Return the validated crystal and asymmetric-unit content as report lines."""
-
     if crystal is None:
         return ("Crystal: not validated",)
 
@@ -318,7 +313,6 @@ def bnet_summary_lines(
     workflow_result: BnetWorkflowResult | None,
 ) -> tuple[str, ...]:
     """Return the RABDAM Bnet results as report lines."""
-
     if workflow_result is None:
         return ("Bnet: not calculated", "Bnet percentile: not calculated")
 
@@ -362,7 +356,6 @@ def output_file_entries(
     output_files: EpathWorkflowOutputFiles,
 ) -> tuple[tuple[str, Path], ...]:
     """Return (label, path) pairs for every output file that was written."""
-
     entries: tuple[tuple[str, Path | None], ...] = (
         ("Combined atom CSV", output_files.combined_csv),
         ("Cluster CSV", output_files.cluster_csv),

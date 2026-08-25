@@ -127,25 +127,21 @@ class ResidueComposition:
     @property
     def redox_fraction(self) -> float:
         """Return the fraction of residues with aromatic or sulfur chemistry."""
-
         return sum(self.fractions[name] for name in REDOX_ACTIVE_CLASSES)
 
     @property
     def charged_fraction(self) -> float:
         """Return the fraction of charged residues."""
-
         return self.fractions["charged"]
 
 
 def residue_class(residue_name: str) -> ResidueClass:
     """Return the side-chain chemistry class of one residue name."""
-
     return _RESIDUE_CLASSES.get(residue_name.strip().upper(), "other")
 
 
 def class_counts(residue_names: Iterable[str]) -> dict[ResidueClass, int]:
     """Count residues by side-chain chemistry class."""
-
     counts: dict[ResidueClass, int] = dict.fromkeys(RESIDUE_CLASS_ORDER, 0)
     for name in residue_names:
         counts[residue_class(name)] += 1
@@ -155,7 +151,6 @@ def class_counts(residue_names: Iterable[str]) -> dict[ResidueClass, int]:
 
 def class_fractions(residue_names: Iterable[str]) -> dict[ResidueClass, float]:
     """Return the fraction of residues in each side-chain chemistry class."""
-
     counts = class_counts(residue_names)
     total = sum(counts.values())
     if total == 0:
@@ -181,7 +176,6 @@ def analyze_composition(
         Class counts and fractions, the dominant classes, and the classes the
         path is enriched in relative to the model.
     """
-
     counts = class_counts(residue_names)
     total = sum(counts.values())
     fractions: dict[ResidueClass, float] = (

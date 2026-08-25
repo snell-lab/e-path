@@ -39,7 +39,6 @@ def main(
     stderr: TextIO = sys.stderr,
 ) -> int:
     """Run the E-path command-line interface."""
-
     start = perf_counter()
     args = parse_args(argv)
 

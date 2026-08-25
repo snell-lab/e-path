@@ -28,7 +28,6 @@ def write_epath_outputs(
     options: EpathOutputWorkflowOptions,
 ) -> EpathWorkflowOutputFiles:
     """Write enabled E-path artifacts for a result and return their paths."""
-
     if options.output_prefix is None:
         return EpathWorkflowOutputFiles()
 

@@ -84,7 +84,6 @@ class ValidatedCrystal:
     @property
     def operation_count(self) -> int:
         """Return the number of asymmetric units in the unit cell."""
-
         return len(self.operations)
 
 

@@ -38,8 +38,13 @@ class EpathAtom:
 def atoms_from_bdamage_workflow(
     workflow_result: BDamageWorkflowResult,
 ) -> tuple[EpathAtom, ...]:
-    """Build E-path atom records from a completed RABDAM BDamage workflow."""
+    """Build E-path atom records from a completed RABDAM BDamage workflow.
 
+    Raises:
+        EpathAtomError: If the selected atoms and the BDamage results differ in
+            count, or if a matched pair disagrees on its source atom index or
+            atom serial.
+    """
     selected_atoms = tuple(workflow_result.prepared_structure.selected_atoms)
     bdamage_results = tuple(workflow_result.bdamage_score_result.atom_results)
 
@@ -94,7 +99,6 @@ def atoms_from_bdamage_workflow(
 
 def atom_token(atom: EpathAtom) -> str:
     """Return an atom token in Chain:Resnum[icode]:Atom form."""
-
     residue_number = "" if atom.residue_number is None else str(atom.residue_number)
     insertion_code = atom.insertion_code.strip()
     return f"{atom.chain_id}:{residue_number}{insertion_code}:{atom.atom_name.strip()}"
@@ -102,7 +106,6 @@ def atom_token(atom: EpathAtom) -> str:
 
 def residue_label(atom: EpathAtom) -> str:
     """Return a residue label in Trp76 form."""
-
     return format_residue_label(
         atom.residue_name,
         atom.residue_number,
@@ -116,7 +119,6 @@ def format_residue_label(
     insertion_code: str = "",
 ) -> str:
     """Return a residue label built from its name, number, and insertion code."""
-
     name = residue_name.strip().capitalize()
     number = "" if residue_number is None else str(residue_number)
     return f"{name}{number}{insertion_code.strip()}"
@@ -124,5 +126,4 @@ def format_residue_label(
 
 def residue_key(atom: EpathAtom) -> tuple[str, int | None, str]:
     """Return the identity of the residue an atom belongs to."""
-
     return atom.chain_id, atom.residue_number, atom.insertion_code.strip()

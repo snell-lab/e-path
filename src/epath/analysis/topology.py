@@ -81,7 +81,6 @@ def analyze_topology(
     Returns:
         The topology class and the two measures it was derived from.
     """
-
     degrees = _residue_degrees(
         coordinates,
         residue_indices,
@@ -116,7 +115,6 @@ def _residue_degrees(
     distance_cutoff: float,
 ) -> list[int]:
     """Return how many other residues of the cluster each residue contacts."""
-
     residue_count = (max(residue_indices) + 1) if residue_indices else 0
     if residue_count == 0:
         return []

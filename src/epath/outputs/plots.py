@@ -35,7 +35,6 @@ def plot_z_falloff(
     dpi: int = DEFAULT_PLOT_DPI,
 ) -> Path | None:
     """Write the Z-score falloff plot beside an output prefix."""
-
     output_prefix = Path(prefix)
     return write_z_score_falloff(
         output_prefix.with_name(f"{output_prefix.name}_zfalloff.png"),
@@ -55,7 +54,6 @@ def write_z_score_falloff(
     The selection threshold and any detected plateau are marked, so the plot
     shows both what was selected and whether the falloff flattens within it.
     """
-
     z_scores = _z_score_array(
         [scored_atom.bdamage_z_score for scored_atom in selection_result.scored_atoms]
     )

@@ -251,7 +251,11 @@ def bounds_from_prepared_atoms(
 
 
 def expand_bounds(bounds: CartesianBounds, padding: float) -> CartesianBounds:
-    """Expand Cartesian bounds by a nonnegative padding in angstroms."""
+    """Expand Cartesian bounds by a nonnegative padding in angstroms.
+
+    Raises:
+        CrystalTrimError: If `padding` is negative.
+    """
     if padding < 0:
         raise CrystalTrimError(f"padding must be non-negative, got {padding!r}.")
 

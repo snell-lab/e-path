@@ -94,7 +94,6 @@ class EpathBatchCliResult:
     @property
     def has_errors(self) -> bool:
         """Return whether any batch item failed."""
-
         return bool(self.errors)
 
 
@@ -105,8 +104,11 @@ def run_from_args(
     stderr: TextIO = sys.stderr,
     total_runtime_start: float | None = None,
 ) -> EpathCliResult | EpathBatchCliResult:
-    """Run the full E-path workflow from parsed command-line arguments."""
+    """Run the full E-path workflow from parsed command-line arguments.
 
+    Raises:
+        ValueError: If no structure input was given.
+    """
     if total_runtime_start is None:
         total_runtime_start = perf_counter()
 
@@ -200,8 +202,12 @@ def run_batch(
     stderr: TextIO,
     total_runtime_start: float,
 ) -> EpathBatchCliResult:
-    """Run the full E-path workflow for multiple structure inputs."""
+    """Run the full E-path workflow for multiple structure inputs.
 
+    Raises:
+        ValueError: If `--output-prefix` is combined with several structure
+            inputs, which are written to separate files.
+    """
     if args.output_prefix is not None:
         raise ValueError(
             "--output-prefix can only be used with one structure input. "
@@ -272,7 +278,6 @@ def calculate_bdamage_from_args(
     stage_runner: WorkflowStageRunner,
 ) -> tuple[ResolvedStructureInput, BDamageWorkflowResult]:
     """Resolve one input, read it, and run the RABDAM BDamage stages."""
-
     workflow_options = bdamage_workflow_options_from_args(args)
     # Structure preparation is not configurable: only protein atoms are
     # scored, so the RABDAM defaults are the E-path population.
@@ -311,7 +316,6 @@ def batch_output_prefix_path(
     used_output_prefixes: set[Path] | None,
 ) -> Path:
     """Return a unique output prefix for one resolved input."""
-
     label = output_label_for_input(local_input)
     candidate = output_dir / label
     if used_output_prefixes is None:
@@ -328,7 +332,6 @@ def batch_output_prefix_path(
 
 def output_label_for_input(local_input: ResolvedStructureInput) -> str:
     """Return a filesystem-friendly output label for a resolved input."""
-
     if local_input.structure_id:
         raw_label = local_input.structure_id.upper()
     elif local_input.local_path is not None:
@@ -349,7 +352,6 @@ def run_stage(
     quiet: bool,
 ) -> T:
     """Run one CLI stage and optionally print elapsed time."""
-
     if quiet:
         return callback()
 

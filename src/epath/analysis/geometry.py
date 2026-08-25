@@ -24,8 +24,12 @@ class MstEdge:
 def validated_coordinates(
     coordinates: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """Return a validated (N, 3) float coordinate array."""
+    """Return a validated (N, 3) float coordinate array.
 
+    Raises:
+        EpathGeometryError: If the coordinates are not shape (N, 3) or contain
+            non-finite values.
+    """
     coordinate_array = np.asarray(coordinates, dtype=float)
     if coordinate_array.ndim != 2 or coordinate_array.shape[1] != 3:
         raise EpathGeometryError("coordinates must have shape (N, 3).")
@@ -42,7 +46,6 @@ def row_norms(differences: NDArray[np.float64]) -> NDArray[np.float64]:
     The squared terms are summed in coordinate order, so the result matches a
     per-pair dot product exactly.
     """
-
     squared = differences * differences
     lengths: NDArray[np.float64] = np.sqrt(
         squared[:, 0] + squared[:, 1] + squared[:, 2]
@@ -59,7 +62,6 @@ def minimum_spanning_tree_edges(
     and largest edge lengths derived from them match the reported cluster
     geometry exactly.
     """
-
     coordinate_array = validated_coordinates(coordinates)
     atom_count = int(coordinate_array.shape[0])
     if atom_count <= 1:
@@ -102,7 +104,6 @@ def maximum_pairwise_distance_pair(
     The pair defines the span, which the analysis reports as the straight-line
     end-to-end distance of a path, so these two atoms are also its endpoints.
     """
-
     coordinate_array = validated_coordinates(coordinates)
     atom_count = int(coordinate_array.shape[0])
     if atom_count < 2:
@@ -131,7 +132,6 @@ def neighbour_pairs(
     distance_cutoff: float,
 ) -> tuple[tuple[int, int], ...]:
     """Return every pair of points within a distance cutoff of each other."""
-
     coordinate_array = validated_coordinates(coordinates)
     point_count = int(coordinate_array.shape[0])
     pairs: list[tuple[int, int]] = []
@@ -150,5 +150,4 @@ def _distances_from(
     index: int,
 ) -> NDArray[np.float64]:
     """Return the distance from one point to every point in an array."""
-
     return row_norms(coordinates - coordinates[index])

@@ -182,13 +182,11 @@ class EdgeProvenance:
     @property
     def between_residues(self) -> int:
         """Return the number of steps that leave the residue they start in."""
-
         return self.peptide + self.tertiary + self.interchain
 
     @property
     def peptide_fraction(self) -> float:
         """Return the share of between-residue steps that follow the sequence."""
-
         return self.peptide / self.between_residues if self.between_residues else 0.0
 
 
@@ -205,7 +203,6 @@ class PathResidue:
     @property
     def label(self) -> str:
         """Return the residue label in Trp76 form."""
-
         return format_residue_label(
             self.residue_name,
             self.residue_number,
@@ -232,7 +229,6 @@ class PathReport:
     @property
     def edges(self) -> EdgeProvenance:
         """Return how the steps of this path connect its residues."""
-
         counts = Counter(step.kind for step in self.steps)
 
         return EdgeProvenance(
@@ -245,37 +241,31 @@ class PathReport:
     @property
     def path_id(self) -> int:
         """Return the path identifier, which is the cluster identifier."""
-
         return self.cluster.cluster_id
 
     @property
     def node_count(self) -> int:
         """Return the number of selected atoms, the nodes of the path."""
-
         return self.cluster.atom_count
 
     @property
     def residue_count(self) -> int:
         """Return the number of residues the path runs through."""
-
         return len(self.residues)
 
     @property
     def total_length(self) -> float:
         """Return the total MST length of the path in Angstroms."""
-
         return self.cluster.metrics.mst_total_length
 
     @property
     def class_label(self) -> str:
         """Return the short class label used in the published table."""
-
         return PATH_CLASS_LABELS[self.path_class]
 
     @property
     def endpoint_summary(self) -> str:
         """Return both endpoint labels in source-to-destination order."""
-
         return f"{self.start_endpoint.label} -> {self.end_endpoint.label}"
 
 
@@ -311,7 +301,6 @@ def analyze_paths(
         One report per cluster in cluster order, and the cofactor sites the
         endpoints were labelled against.
     """
-
     if options is None:
         options = PathAnalysisOptions()
 
@@ -410,7 +399,6 @@ def _path_residues(
         The residues of the path, and the residue each of the cluster's atoms
         belongs to, as indices into that tuple.
     """
-
     grouped: dict[tuple[str, int | None, str], list[EpathAtom]] = {}
     for scored_atom in cluster.atoms:
         grouped.setdefault(residue_key(scored_atom.atom), []).append(scored_atom.atom)
@@ -453,7 +441,6 @@ def _path_residues(
 
 def _path_steps(cluster: EpathCluster) -> tuple[PathStep, ...]:
     """Return each step of a path with its length and how it connects residues."""
-
     atoms = [scored_atom.atom for scored_atom in cluster.atoms]
     edges = minimum_spanning_tree_edges(coordinates_for_atoms(cluster.atoms))
 
@@ -495,7 +482,6 @@ def _edge_kind(first: EpathAtom, second: EpathAtom) -> StepKind:
 
 def _format_residue_path(residues: Sequence[PathResidue]) -> str:
     """Return the residue-and-node listing used by the published table."""
-
     if not residues:
         return ""
 

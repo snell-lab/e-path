@@ -117,7 +117,12 @@ def ensure_local_structure_file(
     download_dir: Path | str = DEFAULT_RCSB_DOWNLOAD_DIR,
     overwrite: bool = False,
 ) -> ResolvedStructureInput:
-    """Return a local input, downloading an RCSB entry when necessary."""
+    """Return a local input, downloading an RCSB entry when necessary.
+
+    Raises:
+        RcsbDownloadError: If the resolved input has a source type that cannot
+            be turned into a local file, or if the RCSB download fails.
+    """
     if resolved_input.is_local_file:
         return resolved_input
 

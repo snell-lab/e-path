@@ -42,7 +42,6 @@ def radius_neighbour_indices(
 
     Each point's own index is included, since it lies at distance zero.
     """
-
     tree = _build_tree(points)
     raw_neighbours = cast(
         list[list[int]],
@@ -59,7 +58,6 @@ def radius_neighbour_counts(
     radius: float,
 ) -> NDArray[np.int64]:
     """Return how many `tree_points` lie within `radius` of each query point."""
-
     tree = _build_tree(tree_points)
     raw_counts = tree.query_ball_point(
         query_points,

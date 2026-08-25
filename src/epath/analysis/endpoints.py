@@ -129,7 +129,6 @@ class PathEndpoint:
     @property
     def is_cofactor_anchored(self) -> bool:
         """Return whether this endpoint terminates at or beside a cofactor."""
-
         return self.kind in ("cofactor", "cofactor_region")
 
 
@@ -175,7 +174,6 @@ def build_endpoint_context(
     Returns:
         The context needed to label any endpoint of this model.
     """
-
     sites, cofactor_coordinates, site_indices = _cofactor_sites(cleaned_atoms)
     protein_coordinates, chain_indices, chain_ids = _protein_chain_map(
         scored_atoms,
@@ -206,7 +204,6 @@ def annotate_endpoint(atom: EpathAtom, context: EndpointContext) -> PathEndpoint
     cofactor, then the environment of a nearby cofactor, then a subunit
     interface, and finally the surface or interior of the chain itself.
     """
-
     point = np.asarray((atom.x, atom.y, atom.z), dtype=float)
     site, distance = _nearest_cofactor(point, context)
     if site is not None and distance is not None:
@@ -437,7 +434,6 @@ def _surface_threshold(
 
 def cofactor_site_summary(sites: Sequence[CofactorSite]) -> str:
     """Return a short human-readable list of the modelled cofactor sites."""
-
     if not sites:
         return "none detected"
 

@@ -48,7 +48,6 @@ def write_structure_outputs(
     can be inspected alongside the E-path results even though they were not
     scored.
     """
-
     prefix = Path(output_prefix)
     selected_pdb = prefix.with_name(f"{prefix.name}_selected.pdb")
     write_selected_atoms_pdb(
@@ -88,8 +87,11 @@ def write_model_pdb(
     solvent, ions, ligands, and cofactors that are excluded from the BDamage
     calculation but still contribute to the packing density of nearby atoms.
     Excluded atoms carry a B-factor of zero.
-    """
 
+    Raises:
+        EpathStructureOutputError: If the model holds more than 99999 atoms,
+            which cannot be written with renumbered PDB serials.
+    """
     output_file = Path(output_path)
     if output_file.parent != Path("."):
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -160,7 +162,6 @@ def write_selected_atoms_pdb(
     title: str = "E-path selected atoms",
 ) -> Path:
     """Write selected atoms as a PDB subset."""
-
     return write_atom_subset_pdb(
         output_path,
         atoms,
@@ -182,7 +183,6 @@ def write_path_subset_pdbs(
 
     Path numbers are zero padded so the files sort in path order.
     """
-
     if not path_reports:
         return ()
 
@@ -216,8 +216,12 @@ def write_atom_subset_pdb(
     title: str = "E-path atom subset",
     remarks: Iterable[str] = (),
 ) -> Path:
-    """Write E-path atoms to a simple PDB coordinate subset."""
+    """Write E-path atoms to a simple PDB coordinate subset.
 
+    Raises:
+        EpathStructureOutputError: If the subset holds more than 99999 atoms,
+            which cannot be written with renumbered PDB serials.
+    """
     output_file = Path(output_path)
     if output_file.parent != Path("."):
         output_file.parent.mkdir(parents=True, exist_ok=True)

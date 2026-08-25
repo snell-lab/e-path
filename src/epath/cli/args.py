@@ -39,7 +39,6 @@ combined '*_epath.csv' output."""
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the full E-path workflow parser."""
-
     bdamage_defaults = BDamageWorkflowOptions()
     epath_defaults = EpathWorkflowOptions()
     parser = argparse.ArgumentParser(
@@ -279,8 +278,12 @@ def _add_bdamage_debug_arguments(group: Any) -> None:
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """Parse command-line arguments."""
+    """Parse command-line arguments.
 
+    Raises:
+        SystemExit: If the removed `bdamage` subcommand is used, or if argparse
+            rejects the arguments or handles `--help` or `--version`.
+    """
     raw_args = list(sys.argv[1:] if argv is None else argv)
     if raw_args and raw_args[0] == "bdamage":
         raise SystemExit(REMOVED_BDAMAGE_COMMAND_MESSAGE)
@@ -296,7 +299,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def positive_float(value: str) -> float:
     """Return a positive finite float for argparse."""
-
     parsed = _float_arg(value)
     if not math.isfinite(parsed) or parsed <= 0.0:
         raise argparse.ArgumentTypeError(f"expected a positive number, got {value!r}")
@@ -305,7 +307,6 @@ def positive_float(value: str) -> float:
 
 def fraction_float(value: str) -> float:
     """Return a float in the open interval 0 to 1 for argparse."""
-
     parsed = _float_arg(value)
     if not math.isfinite(parsed) or not 0.0 < parsed < 1.0:
         raise argparse.ArgumentTypeError(
@@ -316,7 +317,6 @@ def fraction_float(value: str) -> float:
 
 def percent_float(value: str) -> float:
     """Return a finite percentage in the closed interval 0 to 100."""
-
     parsed = _float_arg(value)
     if not math.isfinite(parsed) or not 0.0 <= parsed <= 100.0:
         raise argparse.ArgumentTypeError(
@@ -327,7 +327,6 @@ def percent_float(value: str) -> float:
 
 def positive_int(value: str) -> int:
     """Return a positive integer for argparse."""
-
     parsed = _int_arg(value)
     if parsed <= 0:
         raise argparse.ArgumentTypeError(f"expected a positive integer, got {value!r}")
@@ -336,7 +335,6 @@ def positive_int(value: str) -> int:
 
 def non_negative_int(value: str) -> int:
     """Return a non-negative integer for argparse."""
-
     parsed = _int_arg(value)
     if parsed < 0:
         raise argparse.ArgumentTypeError(
@@ -347,7 +345,6 @@ def non_negative_int(value: str) -> int:
 
 def structure_inputs_from_args(args: argparse.Namespace) -> tuple[str, ...]:
     """Return one or more structure inputs from parsed CLI arguments."""
-
     structure_inputs = tuple(getattr(args, "structure_inputs", ()) or ())
     if structure_inputs:
         return structure_inputs
@@ -361,7 +358,6 @@ def structure_inputs_from_args(args: argparse.Namespace) -> tuple[str, ...]:
 
 def single_output_prefix_from_args(args: argparse.Namespace) -> Path | None:
     """Return the E-path output prefix for a single-structure run."""
-
     if args.output_prefix is not None:
         return Path(args.output_prefix).expanduser()
 
@@ -372,7 +368,6 @@ def bdamage_workflow_options_from_args(
     args: argparse.Namespace,
 ) -> BDamageWorkflowOptions:
     """Build BDamage workflow options from parsed command-line arguments."""
-
     return BDamageWorkflowOptions(
         packing_density_threshold=args.packing_density_threshold,
         window_size_fraction=args.window_size_fraction,
@@ -388,7 +383,6 @@ def epath_workflow_options_from_args(
     output_prefix: Path | None,
 ) -> EpathWorkflowOptions:
     """Build full E-path workflow options from parsed command-line arguments."""
-
     selection_method: SelectionMethod = (
         "percentile_per_chain" if args.per_chain_percentile else "percentile"
     )

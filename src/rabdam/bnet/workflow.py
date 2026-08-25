@@ -44,7 +44,6 @@ def calculate_bnet_workflow(
     explicit unavailable result. Bnet values are reported by ePath but do not
     participate in its atom selection or clustering calculations.
     """
-
     try:
         bnet_result = calculate_protein_bnet(
             prepared_structure=prepared_structure,

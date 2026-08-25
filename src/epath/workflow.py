@@ -91,19 +91,16 @@ class EpathWorkflowResult:
     @property
     def analyzed_chains(self) -> tuple[str, ...]:
         """Chain identifiers of the scored atoms, in first-seen order."""
-
         return tuple(dict.fromkeys(atom.chain_id for atom in self.atoms))
 
     @property
     def structure_path(self) -> Path | None:
         """Path of the analysed structure, when one was recorded."""
-
         return Path(self.run_record.input_path) if self.run_record.input_path else None
 
     @property
     def crystal(self) -> ValidatedCrystal | None:
         """Validated crystal from the BDamage workflow, when available."""
-
         if self.bdamage_workflow_result is None:
             return None
         return self.bdamage_workflow_result.crystal
@@ -111,7 +108,6 @@ class EpathWorkflowResult:
     @property
     def cleaned_atoms(self) -> tuple[PreparedAtom, ...] | None:
         """Cleaned model atoms from the BDamage workflow, when available."""
-
         if self.bdamage_workflow_result is None:
             return None
         return tuple(self.bdamage_workflow_result.prepared_structure.cleaned_atoms)
@@ -130,7 +126,6 @@ def run_epath_workflow(
     result; the command-line interface uses it too, passing a `stage_runner`
     that reports each named stage as it runs.
     """
-
     atoms = atoms_from_bdamage_workflow(bdamage_workflow_result)
     if structure_path is None:
         structure_path = bdamage_workflow_result.prepared_structure.metadata.source_path
@@ -172,8 +167,10 @@ def analyze_epath_atoms(
     so every caller sees the same sequence of stages. `stage_runner` wraps
     each named stage for timing or progress reporting; without it the stages
     run silently.
-    """
 
+    Raises:
+        EpathWorkflowError: If `atoms` is empty.
+    """
     if options is None:
         options = EpathWorkflowOptions()
 

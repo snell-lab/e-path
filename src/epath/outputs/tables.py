@@ -118,7 +118,6 @@ def write_combined_atom_csv(
     clusters: Iterable[EpathCluster] = (),
 ) -> Path:
     """Write a combined per-atom E-path CSV table."""
-
     output_file = Path(output_path)
     if output_file.parent != Path("."):
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -141,7 +140,6 @@ def write_run_csv(
     A single run writes one row. Passing the records of a batch writes the
     cohort table for those structures.
     """
-
     output_file = Path(output_path)
     if output_file.parent != Path("."):
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -192,7 +190,6 @@ def write_step_csv(
     records each step individually, because electron tunnelling falls away
     sharply with distance and a single long step can limit a whole path.
     """
-
     output_file = Path(output_path)
     if output_file.parent != Path("."):
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -226,7 +223,6 @@ def write_cluster_csv(
     path_reports: Iterable[PathReport],
 ) -> Path:
     """Write one CSV row per reported E-path pathway."""
-
     output_file = Path(output_path)
     if output_file.parent != Path("."):
         output_file.parent.mkdir(parents=True, exist_ok=True)
@@ -246,7 +242,6 @@ def cluster_rows(
     path_reports: Iterable[PathReport],
 ) -> tuple[dict[str, Any], ...]:
     """Return one standalone CSV row for each classified E-path pathway."""
-
     return tuple(_cluster_row(report) for report in path_reports)
 
 
@@ -294,7 +289,6 @@ def combined_atom_rows(
     clusters: Iterable[EpathCluster] = (),
 ) -> tuple[dict[str, Any], ...]:
     """Return combined per-atom rows for E-path CSV output."""
-
     selected_keys = {
         _scored_atom_identity(scored_atom)
         for scored_atom in selection_result.selected_atoms

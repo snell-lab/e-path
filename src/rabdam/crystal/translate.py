@@ -159,7 +159,12 @@ def translate_atoms(
 def unit_cell_translation_vectors(
     unit_cell: UnitCellParameters,
 ) -> UnitCellTranslationVectors:
-    """Compute Cartesian unit-cell vectors from lengths and angles."""
+    """Compute Cartesian unit-cell vectors from lengths and angles.
+
+    Raises:
+        CrystalTranslationError: If the unit cell fails validation, or if its
+            angles do not describe a valid cell geometry.
+    """
     validate_unit_cell_for_translation(unit_cell)
 
     # Fixing a along x and b in the xy plane gives the standard

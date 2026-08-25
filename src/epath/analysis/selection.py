@@ -34,13 +34,11 @@ class EpathScoredAtom:
     @property
     def bdamage(self) -> float:
         """Return the atom's BDamage value."""
-
         return self.atom.bdamage
 
     @property
     def chain_id(self) -> str:
         """Return the atom's chain identifier."""
-
         return self.atom.chain_id
 
 
@@ -89,7 +87,6 @@ def score_bdamage_atoms(
     atoms: Iterable[EpathAtom],
 ) -> tuple[EpathScoredAtom, ...]:
     """Return atoms annotated with population BDamage Z-scores."""
-
     atom_tuple = tuple(atoms)
     if not atom_tuple:
         return ()
@@ -109,7 +106,6 @@ def select_atoms_by_percentile(
     percentile: float,
 ) -> EpathSelectionResult:
     """Select the lowest percentile of atoms by BDamage."""
-
     percentile = _percentile_value(percentile)
     scored_atoms = score_bdamage_atoms(atoms)
     selected_atoms, bdamage_threshold = _select_lowest_percentile(
@@ -156,7 +152,6 @@ def select_atoms_by_percentile_per_chain(
     percentile: float,
 ) -> EpathSelectionResult:
     """Select the lowest BDamage percentile separately within each chain."""
-
     percentile = _percentile_value(percentile)
     scored_atoms = score_bdamage_atoms(atoms)
     selected_atoms: list[EpathScoredAtom] = []

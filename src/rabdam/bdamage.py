@@ -90,7 +90,7 @@ def calculate_bdamage_scores_for_structure(
             packing_density_atom_result=packing_result,
         )
         for index, (atom, packing_result) in enumerate(
-            zip(selected_atoms, packing_results), start=1
+            zip(selected_atoms, packing_results, strict=True), start=1
         )
     )
 
@@ -192,7 +192,7 @@ def calculate_bdamage_scores(
             sorted_packing_density_index=sorted_index,
         )
         for sorted_index, (atom_input, average_b_factor) in enumerate(
-            zip(sorted_inputs, sorted_average_b_factors), start=1
+            zip(sorted_inputs, sorted_average_b_factors, strict=True), start=1
         )
     )
 
@@ -315,6 +315,10 @@ def centered_window_average_b_factors(
 
     Returns:
         Average B-factors aligned with the sorted input atoms.
+
+    Raises:
+        BDamageScoreError: If `window_size` is not a valid window for the atom
+            count, or if any B-factor is non-finite.
     """
     sorted_input_tuple = tuple(sorted_atom_inputs)
     validate_window_size(window_size=window_size, atom_count=len(sorted_input_tuple))

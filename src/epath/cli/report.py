@@ -57,13 +57,11 @@ INDENT = "  "
 
 def print_missing_structure_input_error(*, stream: TextIO) -> None:
     """Print a compact recovery message for missing structure input."""
-
     print(MISSING_STRUCTURE_INPUT_MESSAGE, file=stream)
 
 
 def print_citations(*, stream: TextIO) -> None:
     """Print citation information for E-path outputs."""
-
     print(CITATIONS_MESSAGE, file=stream)
 
 
@@ -75,7 +73,6 @@ def print_epath_summary(
     stream: TextIO,
 ) -> None:
     """Print a compact full E-path run summary."""
-
     workflow_result = result.workflow_result
     bdamage_result = workflow_result.bdamage_workflow_result
     crystal = bdamage_result.crystal if bdamage_result is not None else None
@@ -140,7 +137,6 @@ def print_epath_batch_summary(
     stream: TextIO,
 ) -> None:
     """Print a compact full E-path batch-run summary."""
-
     lines = [
         f"Successful: {len(result.results)}",
         f"Failed: {len(result.errors)}",

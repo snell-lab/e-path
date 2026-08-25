@@ -45,7 +45,6 @@ class EpathCluster:
     @property
     def atom_count(self) -> int:
         """Return the number of atoms in this cluster."""
-
         return len(self.atoms)
 
 
@@ -76,7 +75,6 @@ def component_statistics(
     Returns:
         The component count and the geometry of the largest component.
     """
-
     if not clusters:
         return ComponentStatistics(
             total_count=0,
@@ -99,7 +97,6 @@ def cluster_selected_atoms(
     distance_cutoff: float = DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
 ) -> tuple[EpathCluster, ...]:
     """Find connected components among selected atoms using a distance cutoff."""
-
     distance_cutoff = _positive_finite_float(
         distance_cutoff,
         name="distance_cutoff",
@@ -132,7 +129,6 @@ def cluster_metrics_for_atoms(
     atoms: Sequence[EpathScoredAtom],
 ) -> EpathClusterMetrics:
     """Calculate MST and span metrics for a group of atoms."""
-
     if not atoms:
         return EpathClusterMetrics(
             mst_total_length=0.0,
@@ -146,7 +142,6 @@ def cluster_metrics_for_atoms(
 
 def mst_length_stats(coordinates: NDArray[np.float64]) -> EpathClusterMetrics:
     """Return Prim-style MST metrics for a coordinate array."""
-
     coordinate_array = validated_coordinates(coordinates)
     atom_count = int(coordinate_array.shape[0])
     if atom_count <= 1:
@@ -178,8 +173,12 @@ def mst_length_stats(coordinates: NDArray[np.float64]) -> EpathClusterMetrics:
 def coordinates_for_atoms(
     atoms: Sequence[EpathScoredAtom],
 ) -> NDArray[np.float64]:
-    """Return the coordinate array for a sequence of scored atoms."""
+    """Return the coordinate array for a sequence of scored atoms.
 
+    Raises:
+        EpathClusteringError: If the coordinates are not shape (N, 3) or contain
+            non-finite values.
+    """
     coordinates = np.asarray(
         [
             (

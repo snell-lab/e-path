@@ -66,7 +66,6 @@ def build_run_record(
     threshold, so a model that produced no pathways still records what its
     connectivity analysis found.
     """
-
     path = Path(structure_path) if structure_path is not None else None
     metrics = statistics.largest_metrics
     bnet, bnet_percentile = _bnet_values(bnet_workflow_result)
