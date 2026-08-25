@@ -37,11 +37,11 @@ python3 -m pip install -r requirements.txt
 ./epath --help
 ```
 
-The `./epath` launcher checks that the four libraries are importable (and
-names any that are missing), adds `src/` to the Python path, and runs the
-`epath` package with your `python3`, so edits to the source take effect
-immediately. Run it from any directory by its full path, or add the
-repository root to your `PATH`.
+`./epath` is a short Python script: it checks that the four libraries are
+importable (and names any that are missing), adds `src/` to `sys.path`, and
+calls the package's `main`, so edits to the source take effect immediately.
+Run it from any directory by its full path, add the repository root to your
+`PATH`, or run it with an explicit interpreter as `python3 epath ...`.
 
 ## Run
 

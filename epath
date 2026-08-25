@@ -1,25 +1,30 @@
-#!/usr/bin/env sh
-set -eu
+#!/usr/bin/env python3
+"""Run E-path from a clone of the repository without installing anything."""
 
-repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-
-# Module names of the packages listed in requirements.txt.
-modules="gemmi numpy scipy matplotlib"
-
-missing=$(python3 - ${modules} <<'EOF'
 import importlib.util
 import sys
+from pathlib import Path
 
-print(" ".join(m for m in sys.argv[1:] if importlib.util.find_spec(m) is None))
-EOF
-)
+REQUIRED_MODULES = ("gemmi", "numpy", "scipy", "matplotlib")
 
-if [ -n "${missing}" ]; then
-    echo "epath: missing required libraries: ${missing}" >&2
-    echo "Install the packages listed in requirements.txt however you" >&2
-    echo "prefer (pip, apt, conda, ...), then rerun." >&2
-    exit 1
-fi
 
-PYTHONPATH="${repo_root}/src${PYTHONPATH:+:${PYTHONPATH}}" \
-    exec python3 -m epath "$@"
+def main() -> int:
+    """Check the required libraries, then run the E-path command line."""
+    missing = [m for m in REQUIRED_MODULES if importlib.util.find_spec(m) is None]
+    if missing:
+        print(f"epath: missing required libraries: {' '.join(missing)}", file=sys.stderr)
+        print(
+            "Install the packages listed in requirements.txt however you "
+            "prefer (pip, apt, conda, ...), then rerun.",
+            file=sys.stderr,
+        )
+        return 1
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+    from epath.cli import main as epath_main
+
+    return epath_main()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
