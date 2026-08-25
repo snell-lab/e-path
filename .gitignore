@@ -3,6 +3,5 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
-ruff.toml
 downloads/
 output/

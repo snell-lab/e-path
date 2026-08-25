@@ -1,0 +1,34 @@
+# Lint configuration for E-path. The rule set is curated deliberately; do not
+# replace it with `select = ["ALL"]`.
+
+target-version = "py310"
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # Pyflakes
+    "I",   # import sorting
+    "UP",  # Python syntax upgrades
+    "B",   # flake8-bugbear
+    "SIM", # simplifications
+    "C4",  # comprehension improvements
+    "PIE", # miscellaneous correctness and cleanup rules
+    "N",   # naming conventions
+    "D",   # pydocstyle docstrings
+]
+ignore = [
+    # Formatting and long-line judgment are not delegated to the lint rule.
+    "E501",
+    # Context-manager conversion is not always appropriate for resources whose
+    # lifetime crosses scopes.
+    "SIM115",
+    # Preserve existing enum behavior instead of converting to `StrEnum`.
+    "UP042",
+]
+
+[lint.per-file-ignores]
+# Test docstrings are optional; a descriptive test name is enough.
+"tests/**/*.py" = ["D1"]
+
+[lint.pydocstyle]
+convention = "google"
