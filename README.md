@@ -161,3 +161,7 @@ J Synchrotron Radiat 22, 201-212. https://doi.org/10.1107/S1600577515002131
 
 Bnet and Bnet percentile: Shelley KL & Garman EF (2022).
 Nat Commun 13, 1314. https://doi.org/10.1038/s41467-022-28934-0
+
+## License
+
+MIT. See [LICENSE](LICENSE).
