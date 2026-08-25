@@ -2,4 +2,24 @@
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-PYTHONPATH="${repo_root}/src${PYTHONPATH:+:${PYTHONPATH}}" exec python3 -m epath "$@"
+
+# Module names of the packages listed in requirements.txt.
+modules="gemmi numpy scipy matplotlib"
+
+missing=$(python3 - ${modules} <<'EOF'
+import importlib.util
+import sys
+
+print(" ".join(m for m in sys.argv[1:] if importlib.util.find_spec(m) is None))
+EOF
+)
+
+if [ -n "${missing}" ]; then
+    echo "epath: missing required libraries: ${missing}" >&2
+    echo "Install the packages listed in requirements.txt however you" >&2
+    echo "prefer (pip, apt, conda, ...), then rerun." >&2
+    exit 1
+fi
+
+PYTHONPATH="${repo_root}/src${PYTHONPATH:+:${PYTHONPATH}}" \
+    exec python3 -m epath "$@"

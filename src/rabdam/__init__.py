@@ -1,3 +1,1 @@
-"""Expose RABDAM package metadata."""
-
-__version__ = "0.1.0"
+"""Reimplementation of the published RABDAM BDamage calculation."""
