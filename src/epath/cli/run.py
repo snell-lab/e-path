@@ -23,15 +23,15 @@ from epath.cli.args import (
     structure_inputs_from_args,
 )
 from epath.cli.report import print_epath_batch_summary, print_epath_summary
-from epath.plots import EpathPlotError
-from epath.tables import write_run_csv
-from epath.outputs import EpathWorkflowOutputFiles
+from epath.outputs.files import EpathWorkflowOutputFiles
+from epath.outputs.plots import EpathPlotError
+from epath.outputs.tables import write_run_csv
 from epath.workflow import EpathWorkflowResult, run_epath_workflow
-from rabdam.bdamage.score import BDamageScoreError
+from rabdam.bdamage import BDamageScoreError
 from rabdam.crystal.symmetry import CrystalSymmetryError
 from rabdam.crystal.translate import CrystalTranslationError
 from rabdam.crystal.trim import CrystalTrimError
-from rabdam.packing.density import PackingDensityError
+from rabdam.packing import PackingDensityError
 from rabdam.structure.models import StructurePreparationOptions
 from rabdam.workflow import (
     BDamageWorkflowError,

@@ -1,1 +1,0 @@
-"""BDamage scoring package."""

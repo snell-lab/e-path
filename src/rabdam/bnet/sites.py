@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from rabdam.bdamage.score import BDamageAtomResult, BDamageScoreResult
+from rabdam.bdamage import BDamageAtomResult, BDamageScoreResult
 from rabdam.structure.models import PreparedAtom, PreparedStructure
 
 # Asp/Glu carboxyl oxygens are used because decarboxylation makes them

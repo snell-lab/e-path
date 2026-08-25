@@ -9,13 +9,13 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from epath.geometry import (
+from epath.analysis.geometry import (
     maximum_pairwise_distance_pair,
     minimum_spanning_tree_edges,
     validated_coordinates,
 )
-from epath.selection import EpathScoredAtom
-from rabdam.spatial import radius_neighbour_indices
+from epath.analysis.selection import EpathScoredAtom
+from spatial import radius_neighbour_indices
 
 DEFAULT_CLUSTER_DISTANCE_ANGSTROM = 4.0
 

@@ -10,7 +10,7 @@ those rows into cohorts is left to the caller, because which group a structure
 belongs to is a prior judgement about its biology, not something the analysis
 can determine.
 
-The rows are written by `epath.tables`, with the other CSV outputs.
+The rows are written by `epath.outputs.tables`, with the other CSV outputs.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from epath.clustering import ComponentStatistics, EpathCluster
-from epath.selection import EpathSelectionResult
+from epath.analysis.clustering import ComponentStatistics, EpathCluster
+from epath.analysis.selection import EpathSelectionResult
 from rabdam.bnet.workflow import BnetWorkflowResult
 
 

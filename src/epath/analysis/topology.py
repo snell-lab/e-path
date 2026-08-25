@@ -27,8 +27,8 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from epath.clustering import EpathClusterMetrics
-from epath.geometry import neighbour_pairs
+from epath.analysis.clustering import EpathClusterMetrics
+from epath.analysis.geometry import neighbour_pairs
 
 TopologyClass = Literal["linear", "branched", "clustered"]
 

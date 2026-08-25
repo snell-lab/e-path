@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from epath import __version__
-from epath.outputs import EpathOutputWorkflowOptions
+from epath.outputs.files import EpathOutputWorkflowOptions
 from epath.workflow import (
     EpathClusterWorkflowOptions,
     EpathSelectionWorkflowOptions,

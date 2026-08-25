@@ -7,27 +7,27 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, TypeVar
 
-from epath.atoms import EpathAtom, atoms_from_bdamage_workflow
-from epath.clustering import (
+from epath.analysis.atoms import EpathAtom, atoms_from_bdamage_workflow
+from epath.analysis.clustering import (
     DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
     ComponentStatistics,
     EpathCluster,
     cluster_selected_atoms,
     component_statistics,
 )
-from epath.endpoints import CofactorSite
-from epath.outputs import (
-    EpathOutputWorkflowOptions,
-    EpathWorkflowOutputFiles,
-    write_epath_outputs,
-)
-from epath.pathways import PathAnalysisOptions, PathReport, analyze_paths
-from epath.runs import EpathRunRecord, build_run_record
-from epath.selection import (
+from epath.analysis.endpoints import CofactorSite
+from epath.analysis.pathways import PathAnalysisOptions, PathReport, analyze_paths
+from epath.analysis.selection import (
     EpathSelectionResult,
     select_atoms_by_percentile,
     select_atoms_by_percentile_per_chain,
 )
+from epath.outputs.files import (
+    EpathOutputWorkflowOptions,
+    EpathWorkflowOutputFiles,
+)
+from epath.outputs.runs import EpathRunRecord, build_run_record
+from epath.outputs.write import write_epath_outputs
 from rabdam.bnet.workflow import BnetWorkflowResult, calculate_bnet_workflow
 from rabdam.structure.models import PreparedAtom
 from rabdam.workflow import BDamageWorkflowResult, WorkflowStageRunner

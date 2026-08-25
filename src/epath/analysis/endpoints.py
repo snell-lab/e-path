@@ -19,8 +19,13 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from epath.atoms import EpathAtom, atom_token, format_residue_label, residue_label
-from epath.geometry import row_norms
+from epath.analysis.atoms import (
+    EpathAtom,
+    atom_token,
+    format_residue_label,
+    residue_label,
+)
+from epath.analysis.geometry import row_norms
 from rabdam.structure.models import PreparedAtom
 
 EndpointKind = Literal[

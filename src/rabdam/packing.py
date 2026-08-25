@@ -11,8 +11,8 @@ from numpy.typing import NDArray
 
 from rabdam.crystal.translate import TranslatedAtom
 from rabdam.crystal.trim import ArrayTrimmedCrystalBlock, TrimmedNeighbourBlock
-from rabdam.spatial import radius_neighbour_counts
 from rabdam.structure.models import PreparedAtom, PreparedStructure
+from spatial import radius_neighbour_counts
 
 
 class PackingDensityError(ValueError):

@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from epath.selection import EpathSelectionResult, ZScorePlateau
+from epath.analysis.selection import EpathSelectionResult, ZScorePlateau
 
 DEFAULT_PLOT_DPI = 300
 DEFAULT_PLOT_FIGSIZE = (6.0, 4.0)

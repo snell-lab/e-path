@@ -25,19 +25,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from epath.atoms import (
+from epath.analysis.atoms import (
     EpathAtom,
     atom_token,
     format_residue_label,
     residue_key,
     residue_label,
 )
-from epath.clustering import (
+from epath.analysis.clustering import (
     DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
     EpathCluster,
     coordinates_for_atoms,
 )
-from epath.endpoints import (
+from epath.analysis.endpoints import (
     DEFAULT_COFACTOR_CONTACT_ANGSTROM,
     DEFAULT_COFACTOR_PROXIMITY_ANGSTROM,
     DEFAULT_INTERFACE_ANGSTROM,
@@ -48,14 +48,17 @@ from epath.endpoints import (
     annotate_endpoint,
     build_endpoint_context,
 )
-from epath.geometry import maximum_pairwise_distance_pair, minimum_spanning_tree_edges
-from epath.residues import (
+from epath.analysis.geometry import (
+    maximum_pairwise_distance_pair,
+    minimum_spanning_tree_edges,
+)
+from epath.analysis.residues import (
     ResidueClass,
     ResidueComposition,
     analyze_composition,
     class_fractions,
 )
-from epath.topology import (
+from epath.analysis.topology import (
     DEFAULT_BRANCHED_NODE_FRACTION,
     DEFAULT_LINEAR_RATIO,
     PathTopology,

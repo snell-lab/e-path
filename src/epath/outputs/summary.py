@@ -1,140 +1,28 @@
-"""Coordinate E-path output files and human-readable reports."""
+"""Render the human-readable E-path analysis summary.
+
+`write_summary_txt` builds the persistent summary report. The
+`*_summary_lines` helpers are also used by the CLI to print the same values
+to the terminal, so both reports stay in step.
+"""
 
 from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from epath.clustering import ComponentStatistics
-from epath.endpoints import CofactorSite, cofactor_site_summary
-from epath.pathways import PATH_CLASS_ORDER, PathReport
-from epath.plots import plot_z_falloff
-from epath.residues import RESIDUE_CLASS_ORDER
-from epath.structures import write_structure_outputs
-from epath.tables import (
-    write_cluster_csv,
-    write_combined_atom_csv,
-    write_run_csv,
-    write_step_csv,
-)
+from epath.analysis.clustering import ComponentStatistics
+from epath.analysis.endpoints import CofactorSite, cofactor_site_summary
+from epath.analysis.pathways import PATH_CLASS_ORDER, PathReport
+from epath.analysis.residues import RESIDUE_CLASS_ORDER
+from epath.outputs.files import EpathWorkflowOutputFiles
 from rabdam.bnet.workflow import BnetWorkflowResult
 from rabdam.workflow import BDamageWorkflowResult
 from xtal.validate import ValidatedCrystal
 
 if TYPE_CHECKING:
     from epath.workflow import EpathWorkflowResult
-
-
-@dataclass(frozen=True, slots=True)
-class EpathOutputWorkflowOptions:
-    """Options controlling E-path output files."""
-
-    output_prefix: str | Path | None = None
-    write_combined_csv: bool = True
-    write_structure_files: bool = True
-    write_z_score_plot: bool = True
-    write_cluster_csv: bool = True
-    write_step_csv: bool = True
-    write_run_csv: bool = True
-    write_summary_report: bool = True
-
-
-@dataclass(frozen=True, slots=True)
-class EpathWorkflowOutputFiles:
-    """Files written by an E-path workflow run."""
-
-    combined_csv: Path | None = None
-    selected_pdb: Path | None = None
-    model_pdb: Path | None = None
-    path_pdbs: tuple[Path, ...] = ()
-    z_score_falloff: Path | None = None
-    cluster_csv: Path | None = None
-    step_csv: Path | None = None
-    run_csv: Path | None = None
-    summary_report: Path | None = None
-
-
-def write_epath_outputs(
-    result: EpathWorkflowResult,
-    options: EpathOutputWorkflowOptions,
-) -> EpathWorkflowOutputFiles:
-    """Write enabled E-path artifacts for a result and return their paths."""
-
-    if options.output_prefix is None:
-        return EpathWorkflowOutputFiles()
-
-    prefix = Path(options.output_prefix)
-    selection_result = result.selection_result
-    path_reports = result.path_reports
-    combined_csv = (
-        write_combined_atom_csv(
-            _output_path(prefix, "epath.csv"),
-            selection_result,
-            clusters=result.clusters,
-        )
-        if options.write_combined_csv
-        else None
-    )
-    cluster_csv = (
-        write_cluster_csv(_output_path(prefix, "clusters.csv"), path_reports)
-        if options.write_cluster_csv
-        else None
-    )
-    step_csv = (
-        write_step_csv(_output_path(prefix, "steps.csv"), path_reports)
-        if options.write_step_csv
-        else None
-    )
-    run_csv = (
-        write_run_csv(_output_path(prefix, "run.csv"), (result.run_record,))
-        if options.write_run_csv
-        else None
-    )
-
-    selected_pdb: Path | None = None
-    model_pdb: Path | None = None
-    path_pdbs: tuple[Path, ...] = ()
-    if options.write_structure_files:
-        structure_files = write_structure_outputs(
-            prefix,
-            selection_result.selected_atoms,
-            path_reports=path_reports,
-            cleaned_atoms=result.cleaned_atoms,
-            bdamage_by_source_index={
-                scored_atom.atom.source_atom_index: scored_atom.atom.bdamage
-                for scored_atom in selection_result.scored_atoms
-            },
-            bdamage_threshold=selection_result.bdamage_threshold,
-        )
-        selected_pdb = structure_files.selected_pdb
-        model_pdb = structure_files.model_pdb
-        path_pdbs = structure_files.path_pdbs
-
-    z_score_falloff = (
-        plot_z_falloff(prefix, selection_result) if options.write_z_score_plot else None
-    )
-    summary_report = (
-        _output_path(prefix, "summary.txt") if options.write_summary_report else None
-    )
-    output_files = EpathWorkflowOutputFiles(
-        combined_csv=combined_csv,
-        cluster_csv=cluster_csv,
-        step_csv=step_csv,
-        run_csv=run_csv,
-        selected_pdb=selected_pdb,
-        model_pdb=model_pdb,
-        path_pdbs=path_pdbs,
-        z_score_falloff=z_score_falloff,
-        summary_report=summary_report,
-    )
-
-    if summary_report is not None:
-        write_summary_txt(summary_report, result, output_files=output_files)
-
-    return output_files
 
 
 def write_summary_txt(
@@ -490,10 +378,6 @@ def output_file_entries(
         ),
     )
     return tuple((label, path) for label, path in entries if path is not None)
-
-
-def _output_path(prefix: Path, suffix: str) -> Path:
-    return prefix.with_name(f"{prefix.name}_{suffix}")
 
 
 def _chain_text(chains: Sequence[str]) -> str:

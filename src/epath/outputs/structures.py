@@ -7,9 +7,9 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from epath.atoms import EpathAtom
-from epath.pathways import PathReport
-from epath.selection import EpathScoredAtom
+from epath.analysis.atoms import EpathAtom
+from epath.analysis.pathways import PathReport
+from epath.analysis.selection import EpathScoredAtom
 from rabdam.structure.models import PreparedAtom
 
 

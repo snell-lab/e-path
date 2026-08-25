@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from rabdam.bdamage.score import BDamageScoreResult
+from rabdam.bdamage import BDamageScoreResult
 from rabdam.bnet.calculate import (
     ProteinBnetCalculationError,
     ProteinBnetResult,

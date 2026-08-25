@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from epath.atoms import EpathAtom
+from epath.analysis.atoms import EpathAtom
 
 # A plateau is a run of rank-ordered atoms packed more densely in Z than the
 # runs on either side of it, which is a local shelf in the falloff rather than

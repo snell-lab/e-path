@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import rabdam.bnet.metric as bnet_metric
-from rabdam.bdamage.score import BDamageScoreResult
+from rabdam.bdamage import BDamageScoreResult
 from rabdam.bnet.metric import BnetResult
 from rabdam.bnet.sites import (
     BnetSite,

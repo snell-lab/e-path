@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from rabdam.packing.density import PackingDensityAtomResult, PackingDensityResult
+from rabdam.packing import PackingDensityAtomResult, PackingDensityResult
 from rabdam.structure.models import PreparedAtom, PreparedStructure
 
 

@@ -8,11 +8,11 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from epath.atoms import EpathAtom, atom_token
-from epath.clustering import EpathCluster
-from epath.pathways import PathReport
-from epath.runs import EpathRunRecord
-from epath.selection import EpathScoredAtom, EpathSelectionResult
+from epath.analysis.atoms import EpathAtom, atom_token
+from epath.analysis.clustering import EpathCluster
+from epath.analysis.pathways import PathReport
+from epath.analysis.selection import EpathScoredAtom, EpathSelectionResult
+from epath.outputs.runs import EpathRunRecord
 
 COMBINED_ATOM_FIELDNAMES = [
     "source_atom_index",

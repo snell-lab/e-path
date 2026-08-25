@@ -12,16 +12,16 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING, TextIO
 
-from epath.endpoints import cofactor_site_summary
-from epath.outputs import (
+from epath.analysis.endpoints import cofactor_site_summary
+from epath.analysis.pathways import PATH_CLASS_ORDER
+from epath.outputs.summary import (
     bdamage_parameter_lines,
     bnet_summary_lines,
     crystal_summary_lines,
     output_file_entries,
 )
-from epath.pathways import PATH_CLASS_ORDER
-from rabdam.bdamage.score import bdamage_scores_as_tuple
-from rabdam.packing.density import packing_density_counts_as_tuple
+from rabdam.bdamage import bdamage_scores_as_tuple
+from rabdam.packing import packing_density_counts_as_tuple
 
 if TYPE_CHECKING:
     from epath.cli.run import EpathBatchCliResult, EpathCliResult

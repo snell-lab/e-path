@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
-from rabdam.bdamage.score import (
+from rabdam.bdamage import (
     BDamageScoreResult,
     calculate_bdamage_scores_for_structure,
 )
@@ -23,7 +23,7 @@ from rabdam.crystal.trim import (
     TrimmedNeighbourBlock,
     trim_expanded_unit_cell_for_bdamage,
 )
-from rabdam.packing.density import (
+from rabdam.packing import (
     PackingDensityResult,
     calculate_bdamage_packing_density,
 )
