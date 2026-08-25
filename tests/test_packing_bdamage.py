@@ -107,9 +107,11 @@ def test_array_path_matches_object_path() -> None:
     from_arrays = calculate_packing_density_from_arrays(
         selected_atoms=selected,
         neighbour_coordinates=np.asarray([(n.x, n.y, n.z) for n in neighbours]),
-        source_atom_indices=np.asarray([n.source_atom_index for n in neighbours]),
+        source_atom_indices=np.asarray(
+            [n.source_atom_index for n in neighbours], dtype=np.int64
+        ),
         is_identity_symmetry_operation=np.asarray(
-            [n.is_identity_symmetry_operation for n in neighbours]
+            [n.is_identity_symmetry_operation for n in neighbours], dtype=np.bool_
         ),
         translation_offsets=np.zeros((4, 3), dtype=np.int64),
         packing_density_threshold=7.0,

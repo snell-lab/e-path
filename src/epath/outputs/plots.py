@@ -122,7 +122,7 @@ def _pyplot() -> Any:
     # Matplotlib ships no type information, so it is opaque to the type
     # checkers and reaches the plotting helpers above as `Any`.
     _ensure_matplotlib_config_dir()
-    import matplotlib  # type: ignore[import-untyped]
+    import matplotlib  # pyright: ignore[reportMissingTypeStubs]
 
     matplotlib.use("Agg", force=True)  # pyright: ignore[reportUnknownMemberType]
     from matplotlib import pyplot  # pyright: ignore[reportMissingTypeStubs]
