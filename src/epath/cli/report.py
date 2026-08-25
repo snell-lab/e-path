@@ -150,7 +150,9 @@ def print_epath_batch_summary(
         lines.append(f"Cohort CSV: {result.cohort_csv}")
     if result.errors:
         lines.append("Failed inputs:")
-        lines.extend(INDENT + item_error.structure_input for item_error in result.errors)
+        lines.extend(
+            INDENT + item_error.structure_input for item_error in result.errors
+        )
     lines.append(f"Total runtime: {result.elapsed_seconds:.1f}s")
 
     _print_section("Batch summary:", lines, stream=stream)

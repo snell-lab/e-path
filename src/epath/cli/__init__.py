@@ -22,10 +22,10 @@ from epath.cli.run import (
 )
 
 __all__ = [
+    "RABDAM_CLI_ERRORS",
     "EpathBatchCliResult",
     "EpathBatchItemError",
     "EpathCliResult",
-    "RABDAM_CLI_ERRORS",
     "main",
     "parse_args",
     "run_from_args",

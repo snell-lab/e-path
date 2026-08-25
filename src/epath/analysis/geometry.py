@@ -44,7 +44,10 @@ def row_norms(differences: NDArray[np.float64]) -> NDArray[np.float64]:
     """
 
     squared = differences * differences
-    return np.sqrt(squared[:, 0] + squared[:, 1] + squared[:, 2])
+    lengths: NDArray[np.float64] = np.sqrt(
+        squared[:, 0] + squared[:, 1] + squared[:, 2]
+    )
+    return lengths
 
 
 def minimum_spanning_tree_edges(

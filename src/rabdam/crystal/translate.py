@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from rabdam.crystal.symmetry import (
     SymmetryExpandedAtom,
     SymmetryExpandedStructure,
-    UnitCellParameters,
 )
+from xtal.cell import UnitCellParameters
 
 
 class CrystalTranslationError(ValueError):

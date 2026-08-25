@@ -39,10 +39,10 @@ from rabdam.workflow import (
     WorkflowStageRunner,
     calculate_bdamage_for_structure_data,
 )
+from xtal.cell import CrystalMetadataError
 from xtal.rcsb import ensure_local_structure_file
 from xtal.reader import read_structure
 from xtal.resolver import ResolvedStructureInput, resolve_structure_input
-from xtal.validate import CrystalMetadataError
 
 # One row per structure in a batch, written alongside the per-structure output.
 BATCH_COHORT_CSV_NAME = "epath_runs.csv"

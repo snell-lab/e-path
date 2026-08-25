@@ -119,11 +119,13 @@ def _pyplot() -> Any:
     # Imported here rather than at module level so the config directory and
     # the non-interactive backend are set before matplotlib initialises, and
     # so importing the E-path package does not pay matplotlib's import cost.
+    # Matplotlib ships no type information, so it is opaque to the type
+    # checkers and reaches the plotting helpers above as `Any`.
     _ensure_matplotlib_config_dir()
-    import matplotlib
+    import matplotlib  # type: ignore[import-untyped]
 
-    matplotlib.use("Agg", force=True)
-    import matplotlib.pyplot as pyplot
+    matplotlib.use("Agg", force=True)  # pyright: ignore[reportUnknownMemberType]
+    from matplotlib import pyplot  # pyright: ignore[reportMissingTypeStubs]
 
     return pyplot
 
