@@ -1,6 +1,6 @@
 """Label the endpoints of an E-path cluster by their structural environment.
 
-The published pathway table records where each path starts and ends: at a
+The E-path pathway table records where each path starts and ends: at a
 cofactor, at a chain interface, or at the protein surface. Cofactors are
 excluded from the connectivity graph, so a path never runs through one, but
 the cofactor a path terminates against is what makes it a candidate electron

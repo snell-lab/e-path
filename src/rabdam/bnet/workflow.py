@@ -41,7 +41,7 @@ def calculate_bnet_workflow(
     """Calculate the Bnet portion of the complete RABDAM workflow.
 
     Structures without the required protein sites or resolution retain an
-    explicit unavailable result. Bnet values are reported by ePath but do not
+    explicit unavailable result. Bnet values are reported by E-path but do not
     participate in its atom selection or clustering calculations.
     """
     try:

@@ -2,7 +2,7 @@
 
 A run summary is written for people to read, but comparing many models means
 reading the same values back out again. This module records them once per run
-in the form the published cohort tables use: one row per structure, holding the
+in the form the E-path cohort tables use: one row per structure, holding the
 selection depth, the damage context, and what the connectivity analysis found.
 
 Concatenating these rows across runs gives the cohort table directly. Grouping

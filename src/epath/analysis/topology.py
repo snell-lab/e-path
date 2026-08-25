@@ -3,7 +3,7 @@
 The pathway framework distinguishes linear, branched, and clustered networks
 using span-to-length ratios and node connectivity. Both measures come from the
 geometry the cluster is already reported with, so a path's topology is
-consistent with its published length and span.
+consistent with its reported length and span.
 
 Linearity is the span divided by the total MST length: a path that runs from
 one end to the other approaches one, while a compact region spends its length

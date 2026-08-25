@@ -40,7 +40,7 @@ COMBINED_ATOM_FIELDNAMES = [
     "cluster_member_index",
 ]
 
-# The leading columns are the published pathway table: the path, where it
+# The leading columns are the E-path pathway table: the path, where it
 # starts and ends, what it is made of, and how it was classified. The columns
 # after them are the geometry and the measurements the class was assigned from.
 RUN_FIELDNAMES = [

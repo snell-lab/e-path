@@ -1,7 +1,7 @@
 """Describe each E-path cluster as a classified pathway.
 
 This module turns the geometric clusters produced by connectivity analysis
-into the pathway description the published analysis reports: the residues and
+into the pathway description the E-path analysis reports: the residues and
 protected atoms along the path, the environments its two ends terminate in,
 and a class assigned from graph topology, residue chemistry, and cofactor
 context.
@@ -260,7 +260,7 @@ class PathReport:
 
     @property
     def class_label(self) -> str:
-        """Return the short class label used in the published table."""
+        """Return the short class label used in the E-path pathway table."""
         return PATH_CLASS_LABELS[self.path_class]
 
     @property
@@ -391,7 +391,7 @@ def _path_residues(
     """Group a cluster's atoms into residues, in ascending residue order.
 
     Chains are ordered by the first residue of the path they contribute, and
-    residues within a chain by residue number, which is the order the published
+    residues within a chain by residue number, which is the order the E-path
     table lists them in. Atoms keep the order they were reached in the
     connectivity graph.
 
@@ -481,7 +481,7 @@ def _edge_kind(first: EpathAtom, second: EpathAtom) -> StepKind:
 
 
 def _format_residue_path(residues: Sequence[PathResidue]) -> str:
-    """Return the residue-and-node listing used by the published table."""
+    """Return the residue-and-node listing used by the E-path pathway table."""
     if not residues:
         return ""
 

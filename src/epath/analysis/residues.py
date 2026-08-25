@@ -1,6 +1,6 @@
 """Classify residues by side-chain chemistry for E-path pathway description.
 
-The pathway framework in the PNAS analysis describes each path by its residue
+The pathway framework of the E-path manuscript (in preparation) describes each path by its residue
 composition: enrichment in aromatic, sulfur-containing, polar/charged, or
 hydrophobic residues. Every residue is assigned exactly one class here, so the
 reported fractions sum to one and no residue is double counted.
