@@ -108,7 +108,10 @@ def _add_output_arguments(group: Any) -> None:
     group.add_argument(
         "--no-pdb",
         action="store_true",
-        help="Do not write the selected-atom PDB output.",
+        help=(
+            "Do not write the coordinate outputs: the selected-atom, cleaned "
+            "model, and per-pathway PDB files."
+        ),
     )
     group.add_argument(
         "--no-plot",
@@ -118,7 +121,7 @@ def _add_output_arguments(group: Any) -> None:
     group.add_argument(
         "--no-reports",
         action="store_true",
-        help="Do not write the cluster CSV or summary report.",
+        help="Do not write the cluster, step, and run CSVs or the summary report.",
     )
 
 

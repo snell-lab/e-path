@@ -10,29 +10,28 @@ from rabdam.crystal.symmetry import (
     SymmetryExpandedAtom,
     SymmetryExpandedStructure,
 )
-from xtal.cell import UnitCellParameters
+from xtal.cell import (
+    CartesianVector,
+    UnitCellParameters,
+    UnitCellTranslationVectors,
+)
+
+__all__ = (
+    "CartesianVector",
+    "CrystalTranslationError",
+    "TranslatedAtom",
+    "TranslatedCrystalBlock",
+    "UnitCellTranslationVectors",
+    "translate_atoms",
+    "translate_expanded_unit_cell",
+    "translation_vector_for_offsets",
+    "unit_cell_translation_vectors",
+    "validate_unit_cell_for_translation",
+)
 
 
 class CrystalTranslationError(ValueError):
     """Report invalid unit-cell translation input or output."""
-
-
-@dataclass(frozen=True, slots=True)
-class CartesianVector:
-    """Store a Cartesian displacement vector in angstroms."""
-
-    x: float
-    y: float
-    z: float
-
-
-@dataclass(frozen=True, slots=True)
-class UnitCellTranslationVectors:
-    """Store Cartesian displacement vectors for the three unit-cell axes."""
-
-    a: CartesianVector
-    b: CartesianVector
-    c: CartesianVector
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +72,7 @@ def translate_expanded_unit_cell(
         atoms=expanded_structure.atoms,
         unit_cell=expanded_structure.unit_cell,
         translation_range=translation_range,
+        translation_vectors=expanded_structure.translation_vectors,
     )
 
 
@@ -81,6 +81,7 @@ def translate_atoms(
     atoms: Iterable[SymmetryExpandedAtom],
     unit_cell: UnitCellParameters,
     translation_range: int = 1,
+    translation_vectors: UnitCellTranslationVectors | None = None,
 ) -> TranslatedCrystalBlock:
     """Generate translated copies of symmetry-expanded atoms.
 
@@ -89,6 +90,9 @@ def translate_atoms(
         unit_cell: Unit-cell lengths in angstroms and angles in degrees.
         translation_range: Maximum integer offset along each cell axis. A value
             of one generates 27 cells.
+        translation_vectors: Cell axes in the Cartesian frame the atoms use.
+            When omitted, they are derived from `unit_cell` in the standard
+            orthogonalization, which is only correct for files in that frame.
 
     Returns:
         Atom copies ordered by cell offsets and then input atom order.
@@ -108,7 +112,11 @@ def translate_atoms(
             f"translation_range must be non-negative, got {translation_range!r}."
         )
 
-    vectors = unit_cell_translation_vectors(unit_cell)
+    vectors = (
+        translation_vectors
+        if translation_vectors is not None
+        else unit_cell_translation_vectors(unit_cell)
+    )
     translated_atoms: list[TranslatedAtom] = []
 
     for a_offset in range(-translation_range, translation_range + 1):

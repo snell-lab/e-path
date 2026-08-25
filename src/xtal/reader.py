@@ -2,7 +2,7 @@
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import gemmi
@@ -69,6 +69,10 @@ class StructureMetadata:
     unit_cell_beta: float | None
     unit_cell_gamma: float | None
     resolution_angstrom: float | None = None
+    # The cell exactly as Gemmi read it, including any file-specific
+    # orthogonalization frame. Excluded from equality so metadata built by
+    # hand compares by its parameter values alone.
+    gemmi_cell: gemmi.UnitCell | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,23 +189,28 @@ def _extract_metadata(
 ) -> StructureMetadata:
     cell = structure.cell
     space_group = _get_space_group_name(structure)
+    # Gemmi represents a missing cell as a 1 A cube rather than zeros, so a
+    # file without CRYST1 or _cell must be recognized before its placeholder
+    # lengths are mistaken for real ones.
+    has_cell = bool(cell.is_crystal())
 
     return StructureMetadata(
         source_path=path.resolve(),
         structure_id=resolved_input.structure_id,
         file_format=resolved_input.file_format,
         space_group=space_group,
-        unit_cell_a=_none_if_zero(cell.a),
-        unit_cell_b=_none_if_zero(cell.b),
-        unit_cell_c=_none_if_zero(cell.c),
-        unit_cell_alpha=_none_if_zero(cell.alpha),
-        unit_cell_beta=_none_if_zero(cell.beta),
-        unit_cell_gamma=_none_if_zero(cell.gamma),
+        unit_cell_a=_none_if_zero(cell.a) if has_cell else None,
+        unit_cell_b=_none_if_zero(cell.b) if has_cell else None,
+        unit_cell_c=_none_if_zero(cell.c) if has_cell else None,
+        unit_cell_alpha=_none_if_zero(cell.alpha) if has_cell else None,
+        unit_cell_beta=_none_if_zero(cell.beta) if has_cell else None,
+        unit_cell_gamma=_none_if_zero(cell.gamma) if has_cell else None,
         resolution_angstrom=_extract_resolution_angstrom(
             structure=structure,
             path=path,
             file_format=resolved_input.file_format,
         ),
+        gemmi_cell=cell if has_cell else None,
     )
 
 

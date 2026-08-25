@@ -138,7 +138,11 @@ def trim_expanded_unit_cell_to_reference_atoms(
 
     reference_bounds = bounds_from_prepared_atoms(reference_atoms)
     trim_bounds = expand_bounds(reference_bounds, padding)
-    vectors = unit_cell_translation_vectors(expanded_structure.unit_cell)
+    vectors = (
+        expanded_structure.translation_vectors
+        if expanded_structure.translation_vectors is not None
+        else unit_cell_translation_vectors(expanded_structure.unit_cell)
+    )
 
     base_coordinates = np.asarray(
         [(atom.x, atom.y, atom.z) for atom in expanded_atoms],

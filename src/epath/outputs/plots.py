@@ -91,7 +91,9 @@ def write_z_score_falloff(
         pyplot.xlabel("Atom rank by ascending BDamage Z-score")
         pyplot.ylabel("BDamage Z-score")
         pyplot.title("BDamage Z-score falloff")
-        pyplot.legend(loc="lower right", fontsize="small")
+        # A legend with no labelled artists only produces a warning.
+        if math.isfinite(threshold) or selection_result.plateau is not None:
+            pyplot.legend(loc="lower right", fontsize="small")
         figure.tight_layout()
         figure.savefig(output_file, dpi=dpi)
     finally:

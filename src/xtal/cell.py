@@ -117,6 +117,49 @@ def space_group_from_metadata(metadata: StructureMetadata) -> gemmi.SpaceGroup:
     return space_group
 
 
+@dataclass(frozen=True, slots=True)
+class CartesianVector:
+    """Store a Cartesian displacement vector in angstroms."""
+
+    x: float
+    y: float
+    z: float
+
+
+@dataclass(frozen=True, slots=True)
+class UnitCellTranslationVectors:
+    """Store Cartesian displacement vectors for the three unit-cell axes."""
+
+    a: CartesianVector
+    b: CartesianVector
+    c: CartesianVector
+
+
+def translation_vectors_from_gemmi_cell(
+    cell: gemmi.UnitCell,
+) -> UnitCellTranslationVectors:
+    """Return the unit-cell axes in the Cartesian frame of a Gemmi cell.
+
+    The axes are the columns of the cell's orthogonalization matrix. Gemmi
+    keeps the file's own frame when a coordinate file carries a non-standard
+    `SCALE`/`fract_transf_matrix`, so taking the axes from the same matrix
+    that positions the atoms keeps symmetry images and lattice translations
+    in one consistent frame.
+    """
+    matrix = cell.orth.mat.tolist()
+    return UnitCellTranslationVectors(
+        a=CartesianVector(
+            float(matrix[0][0]), float(matrix[1][0]), float(matrix[2][0])
+        ),
+        b=CartesianVector(
+            float(matrix[0][1]), float(matrix[1][1]), float(matrix[2][1])
+        ),
+        c=CartesianVector(
+            float(matrix[0][2]), float(matrix[1][2]), float(matrix[2][2])
+        ),
+    )
+
+
 def normalize_space_group_name(space_group_name: str) -> str:
     """Remove quoting and normalize whitespace in a space-group name."""
     cleaned = str(space_group_name).replace("'", "").replace('"', "")

@@ -10,7 +10,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from rabdam.structure.models import PreparedAtom, PreparedStructure
-from xtal.cell import UnitCellParameters
+from xtal.cell import UnitCellParameters, UnitCellTranslationVectors
 from xtal.validate import ValidatedCrystal, validate_crystal
 
 
@@ -40,6 +40,10 @@ class SymmetryExpandedStructure:
     unit_cell: UnitCellParameters
     space_group_name: str
     operation_count: int
+    # Lattice vectors in the same Cartesian frame as the expanded coordinates,
+    # so later unit-cell translations stay consistent with the images. When
+    # absent, the standard orthogonalization of `unit_cell` is assumed.
+    translation_vectors: UnitCellTranslationVectors | None = None
 
 
 def expand_prepared_structure_by_symmetry(
@@ -126,6 +130,7 @@ def expand_atoms_by_symmetry(
         unit_cell=crystal.unit_cell,
         space_group_name=crystal.space_group_name,
         operation_count=len(operations),
+        translation_vectors=crystal.translation_vectors,
     )
 
 

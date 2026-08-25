@@ -1,5 +1,11 @@
 {
-  "include": ["src"],
-  "extraPaths": ["src"],
+  "include": [
+    "src",
+    "tests"
+  ],
+  "extraPaths": [
+    "src",
+    "tests"
+  ],
   "typeCheckingMode": "strict"
 }

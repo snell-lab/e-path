@@ -48,6 +48,21 @@ names any that are missing), adds `src/` to the Python path, and runs the
 immediately. Run it from any directory by its full path, or add the
 repository root to your `PATH`.
 
+## Tests
+
+The test suite needs `pytest` in addition to the runtime libraries. Run it
+from the repository root:
+
+```bash
+python3 -m pytest
+```
+
+The tests build a small synthetic crystal rather than downloading structures,
+so they run offline in a few seconds. The BDamage stages are checked against
+brute-force references built directly on Gemmi's symmetry and cell handling,
+and the E-path stages against hand-constructed clusters with known geometry,
+chemistry, and endpoints.
+
 ## Run
 
 Local structure file:

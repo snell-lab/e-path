@@ -252,7 +252,8 @@ def bdamage_window_size_from_fraction(
     """Calculate an odd BDamage window size from an atom-count fraction.
 
     The rounded fractional size is increased to the next odd integer and then
-    bounded below by `minimum_window_size`.
+    bounded below by `minimum_window_size`. The result is always odd, so an
+    even minimum is raised to the next odd size.
 
     Raises:
         BDamageWorkflowError: If the atom count, fraction, or minimum is invalid.
@@ -281,6 +282,10 @@ def bdamage_window_size_from_fraction(
         window_size += 1
 
     window_size = max(window_size, minimum_window_size)
+    # The minimum is user-configurable, so an even minimum must be raised to
+    # the next odd size as well, rather than failing later in validation.
+    if window_size % 2 == 0:
+        window_size += 1
 
     return window_size
 

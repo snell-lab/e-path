@@ -31,8 +31,10 @@ import gemmi
 from xtal.cell import (
     CrystalMetadataError,
     UnitCellParameters,
+    UnitCellTranslationVectors,
     make_gemmi_unit_cell,
     space_group_from_metadata,
+    translation_vectors_from_gemmi_cell,
     unit_cell_from_metadata,
 )
 from xtal.reader import StructureMetadata
@@ -78,6 +80,7 @@ class ValidatedCrystal:
     space_group_name: str
     operations: tuple[gemmi.Op, ...]
     unit_cell_volume_angstrom3: float
+    translation_vectors: UnitCellTranslationVectors
     content: AsymmetricUnitContent | None = None
     warnings: tuple[str, ...] = ()
 
@@ -96,7 +99,9 @@ def validate_crystal(
     """Validate crystallographic metadata and asymmetric-unit content.
 
     Args:
-        metadata: Crystallographic metadata read from the structure file.
+        metadata: Crystallographic metadata read from the structure file. When
+            it carries the Gemmi cell of the source file, that cell is used
+            as read, so a file-specific orthogonalization frame is preserved.
         macromolecule_elements: Element symbols of the modelled protein and
             nucleic-acid atoms. Solvent, ions, and ligands are excluded, as
             they are for a conventional Matthews calculation. Pass an empty
@@ -116,7 +121,11 @@ def validate_crystal(
             or the modelled macromolecule cannot physically fit in the cell.
     """
     unit_cell = unit_cell_from_metadata(metadata)
-    gemmi_cell = make_gemmi_unit_cell(unit_cell)
+    gemmi_cell = (
+        metadata.gemmi_cell
+        if metadata.gemmi_cell is not None
+        else make_gemmi_unit_cell(unit_cell)
+    )
     space_group = space_group_from_metadata(metadata)
     operations = tuple(space_group.operations())
 
@@ -145,6 +154,7 @@ def validate_crystal(
         space_group_name=space_group.hm,
         operations=operations,
         unit_cell_volume_angstrom3=unit_cell_volume,
+        translation_vectors=translation_vectors_from_gemmi_cell(gemmi_cell),
         content=content,
         warnings=warnings,
     )
@@ -220,8 +230,14 @@ def _content_warnings(content: AsymmetricUnitContent) -> tuple[str, ...]:
 def macromolecule_mass_dalton(elements: Sequence[str]) -> float:
     """Return the summed atomic mass in daltons for the given element symbols.
 
-    Unrecognized element symbols contribute no mass.
+    Unrecognized element symbols contribute no mass. Gemmi maps them to a
+    placeholder element with a nominal weight, so they are filtered out by
+    atomic number rather than trusted.
     """
-    return float(
-        sum(gemmi.Element(str(element).strip()).weight for element in elements)
-    )
+    total = 0.0
+    for symbol in elements:
+        element = gemmi.Element(str(symbol).strip())
+        if element.atomic_number > 0:
+            total += element.weight
+
+    return float(total)
