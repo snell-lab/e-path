@@ -5,8 +5,6 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from importlib import import_module
-from typing import Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -17,27 +15,13 @@ from epath.geometry import (
     validated_coordinates,
 )
 from epath.selection import EpathScoredAtom
+from rabdam.spatial import radius_neighbour_indices
 
 DEFAULT_CLUSTER_DISTANCE_ANGSTROM = 4.0
 
 
 class EpathClusteringError(ValueError):
     """Raised when E-path atom clustering cannot be calculated."""
-
-
-class _KDTree(Protocol):
-    def query_ball_point(
-        self,
-        x: NDArray[np.float64],
-        r: float,
-        p: float,
-        *,
-        workers: int,
-    ) -> NDArray[np.object_]: ...
-
-
-class _KDTreeFactory(Protocol):
-    def __call__(self, data: NDArray[np.float64]) -> _KDTree: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,36 +205,7 @@ def _neighbour_indices_by_atom(
     *,
     distance_cutoff: float,
 ) -> tuple[tuple[int, ...], ...]:
-    tree = _build_ckdtree(coordinates)
-    raw_neighbours = tree.query_ball_point(
-        coordinates,
-        distance_cutoff,
-        2.0,
-        workers=-1,
-    )
-    return tuple(
-        tuple(int(index) for index in neighbours) for neighbours in raw_neighbours
-    )
-
-
-def _build_ckdtree(coordinates: NDArray[np.float64]) -> _KDTree:
-    try:
-        scipy_spatial = import_module("scipy.spatial")
-    except ImportError as error:
-        raise EpathClusteringError(
-            "SciPy is required for E-path atom clustering."
-        ) from error
-
-    ckdtree_class = cast(
-        _KDTreeFactory | None,
-        getattr(scipy_spatial, "cKDTree", None),
-    )
-    if ckdtree_class is None:
-        raise EpathClusteringError(
-            "SciPy is installed but scipy.spatial.cKDTree is unavailable."
-        )
-
-    return ckdtree_class(coordinates)
+    return radius_neighbour_indices(coordinates, distance_cutoff)
 
 
 def _connected_components(

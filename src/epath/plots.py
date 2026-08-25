@@ -8,7 +8,6 @@ protected region rather than a smooth decay.
 
 from __future__ import annotations
 
-import importlib
 import math
 import os
 import tempfile
@@ -117,15 +116,16 @@ def _mark_plateau(pyplot: Any, plateau: ZScorePlateau | None) -> None:
 
 
 def _pyplot() -> Any:
-    try:
-        _ensure_matplotlib_config_dir()
-        matplotlib = importlib.import_module("matplotlib")
-        matplotlib.use("Agg", force=True)
-        return importlib.import_module("matplotlib.pyplot")
-    except Exception as error:
-        raise EpathPlotError(
-            "matplotlib is required to generate E-path plots."
-        ) from error
+    # Imported here rather than at module level so the config directory and
+    # the non-interactive backend are set before matplotlib initialises, and
+    # so importing the E-path package does not pay matplotlib's import cost.
+    _ensure_matplotlib_config_dir()
+    import matplotlib
+
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as pyplot
+
+    return pyplot
 
 
 def _ensure_matplotlib_config_dir() -> None:

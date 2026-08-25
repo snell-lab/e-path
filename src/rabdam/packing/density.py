@@ -5,34 +5,18 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass
-from importlib import import_module
-from typing import Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 from rabdam.crystal.translate import TranslatedAtom
 from rabdam.crystal.trim import ArrayTrimmedCrystalBlock, TrimmedNeighbourBlock
+from rabdam.spatial import radius_neighbour_counts
 from rabdam.structure.models import PreparedAtom, PreparedStructure
 
 
 class PackingDensityError(ValueError):
     """Report invalid input to a packing-density calculation."""
-
-
-class _KDTree(Protocol):
-    def query_ball_point(
-        self,
-        points: NDArray[np.float64],
-        radius: float,
-        *,
-        return_length: bool,
-        workers: int,
-    ) -> NDArray[np.int64]: ...
-
-
-class _KDTreeFactory(Protocol):
-    def __call__(self, data: NDArray[np.float64]) -> _KDTree: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,23 +220,16 @@ def _calculate_packing_density_with_ckdtree(
 
     # A KD-tree keeps the neighbour search near-linear in the size of the
     # neighbour cloud, which is far too large for pairwise distance checks.
-    tree = _build_ckdtree(neighbour_coordinates)
-
-    # query_ball_point counts points at exactly the radius, but packing density
+    # The radius query counts points at exactly the radius, but packing density
     # counts only atoms strictly inside the threshold, so drop one ULP.
     strict_radius = float(np.nextafter(threshold, 0.0))
-    raw_counts = tree.query_ball_point(
-        selected_coordinates,
-        strict_radius,
-        return_length=True,
-        workers=-1,
-    )
     # The identity copy is returned by the radius query but is not one of the
     # atom's neighbours.
     neighbour_counts = (
-        np.reshape(
-            np.asarray(raw_counts, dtype=np.int64),
-            (-1,),
+        radius_neighbour_counts(
+            neighbour_coordinates,
+            selected_coordinates,
+            strict_radius,
         )
         - 1
     )
@@ -274,26 +251,6 @@ def _calculate_packing_density_with_ckdtree(
         selected_atom_count=len(selected_atoms),
         neighbour_atom_count=int(neighbour_coordinates.shape[0]),
     )
-
-
-def _build_ckdtree(neighbour_coordinates: NDArray[np.float64]) -> _KDTree:
-    try:
-        scipy_spatial = import_module("scipy.spatial")
-    except ImportError as error:
-        raise PackingDensityError(
-            "SciPy is required for packing-density calculation."
-        ) from error
-
-    ckdtree_class = cast(
-        _KDTreeFactory | None,
-        getattr(scipy_spatial, "cKDTree", None),
-    )
-    if ckdtree_class is None:
-        raise PackingDensityError(
-            "SciPy is installed but scipy.spatial.cKDTree is unavailable."
-        )
-
-    return ckdtree_class(neighbour_coordinates)
 
 
 def _selected_atom_coordinates(
