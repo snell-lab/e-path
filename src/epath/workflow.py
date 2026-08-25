@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeVar
 
 from epath.atoms import EpathAtom, atoms_from_bdamage_workflow
 from epath.clustering import (
@@ -29,9 +29,11 @@ from epath.selection import (
     select_atoms_by_percentile_per_chain,
 )
 from rabdam.bnet.workflow import BnetWorkflowResult, calculate_bnet_workflow
-from rabdam.workflow import BDamageWorkflowResult
+from rabdam.workflow import BDamageWorkflowResult, WorkflowStageRunner
 
 SelectionMethod = Literal["percentile", "percentile_per_chain"]
+
+T = TypeVar("T")
 
 
 class EpathWorkflowError(ValueError):
@@ -91,12 +93,13 @@ def run_epath_workflow(
     *,
     structure_path: str | Path | None = None,
     options: EpathWorkflowOptions | None = None,
+    stage_runner: WorkflowStageRunner | None = None,
 ) -> EpathWorkflowResult:
     """Run E-path analysis from a completed RABDAM BDamage workflow.
 
-    This is the library entry point for callers that already hold a BDamage
-    workflow result. The command-line interface calls `analyze_epath_atoms`
-    directly.
+    This is the single entry point for callers that hold a BDamage workflow
+    result; the command-line interface uses it too, passing a `stage_runner`
+    that reports each named stage as it runs.
     """
 
     atoms = atoms_from_bdamage_workflow(bdamage_workflow_result)
@@ -108,6 +111,7 @@ def run_epath_workflow(
         structure_path=structure_path,
         options=options,
         bdamage_workflow_result=bdamage_workflow_result,
+        stage_runner=stage_runner,
     )
 
 
@@ -117,9 +121,15 @@ def analyze_epath_atoms(
     structure_path: str | Path | None = None,
     options: EpathWorkflowOptions | None = None,
     bdamage_workflow_result: BDamageWorkflowResult | None = None,
-    bnet_workflow_result: BnetWorkflowResult | None = None,
+    stage_runner: WorkflowStageRunner | None = None,
 ) -> EpathWorkflowResult:
-    """Run E-path selection, clustering, MST analysis, and outputs."""
+    """Run E-path selection, clustering, MST analysis, and outputs.
+
+    Bnet is calculated here whenever a BDamage workflow result is available,
+    so every caller sees the same sequence of stages. `stage_runner` wraps
+    each named stage for timing or progress reporting; without it the stages
+    run silently.
+    """
 
     if options is None:
         options = EpathWorkflowOptions()
@@ -128,10 +138,18 @@ def analyze_epath_atoms(
     if not atom_tuple:
         raise EpathWorkflowError("E-path analysis requires at least one atom.")
 
-    selection_result = _select_atoms(atom_tuple, options.selection)
-    components = cluster_selected_atoms(
-        selection_result.selected_atoms,
-        distance_cutoff=options.clustering.distance_cutoff,
+    selection_result = _run_stage(
+        "Selecting E-path atoms",
+        lambda: _select_atoms(atom_tuple, options.selection),
+        stage_runner=stage_runner,
+    )
+    components = _run_stage(
+        "Clustering selected atoms",
+        lambda: cluster_selected_atoms(
+            selection_result.selected_atoms,
+            distance_cutoff=options.clustering.distance_cutoff,
+        ),
+        stage_runner=stage_runner,
     )
     minimum_cluster_size = _positive_int(
         options.clustering.minimum_cluster_size,
@@ -149,20 +167,28 @@ def analyze_epath_atoms(
         if bdamage_workflow_result is not None
         else None
     )
-    path_analysis = analyze_paths(
-        clusters,
-        scored_atoms=atom_tuple,
-        cleaned_atoms=cleaned_atoms,
-        distance_cutoff=options.clustering.distance_cutoff,
-        options=options.paths,
+    path_analysis = _run_stage(
+        "Analyzing pathways",
+        lambda: analyze_paths(
+            clusters,
+            scored_atoms=atom_tuple,
+            cleaned_atoms=cleaned_atoms,
+            distance_cutoff=options.clustering.distance_cutoff,
+            options=options.paths,
+        ),
+        stage_runner=stage_runner,
     )
     path_reports = path_analysis.reports
     analyzed_chains = tuple(dict.fromkeys(atom.chain_id for atom in atom_tuple))
-    if bnet_workflow_result is None and bdamage_workflow_result is not None:
-        bnet_workflow_result = calculate_bnet_workflow(
-            prepared_structure=bdamage_workflow_result.prepared_structure,
-            bdamage_score_result=bdamage_workflow_result.bdamage_score_result,
+    bnet_workflow_result = (
+        _run_stage(
+            "Calculating Bnet and Bnet percentile",
+            lambda: _calculate_bnet(bdamage_workflow_result),
+            stage_runner=stage_runner,
         )
+        if bdamage_workflow_result is not None
+        else None
+    )
     run_record = build_run_record(
         structure_path=structure_path,
         selection_result=selection_result,
@@ -172,25 +198,30 @@ def analyze_epath_atoms(
         cutoff_percent=options.selection.percentile,
         bnet_workflow_result=bnet_workflow_result,
     )
-    output_files = write_epath_outputs(
-        selection_result=selection_result,
-        clusters=clusters,
-        path_reports=path_reports,
-        cofactor_sites=path_analysis.cofactor_sites,
-        component_statistics=statistics,
-        run_record=run_record,
-        analyzed_chains=analyzed_chains,
-        structure_path=structure_path,
-        minimum_cluster_size=minimum_cluster_size,
-        options=options.output,
-        bnet_workflow_result=bnet_workflow_result,
-        crystal=(
-            bdamage_workflow_result.crystal
-            if bdamage_workflow_result is not None
-            else None
+    crystal = (
+        bdamage_workflow_result.crystal
+        if bdamage_workflow_result is not None
+        else None
+    )
+    output_files = _run_stage(
+        "Writing E-path outputs",
+        lambda: write_epath_outputs(
+            selection_result=selection_result,
+            clusters=clusters,
+            path_reports=path_reports,
+            cofactor_sites=path_analysis.cofactor_sites,
+            component_statistics=statistics,
+            run_record=run_record,
+            analyzed_chains=analyzed_chains,
+            structure_path=structure_path,
+            minimum_cluster_size=minimum_cluster_size,
+            options=options.output,
+            bnet_workflow_result=bnet_workflow_result,
+            crystal=crystal,
+            cleaned_atoms=cleaned_atoms,
+            bdamage_workflow_result=bdamage_workflow_result,
         ),
-        cleaned_atoms=cleaned_atoms,
-        bdamage_workflow_result=bdamage_workflow_result,
+        stage_runner=stage_runner,
     )
 
     return EpathWorkflowResult(
@@ -205,6 +236,27 @@ def analyze_epath_atoms(
         bdamage_workflow_result=bdamage_workflow_result,
         bnet_workflow_result=bnet_workflow_result,
     )
+
+
+def _calculate_bnet(
+    bdamage_workflow_result: BDamageWorkflowResult,
+) -> BnetWorkflowResult:
+    return calculate_bnet_workflow(
+        prepared_structure=bdamage_workflow_result.prepared_structure,
+        bdamage_score_result=bdamage_workflow_result.bdamage_score_result,
+    )
+
+
+def _run_stage(
+    label: str,
+    callback: Callable[[], T],
+    *,
+    stage_runner: WorkflowStageRunner | None,
+) -> T:
+    if stage_runner is None:
+        return callback()
+
+    return stage_runner(label, callback)
 
 
 def _select_atoms(

@@ -16,7 +16,6 @@ from pathlib import Path
 from time import perf_counter
 from typing import TextIO, TypeVar
 
-from epath.atoms import atoms_from_bdamage_workflow
 from epath.cli.args import (
     bdamage_workflow_options_from_args,
     epath_workflow_options_from_args,
@@ -26,9 +25,8 @@ from epath.cli.args import (
 from epath.cli.report import print_epath_batch_summary, print_epath_summary
 from epath.plots import EpathPlotError
 from epath.tables import write_run_csv
-from epath.workflow import EpathWorkflowResult, analyze_epath_atoms
+from epath.workflow import EpathWorkflowResult, run_epath_workflow
 from rabdam.bdamage.score import BDamageScoreError
-from rabdam.bnet.workflow import calculate_bnet_workflow
 from rabdam.crystal.symmetry import CrystalSymmetryError
 from rabdam.crystal.translate import CrystalTranslationError
 from rabdam.crystal.trim import CrystalTrimError
@@ -37,6 +35,7 @@ from rabdam.structure.models import StructurePreparationOptions
 from rabdam.workflow import (
     BDamageWorkflowError,
     BDamageWorkflowResult,
+    WorkflowStageRunner,
     calculate_bdamage_for_structure_data,
 )
 from xtal.rcsb import ensure_local_structure_file
@@ -144,10 +143,15 @@ def run_single_structure(
 ) -> EpathCliResult:
     """Run the full E-path workflow for one structure input."""
 
+    # A named generic function rather than a lambda so each workflow stage
+    # callback keeps its return type through WorkflowStageRunner.
+    def stage_runner(label: str, callback: Callable[[], T]) -> T:
+        return run_stage(label, callback, stream=stderr, quiet=args.quiet)
+
     local_input, bdamage_result = calculate_bdamage_from_args(
         args,
         structure_input=structure_input,
-        stderr=stderr,
+        stage_runner=stage_runner,
     )
 
     if output_prefix is None:
@@ -161,28 +165,11 @@ def run_single_structure(
         args,
         output_prefix=output_prefix,
     )
-    atoms = atoms_from_bdamage_workflow(bdamage_result)
-    bnet_workflow_result = run_stage(
-        "Calculating Bnet and Bnet percentile",
-        lambda: calculate_bnet_workflow(
-            prepared_structure=bdamage_result.prepared_structure,
-            bdamage_score_result=bdamage_result.bdamage_score_result,
-        ),
-        stream=stderr,
-        quiet=args.quiet,
-    )
-
-    workflow_result = run_stage(
-        "Running E-path workflow",
-        lambda: analyze_epath_atoms(
-            atoms,
-            structure_path=local_input.local_path,
-            options=options,
-            bdamage_workflow_result=bdamage_result,
-            bnet_workflow_result=bnet_workflow_result,
-        ),
-        stream=stderr,
-        quiet=args.quiet,
+    workflow_result = run_epath_workflow(
+        bdamage_result,
+        structure_path=local_input.local_path,
+        options=options,
+        stage_runner=stage_runner,
     )
     cli_result = EpathCliResult(
         local_input=local_input,
@@ -279,7 +266,7 @@ def calculate_bdamage_from_args(
     args: argparse.Namespace,
     *,
     structure_input: str,
-    stderr: TextIO,
+    stage_runner: WorkflowStageRunner,
 ) -> tuple[ResolvedStructureInput, BDamageWorkflowResult]:
     """Resolve one input, read it, and run the RABDAM BDamage stages."""
 
@@ -287,11 +274,6 @@ def calculate_bdamage_from_args(
     # Structure preparation is not configurable: only protein atoms are
     # scored, so the RABDAM defaults are the E-path population.
     preparation_options = StructurePreparationOptions()
-
-    # A named generic function rather than a lambda so the workflow stage
-    # callback keeps its return type through WorkflowStageRunner.
-    def stage_runner(label: str, callback: Callable[[], T]) -> T:
-        return run_stage(label, callback, stream=stderr, quiet=args.quiet)
 
     resolved = stage_runner(
         "Resolving input",
