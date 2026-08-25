@@ -259,13 +259,13 @@ def write_summary_txt(
             )
 
     lines.extend(("", "BDamage calculation", "-------------------"))
-    lines.extend(_bdamage_parameter_lines(bdamage_workflow_result))
+    lines.extend(bdamage_parameter_lines(bdamage_workflow_result))
 
     lines.extend(("", "Crystal", "-------"))
-    lines.extend(_crystal_summary_lines(crystal))
+    lines.extend(crystal_summary_lines(crystal))
 
     lines.extend(("", "RABDAM Bnet results", "--------------------"))
-    lines.extend(_bnet_summary_lines(bnet_workflow_result))
+    lines.extend(bnet_summary_lines(bnet_workflow_result))
 
     lines.extend(
         _pathway_summary_lines(
@@ -277,7 +277,7 @@ def write_summary_txt(
     )
 
     lines.extend(("", "Files written", "-------------"))
-    file_entries = _output_file_entries(output_files)
+    file_entries = output_file_entries(output_files)
     if file_entries:
         lines.extend(f"{label}: {path}" for label, path in file_entries)
     else:
@@ -401,9 +401,11 @@ def _composition_text(report: PathReport) -> str:
     return ", ".join(reported) if reported else "no residues"
 
 
-def _bdamage_parameter_lines(
+def bdamage_parameter_lines(
     workflow_result: BDamageWorkflowResult | None,
 ) -> tuple[str, ...]:
+    """Return the BDamage calculation parameters as report lines."""
+
     if workflow_result is None:
         return ("BDamage parameters: not recorded",)
 
@@ -417,9 +419,11 @@ def _bdamage_parameter_lines(
     )
 
 
-def _crystal_summary_lines(
+def crystal_summary_lines(
     crystal: ValidatedCrystal | None,
 ) -> tuple[str, ...]:
+    """Return the validated crystal and asymmetric-unit content as report lines."""
+
     if crystal is None:
         return ("Crystal: not validated",)
 
@@ -452,9 +456,11 @@ def _crystal_summary_lines(
     return tuple(lines)
 
 
-def _bnet_summary_lines(
+def bnet_summary_lines(
     workflow_result: BnetWorkflowResult | None,
 ) -> tuple[str, ...]:
+    """Return the RABDAM Bnet results as report lines."""
+
     if workflow_result is None:
         return ("Bnet: not calculated", "Bnet percentile: not calculated")
 
@@ -494,9 +500,11 @@ def _bnet_summary_lines(
     return tuple(lines)
 
 
-def _output_file_entries(
+def output_file_entries(
     output_files: EpathWorkflowOutputFiles,
 ) -> tuple[tuple[str, Path], ...]:
+    """Return (label, path) pairs for every output file that was written."""
+
     entries: tuple[tuple[str, Path | None], ...] = (
         ("Combined atom CSV", output_files.combined_csv),
         ("Cluster CSV", output_files.cluster_csv),
