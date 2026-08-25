@@ -18,10 +18,10 @@ class _KDTree(Protocol):
         self,
         x: NDArray[np.float64],
         r: float,
-        p: float = ...,
+        p: float = 2.0,
         *,
-        return_length: bool = ...,
-        workers: int = ...,
+        return_length: bool = False,
+        workers: int = 1,
     ) -> object: ...
 
 

@@ -318,7 +318,8 @@ def centered_window_average_b_factors(
 
     Raises:
         BDamageScoreError: If `window_size` is not a valid window for the atom
-            count, or if any B-factor is non-finite.
+            count, if any B-factor is non-finite, or if a window averages to a
+            non-positive B-factor.
     """
     sorted_input_tuple = tuple(sorted_atom_inputs)
     validate_window_size(window_size=window_size, atom_count=len(sorted_input_tuple))

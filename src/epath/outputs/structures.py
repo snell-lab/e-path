@@ -90,7 +90,9 @@ def write_model_pdb(
 
     Raises:
         EpathStructureOutputError: If the model holds more than 99999 atoms,
-            which cannot be written with renumbered PDB serials.
+            which cannot be written with renumbered PDB serials, or if an atom
+            field such as a residue number or coordinate does not fit its
+            fixed-width PDB column.
     """
     output_file = Path(output_path)
     if output_file.parent != Path("."):
@@ -220,7 +222,9 @@ def write_atom_subset_pdb(
 
     Raises:
         EpathStructureOutputError: If the subset holds more than 99999 atoms,
-            which cannot be written with renumbered PDB serials.
+            which cannot be written with renumbered PDB serials, or if an atom
+            field such as a residue number or coordinate does not fit its
+            fixed-width PDB column.
     """
     output_file = Path(output_path)
     if output_file.parent != Path("."):

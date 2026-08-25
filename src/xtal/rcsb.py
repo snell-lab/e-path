@@ -121,7 +121,10 @@ def ensure_local_structure_file(
 
     Raises:
         RcsbDownloadError: If the resolved input has a source type that cannot
-            be turned into a local file, or if the RCSB download fails.
+            be turned into a local file, or if the RCSB download fails with an
+            HTTP or connection error.
+        TimeoutError: If the RCSB response stalls while being read.
+        OSError: If the downloaded file cannot be written to `download_dir`.
     """
     if resolved_input.is_local_file:
         return resolved_input

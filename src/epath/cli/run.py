@@ -107,7 +107,8 @@ def run_from_args(
     """Run the full E-path workflow from parsed command-line arguments.
 
     Raises:
-        ValueError: If no structure input was given.
+        ValueError: If no structure input was given, or if `--output-prefix`
+            is combined with several structure inputs.
     """
     if total_runtime_start is None:
         total_runtime_start = perf_counter()
