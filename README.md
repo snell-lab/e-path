@@ -100,9 +100,13 @@ PDB ID or input filename stem as the output prefix. A normal run writes:
 - `*_zfalloff.png`: rank-ordered BDamage Z-score falloff.
 - `*_summary.txt`: persistent human-readable analysis summary.
 
-A batch run additionally writes `epath_runs.csv` in the output directory, with
-one row per structure. `--output-dir` chooses another output directory and
-`--output-prefix` sets the prefix for a single structure; `--no-csv`,
+Each run writes into its own directory under `output/`, named after the
+structure (`output/3I9V/3I9V_epath.csv`, ...). Running the same structure again
+gets a numbered directory (`output/3I9V_1/`, `output/3I9V_2/`, ...) instead of
+overwriting the earlier results. A batch run additionally writes
+`epath_runs.csv` in the output directory, with one row per structure.
+`--output-dir` chooses another output directory and `--output-prefix` bypasses
+the per-run directory and sets the file prefix directly for a single structure; `--no-csv`,
 `--no-pdb`, `--no-plot`, and `--no-reports` disable the corresponding output
 groups. How to read each file is described in [docs/outputs.md](docs/outputs.md).
 

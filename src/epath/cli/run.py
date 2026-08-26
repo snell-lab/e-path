@@ -316,18 +316,32 @@ def batch_output_prefix_path(
     output_dir: Path,
     used_output_prefixes: set[Path] | None,
 ) -> Path:
-    """Return a unique output prefix for one resolved input."""
-    label = output_label_for_input(local_input)
-    candidate = output_dir / label
-    if used_output_prefixes is None:
-        return candidate
+    """Return a unique output prefix for one resolved input.
 
-    suffix = 2
-    while candidate in used_output_prefixes:
-        candidate = output_dir / f"{label}_{suffix}"
+    Each run gets its own directory under `output_dir`, named after the
+    structure label. A repeated run of the same structure gets a numbered
+    directory (`3I9V_1`, `3I9V_2`, ...) rather than overwriting the last one:
+    directories already on disk count as used, as do prefixes handed out
+    earlier in the same batch.
+    """
+    label = output_label_for_input(local_input)
+
+    def prefix_for(run_dir_name: str) -> Path:
+        return output_dir / run_dir_name / label
+
+    def is_used(candidate: Path) -> bool:
+        if used_output_prefixes is not None and candidate in used_output_prefixes:
+            return True
+        return candidate.parent.exists()
+
+    candidate = prefix_for(label)
+    suffix = 1
+    while is_used(candidate):
+        candidate = prefix_for(f"{label}_{suffix}")
         suffix += 1
 
-    used_output_prefixes.add(candidate)
+    if used_output_prefixes is not None:
+        used_output_prefixes.add(candidate)
     return candidate
 
 

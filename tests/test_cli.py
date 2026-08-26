@@ -240,8 +240,8 @@ def test_default_output_prefix_uses_the_input_stem(
     code, out, _ = _run([str(synthetic_pdb), "-q", "--no-plot", "--preview-count", "3"])
 
     assert code == 0
-    assert (tmp_path / "output" / "synthetic_summary.txt").is_file()
-    assert (tmp_path / "output" / "synthetic_epath.csv").is_file()
+    assert (tmp_path / "output" / "synthetic" / "synthetic_summary.txt").is_file()
+    assert (tmp_path / "output" / "synthetic" / "synthetic_epath.csv").is_file()
 
     code, out, _ = _run(
         [
@@ -253,7 +253,10 @@ def test_default_output_prefix_uses_the_input_stem(
             "3",
         ]
     )
-    assert code == 0 and (tmp_path / "elsewhere" / "synthetic_run.csv").is_file()
+    assert (
+        code == 0
+        and (tmp_path / "elsewhere" / "synthetic" / "synthetic_run.csv").is_file()
+    )
     assert "BDamage preview:" in out and "Packing-density counts, first 3:" in out
 
 
@@ -308,10 +311,10 @@ def test_pdb_id_is_downloaded_once_and_labelled_by_id(
     assert code == 0, err
     assert calls == ["https://files.rcsb.org/download/1abc.cif"]
     assert (download_dir / "1ABC.cif").read_bytes() == payload
-    assert (tmp_path / "out" / "1ABC_summary.txt").is_file()
+    assert (tmp_path / "out" / "1ABC" / "1ABC_summary.txt").is_file()
     assert (
         "Input structure: " + str((download_dir / "1ABC.cif").resolve())
-        in (tmp_path / "out" / "1ABC_summary.txt").read_text()
+        in (tmp_path / "out" / "1ABC" / "1ABC_summary.txt").read_text()
     )
 
     assert _run(argv)[0] == 0 and len(calls) == 1
@@ -349,9 +352,9 @@ def test_batch_run_writes_a_cohort_table_with_unique_prefixes(
         str(synthetic_mmcif.resolve()),
         str(duplicate.resolve()),
     ]
-    assert (out_dir / "synthetic_summary.txt").is_file()
-    assert (out_dir / "synthetic_2_summary.txt").is_file()
-    assert (out_dir / "synthetic_3_summary.txt").is_file()
+    assert (out_dir / "synthetic" / "synthetic_summary.txt").is_file()
+    assert (out_dir / "synthetic_1" / "synthetic_summary.txt").is_file()
+    assert (out_dir / "synthetic_2" / "synthetic_summary.txt").is_file()
     assert rows[0]["atoms_selected"] == rows[1]["atoms_selected"] == "23"
 
 
@@ -420,19 +423,22 @@ def test_output_labels_and_prefixes(tmp_path: Path) -> None:
         batch_output_prefix_path(
             downloaded, output_dir=tmp_path, used_output_prefixes=used
         )
-        == tmp_path / "1ABC"
+        == tmp_path / "1ABC" / "1ABC"
     )
     assert (
         batch_output_prefix_path(
             downloaded, output_dir=tmp_path, used_output_prefixes=used
         )
-        == tmp_path / "1ABC_2"
+        == tmp_path / "1ABC_1" / "1ABC"
     )
+    # Run directories already on disk are skipped, even outside a batch.
+    (tmp_path / "1ABC").mkdir()
+    (tmp_path / "1ABC_1").mkdir()
     assert (
         batch_output_prefix_path(
             downloaded, output_dir=tmp_path, used_output_prefixes=None
         )
-        == tmp_path / "1ABC"
+        == tmp_path / "1ABC_2" / "1ABC"
     )
 
 
