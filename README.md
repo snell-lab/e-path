@@ -43,6 +43,17 @@ calls the package's `main`, so edits to the source take effect immediately.
 Run it from any directory by its full path, add the repository root to your
 `PATH`, or run it with an explicit interpreter as `python3 epath ...`.
 
+E-path is pure Python and runs on Linux, macOS, and Windows; the four
+libraries all ship prebuilt wheels for each. On Windows the `./epath` form
+does not work because the shebang line is ignored, so run it through the
+interpreter instead:
+
+```powershell
+python epath --help
+```
+
+Everywhere the examples below say `./epath`, read `python epath` on Windows.
+
 ## Run
 
 Local structure file:
