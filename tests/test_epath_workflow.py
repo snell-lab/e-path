@@ -95,7 +95,11 @@ def test_analysis_without_a_bdamage_result_degrades_gracefully() -> None:
     assert result.analyzed_chains == ("A",)
     assert result.structure_path == Path("models/demo.cif")
     record = result.run_record
-    assert (record.structure, record.input_path) == ("demo", "models/demo.cif")
+    # input_path is stored in the platform's native form (backslashes on Windows).
+    assert (record.structure, record.input_path) == (
+        "demo",
+        str(Path("models/demo.cif")),
+    )
     assert (
         record.total_atoms,
         record.atoms_selected,

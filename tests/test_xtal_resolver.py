@@ -43,7 +43,20 @@ def test_local_file_resolves_with_its_format(
     assert resolved.structure_id is None
 
 
+def _skip_unless_case_sensitive(tmp_path: Path) -> None:
+    """Skip a test that relies on a case-sensitive filesystem.
+
+    macOS and Windows normally use case-insensitive filesystems, where a
+    differently-cased name already resolves to the file directly and the
+    fallback matching in the resolver never runs.
+    """
+    (tmp_path / "CaseProbe").write_text("x")
+    if (tmp_path / "caseprobe").exists():
+        pytest.skip("requires a case-sensitive filesystem")
+
+
 def test_local_file_name_matches_case_insensitively(tmp_path: Path) -> None:
+    _skip_unless_case_sensitive(tmp_path)
     (tmp_path / "Model.PDB").write_text("x")
 
     resolved = resolve_structure_input(str(tmp_path / "model.pdb"))
@@ -52,6 +65,7 @@ def test_local_file_name_matches_case_insensitively(tmp_path: Path) -> None:
 
 
 def test_ambiguous_case_insensitive_match_is_rejected(tmp_path: Path) -> None:
+    _skip_unless_case_sensitive(tmp_path)
     (tmp_path / "a.pdb").write_text("x")
     (tmp_path / "A.pdb").write_text("x")
 
