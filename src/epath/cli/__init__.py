@@ -12,7 +12,11 @@ from time import perf_counter
 from typing import TextIO
 
 from epath.cli.args import parse_args
-from epath.cli.report import print_citations, print_missing_structure_input_error
+from epath.cli.report import (
+    print_citations,
+    print_error,
+    print_missing_structure_input_error,
+)
 from epath.cli.run import (
     RABDAM_CLI_ERRORS,
     EpathBatchCliResult,
@@ -58,7 +62,7 @@ def main(
             total_runtime_start=start,
         )
     except RABDAM_CLI_ERRORS as error:
-        print(f"epath: error: {error}", file=stderr)
+        print_error(f"epath: error: {error}", stream=stderr)
         return 1
 
     if isinstance(result, EpathBatchCliResult) and result.has_errors:

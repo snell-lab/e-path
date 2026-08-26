@@ -3,7 +3,9 @@
 The section contents are built by `epath.outputs`, the same builders that
 write the persistent summary report, so the terminal and the file never
 disagree about a value. This module only decides which sections to show and
-how to indent them.
+how to indent them. Long lines are wrapped with a hanging indent and
+warnings and errors are highlighted when the stream is a colour terminal
+(see `epath.cli.style`).
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from typing import TYPE_CHECKING, TextIO
 
 from epath.analysis.endpoints import cofactor_site_summary
 from epath.analysis.pathways import PATH_CLASS_ORDER
+from epath.cli.style import print_lines, style_line, supports_color
 from epath.outputs.summary import (
     bdamage_parameter_lines,
     bnet_summary_lines,
@@ -57,7 +60,14 @@ INDENT = "  "
 
 def print_missing_structure_input_error(*, stream: TextIO) -> None:
     """Print a compact recovery message for missing structure input."""
-    print(MISSING_STRUCTURE_INPUT_MESSAGE, file=stream)
+    print_error(MISSING_STRUCTURE_INPUT_MESSAGE, stream=stream)
+
+
+def print_error(message: str, *, stream: TextIO) -> None:
+    """Print an error message, highlighting the ``epath: error:`` prefix."""
+    enabled = supports_color(stream)
+    for line in message.splitlines():
+        print(style_line(line, enabled=enabled), file=stream)
 
 
 def print_citations(*, stream: TextIO) -> None:
@@ -124,6 +134,14 @@ def print_epath_summary(
                 f"BDamage scores, first {preview_count}:",
                 INDENT + _format_float_values(bdamage_scores),
             ),
+            stream=stream,
+        )
+
+    warnings = crystal.warnings if crystal is not None else ()
+    if warnings:
+        _print_section(
+            "Warnings:",
+            (f"WARNING: {warning}" for warning in warnings),
             stream=stream,
         )
 
@@ -213,8 +231,7 @@ def _pathway_lines(workflow_result: EpathWorkflowResult) -> tuple[str, ...]:
 def _print_section(title: str, lines: Iterable[str], *, stream: TextIO) -> None:
     print(file=stream)
     print(title, file=stream)
-    for line in lines:
-        print(INDENT + line, file=stream)
+    print_lines(tuple(lines), indent=INDENT, stream=stream)
 
 
 def _format_int_values(values: Sequence[int]) -> str:

@@ -22,7 +22,11 @@ from epath.cli.args import (
     single_output_prefix_from_args,
     structure_inputs_from_args,
 )
-from epath.cli.report import print_epath_batch_summary, print_epath_summary
+from epath.cli.report import (
+    print_epath_batch_summary,
+    print_epath_summary,
+    print_error,
+)
 from epath.outputs.files import EpathWorkflowOutputFiles
 from epath.outputs.plots import EpathPlotError
 from epath.outputs.tables import write_run_csv
@@ -244,7 +248,7 @@ def run_batch(
                     error=error,
                 )
             )
-            print(f"epath: error: {structure_input}: {error}", file=stderr)
+            print_error(f"epath: error: {structure_input}: {error}", stream=stderr)
         else:
             results.append(result)
 
