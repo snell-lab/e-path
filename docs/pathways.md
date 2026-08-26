@@ -78,6 +78,11 @@ is written as `*_path01.pdb`, `*_path02.pdb`, and so on, each holding only that
 pathway's atoms, with its class, descriptor, size, and endpoints recorded in
 `REMARK` lines.
 
+Both are sparse subsets, so residues that are not sequential in the source
+chain are separated by `TER` records. Without them, viewers such as ChimeraX
+treat the subset as one polymer with gaps and draw long dashed
+"missing structure" pseudobonds between every selected residue.
+
 The two forms answer different questions. The combined file shows what the
 cutoff selected. The per-pathway files let a viewer load and colour each
 pathway separately, which is what colouring by class requires. Keeping them

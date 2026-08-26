@@ -244,12 +244,42 @@ def write_atom_subset_pdb(
         for remark in remarks:
             file.write(_pdb_remark_line(remark))
 
+        # A TER record between residues that are not sequential in the same
+        # chain stops viewers such as ChimeraX from treating the sparse subset
+        # as one polymer with gaps and drawing long "missing structure"
+        # pseudobonds between every selected residue.
+        previous_residue: tuple[str, int | None, str] | None = None
         for output_index, atom_record in enumerate(atom_tuple, start=1):
+            atom = _atom_from_record(atom_record)
+            residue_key = (atom.chain_id, atom.residue_number, atom.insertion_code)
+            if previous_residue is not None and not _residues_are_sequential(
+                previous_residue, residue_key
+            ):
+                file.write("TER\n")
+            previous_residue = residue_key
             file.write(_pdb_atom_line(atom_record, output_serial=output_index))
 
+        if atom_tuple:
+            file.write("TER\n")
         file.write("END\n")
 
     return output_file
+
+
+def _residues_are_sequential(
+    previous: tuple[str, int | None, str],
+    current: tuple[str, int | None, str],
+) -> bool:
+    """Return whether two residues may be bonded neighbours in one chain."""
+    if previous == current:
+        return True
+    previous_chain, previous_number, _ = previous
+    current_chain, current_number, _ = current
+    if previous_chain != current_chain:
+        return False
+    if previous_number is None or current_number is None:
+        return False
+    return current_number - previous_number in {0, 1}
 
 
 def _pdb_atom_line(

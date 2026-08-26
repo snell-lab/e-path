@@ -196,6 +196,41 @@ def test_atom_subset_pdb_round_trips_through_gemmi(tmp_path: Path) -> None:
         )
 
 
+def test_atom_subset_pdb_separates_non_sequential_residues_with_ter(
+    tmp_path: Path,
+) -> None:
+    atoms = (
+        make_epath_atom(chain_id="A", residue_number=10, atom_name="N"),
+        make_epath_atom(chain_id="A", residue_number=10, atom_name="CA"),
+        make_epath_atom(chain_id="A", residue_number=11, atom_name="CA"),
+        make_epath_atom(chain_id="A", residue_number=47, atom_name="CA"),
+        make_epath_atom(chain_id="B", residue_number=48, atom_name="CA"),
+    )
+    path = write_atom_subset_pdb(tmp_path / "subset.pdb", atoms)
+    records = [line.split()[0] for line in path.read_text().splitlines()]
+    assert records == [
+        "TITLE",
+        "REMARK",
+        "REMARK",
+        "ATOM",
+        "ATOM",
+        "ATOM",
+        "TER",
+        "ATOM",
+        "TER",
+        "ATOM",
+        "TER",
+        "END",
+    ]
+
+    structure = gemmi.read_structure(str(path))
+    assert len(structure[0]["A"]) == 3
+    assert len(structure[0]["B"]) == 1
+
+    empty = write_atom_subset_pdb(tmp_path / "empty.pdb", ())
+    assert "TER" not in empty.read_text()
+
+
 def test_model_pdb_marks_unscored_atoms_with_zero_bdamage(
     tmp_path: Path, result: EpathWorkflowResult
 ) -> None:
