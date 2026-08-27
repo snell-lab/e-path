@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, TypeVar
+from typing import TypeVar
 
 from epath.analysis.atoms import EpathAtom, atoms_from_bdamage_workflow
 from epath.analysis.clustering import (
@@ -20,7 +20,6 @@ from epath.analysis.pathways import PathAnalysisOptions, PathReport, analyze_pat
 from epath.analysis.selection import (
     EpathSelectionResult,
     select_atoms_by_percentile,
-    select_atoms_by_percentile_per_chain,
 )
 from epath.outputs.files import (
     EpathOutputWorkflowOptions,
@@ -33,8 +32,6 @@ from rabdam.structure.models import PreparedAtom
 from rabdam.workflow import BDamageWorkflowResult, WorkflowStageRunner
 from xtal.validate import ValidatedCrystal
 
-SelectionMethod = Literal["percentile", "percentile_per_chain"]
-
 T = TypeVar("T")
 
 
@@ -46,7 +43,6 @@ class EpathWorkflowError(ValueError):
 class EpathSelectionWorkflowOptions:
     """Options controlling E-path atom selection."""
 
-    method: SelectionMethod = "percentile"
     percentile: float = 2.0
 
 
@@ -281,16 +277,7 @@ def _select_atoms(
     atoms: tuple[EpathAtom, ...],
     options: EpathSelectionWorkflowOptions,
 ) -> EpathSelectionResult:
-    if options.method == "percentile":
-        return select_atoms_by_percentile(atoms, percentile=options.percentile)
-
-    if options.method == "percentile_per_chain":
-        return select_atoms_by_percentile_per_chain(
-            atoms,
-            percentile=options.percentile,
-        )
-
-    raise EpathWorkflowError(f"Unknown selection method: {options.method!r}.")
+    return select_atoms_by_percentile(atoms, percentile=options.percentile)
 
 
 def _positive_int(value: int, *, name: str) -> int:

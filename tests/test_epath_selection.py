@@ -1,4 +1,4 @@
-"""E-path atom selection: Z-scores, percentiles, per-chain cutoffs, plateaus."""
+"""E-path atom selection: Z-scores, percentiles, plateaus."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from epath.analysis.selection import (
     find_z_score_plateau,
     score_bdamage_atoms,
     select_atoms_by_percentile,
-    select_atoms_by_percentile_per_chain,
 )
 
 
@@ -75,7 +74,7 @@ def test_lowest_percentile_selects_the_smallest_bdamage_values() -> None:
         "lowest 2.000% by BDamage" in result.description
         and "selected 2 of 100" in result.description
     )
-    assert result.chain_thresholds == () and result.plateau is None
+    assert result.plateau is None
 
 
 def test_percentile_extremes() -> None:
@@ -96,40 +95,6 @@ def test_percentile_extremes() -> None:
 def test_invalid_percentiles_are_rejected(percentile: Any) -> None:
     with pytest.raises(EpathSelectionError):
         select_atoms_by_percentile(_atoms([1.0, 2.0]), percentile=percentile)
-
-
-def test_per_chain_selection_stratifies_the_cutoff() -> None:
-    # Chain A holds the 50 lowest values, so a global cutoff would select
-    # nothing from chain B.
-    values = list(range(1, 101))
-    chains = ["A"] * 50 + ["B"] * 50
-
-    result = select_atoms_by_percentile_per_chain(
-        _atoms(values, chains), percentile=10.0
-    )
-
-    by_chain = {
-        c: sorted(a.bdamage for a in result.selected_atoms if a.chain_id == c)
-        for c in "AB"
-    }
-    assert by_chain == {
-        "A": [1.0, 2.0, 3.0, 4.0, 5.0],
-        "B": [51.0, 52.0, 53.0, 54.0, 55.0],
-    }
-    assert result.method == "percentile_per_chain"
-    assert result.bdamage_threshold is None and result.boundary_z_score is None
-    assert [t.chain_id for t in result.chain_thresholds] == ["A", "B"]
-    assert [t.selected_count for t in result.chain_thresholds] == [5, 5]
-    assert [t.atom_count for t in result.chain_thresholds] == [50, 50]
-    assert result.z_threshold == approx(
-        float(np.median([t.z_threshold for t in result.chain_thresholds]))
-    )
-    assert result.selected_percent == approx(10.0)
-
-    full = select_atoms_by_percentile_per_chain(
-        _atoms(values, chains), percentile=100.0
-    )
-    assert len(full.selected_atoms) == 100
 
 
 def test_plateau_is_a_local_shelf_in_the_rank_ordered_z_scores() -> None:

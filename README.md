@@ -119,7 +119,8 @@ overwriting the earlier results. A batch run additionally writes
 `--output-dir` chooses another output directory and `--output-prefix` bypasses
 the per-run directory and sets the file prefix directly for a single structure; `--no-csv`,
 `--no-pdb`, `--no-plot`, and `--no-reports` disable the corresponding output
-groups. How to read each file is described in [docs/outputs.md](docs/outputs.md).
+groups. `--chains A,B` keeps only those chains in the PDB files; the analysis
+itself always runs over every chain, so the CSVs and summary are unchanged. How to read each file is described in [docs/outputs.md](docs/outputs.md).
 
 ## Tests
 

@@ -36,7 +36,9 @@ described in [pathways.md](pathways.md).
 E-path analysis always runs over the complete prepared model. Restricting the
 analysis to a subset of chains would change both the BDamage Z-score
 distribution the percentile is taken from and the cross-chain connectivity that
-produces interface clusters, so no chain-restriction option is provided. Use
-`--per-chain-percentile` to stratify the percentile cutoff within each chain
-while keeping every atom in the connectivity graph, and restrict chains at the
-visualization stage when preparing figures.
+produces interface clusters, so no analysis-level chain restriction is
+provided. `--chains A,B` restricts only the coordinate outputs (the selected
+atom, cleaned model, and per-pathway PDB files) to the named chains, after the
+analysis has finished, so figures can focus on one chain while every result
+still reflects the complete model. A pathway with no atoms in the kept chains
+gets no PDB file, and the CSVs and summary always describe every chain.

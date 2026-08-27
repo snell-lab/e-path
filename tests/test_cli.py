@@ -55,7 +55,7 @@ def test_defaults_mirror_the_workflow_options() -> None:
     assert (
         args.structure_inputs == ["model.pdb"] and args.structure_input == "model.pdb"
     )
-    assert args.percentile == 2.0 and not args.per_chain_percentile
+    assert args.percentile == 2.0 and args.chains is None
     assert args.cluster_distance == 4.0 and args.minimum_cluster_size == 8
     assert args.packing_density_threshold == 7.0 and args.window_size_fraction == 0.02
     assert args.minimum_window_size == 11 and args.translation_range == 1
@@ -68,19 +68,18 @@ def test_defaults_mirror_the_workflow_options() -> None:
         parse_args(
             [
                 "a.pdb",
-                "--per-chain-percentile",
                 "--percentile",
                 "5",
                 "--no-reports",
                 "--no-plot",
+                "--chains",
+                "B, A,B",
             ]
         ),
         output_prefix=Path("x"),
     )
-    assert (
-        options.selection.method == "percentile_per_chain"
-        and options.selection.percentile == 5.0
-    )
+    assert options.selection.percentile == 5.0
+    assert options.output.display_chains == ("B", "A")
     assert options.output.output_prefix == Path("x")
     assert not (
         options.output.write_cluster_csv
@@ -143,6 +142,9 @@ def test_argument_validators(
 def test_argparse_rejects_bad_values() -> None:
     with pytest.raises(SystemExit):
         parse_args(["a.pdb", "--percentile", "150"])
+    for chains in ("", "A,,B", " "):
+        with pytest.raises(SystemExit):
+            parse_args(["a.pdb", "--chains", chains])
     with pytest.raises(SystemExit) as info:
         parse_args(["bdamage", "a.pdb"])
     assert info.value.code == REMOVED_BDAMAGE_COMMAND_MESSAGE

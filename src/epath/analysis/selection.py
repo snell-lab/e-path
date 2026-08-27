@@ -43,17 +43,6 @@ class EpathScoredAtom:
 
 
 @dataclass(frozen=True, slots=True)
-class ChainPercentileThreshold:
-    """Per-chain diagnostics for stratified percentile selection."""
-
-    chain_id: str
-    atom_count: int
-    selected_count: int
-    bdamage_threshold: float
-    z_threshold: float
-
-
-@dataclass(frozen=True, slots=True)
 class ZScorePlateau:
     """A run of rank-ordered atoms sharing essentially the same Z-score."""
 
@@ -77,7 +66,6 @@ class EpathSelectionResult:
     z_threshold: float
     bdamage_threshold: float | None = None
     boundary_z_score: float | None = None
-    chain_thresholds: tuple[ChainPercentileThreshold, ...] = ()
     selected_bdamage_mean: float = float("nan")
     selected_bdamage_standard_deviation: float = float("nan")
     plateau: ZScorePlateau | None = None
@@ -146,83 +134,16 @@ def select_atoms_by_percentile(
     )
 
 
-def select_atoms_by_percentile_per_chain(
-    atoms: Iterable[EpathAtom],
-    *,
-    percentile: float,
-) -> EpathSelectionResult:
-    """Select the lowest BDamage percentile separately within each chain."""
-    percentile = _percentile_value(percentile)
-    scored_atoms = score_bdamage_atoms(atoms)
-    selected_atoms: list[EpathScoredAtom] = []
-    chain_thresholds: list[ChainPercentileThreshold] = []
-
-    for chain_id, chain_atoms in _atoms_by_chain(scored_atoms):
-        chain_selected_atoms, bdamage_threshold = _select_lowest_percentile(
-            chain_atoms,
-            percentile=percentile,
-            use_max_threshold_for_full_percentile=True,
-        )
-        selected_atoms.extend(chain_selected_atoms)
-        chain_thresholds.append(
-            ChainPercentileThreshold(
-                chain_id=chain_id,
-                atom_count=len(chain_atoms),
-                selected_count=len(chain_selected_atoms),
-                bdamage_threshold=bdamage_threshold,
-                z_threshold=_z_score_for_bdamage_value(
-                    scored_atoms,
-                    bdamage_threshold,
-                ),
-            )
-        )
-
-    selected_atom_tuple = tuple(selected_atoms)
-    valid_chain_z_thresholds = tuple(
-        threshold.z_threshold
-        for threshold in chain_thresholds
-        if math.isfinite(threshold.z_threshold)
-    )
-    z_threshold = (
-        float(np.median(valid_chain_z_thresholds))
-        if valid_chain_z_thresholds
-        else float("nan")
-    )
-    selected_percent = _selected_percent(
-        selected_count=len(selected_atom_tuple),
-        total_count=len(scored_atoms),
-    )
-
-    return EpathSelectionResult(
-        scored_atoms=scored_atoms,
-        selected_atoms=selected_atom_tuple,
-        method="percentile_per_chain",
-        description=(
-            f"lowest {percentile:.3f}% by BDamage per chain "
-            f"(selected {len(selected_atom_tuple)} of {len(scored_atoms)})"
-        ),
-        selected_percent=selected_percent,
-        bdamage_mean=_mean(scored_atoms),
-        bdamage_standard_deviation=_standard_deviation(scored_atoms),
-        z_threshold=z_threshold,
-        chain_thresholds=tuple(chain_thresholds),
-        selected_bdamage_mean=_mean(selected_atom_tuple),
-        selected_bdamage_standard_deviation=_standard_deviation(selected_atom_tuple),
-        plateau=find_z_score_plateau(selected_atom_tuple),
-    )
-
-
 def _select_lowest_percentile(
     scored_atoms: Sequence[EpathScoredAtom],
     *,
     percentile: float,
-    use_max_threshold_for_full_percentile: bool = False,
 ) -> tuple[tuple[EpathScoredAtom, ...], float]:
     atom_count = len(scored_atoms)
     if atom_count == 0 or percentile <= 0.0:
         return (), float("nan")
 
-    if percentile >= 100.0 and not use_max_threshold_for_full_percentile:
+    if percentile >= 100.0:
         return tuple(scored_atoms), float("nan")
 
     bdamage_values = np.asarray(
@@ -252,19 +173,6 @@ def _select_lowest_percentile(
         selected_atoms = selected_atoms[:target_count]
 
     return tuple(selected_atoms), bdamage_threshold
-
-
-def _atoms_by_chain(
-    scored_atoms: Sequence[EpathScoredAtom],
-) -> tuple[tuple[str, tuple[EpathScoredAtom, ...]], ...]:
-    grouped_atoms: dict[str, list[EpathScoredAtom]] = {}
-    for scored_atom in scored_atoms:
-        grouped_atoms.setdefault(scored_atom.chain_id, []).append(scored_atom)
-
-    return tuple(
-        (chain_id, tuple(chain_atoms))
-        for chain_id, chain_atoms in grouped_atoms.items()
-    )
 
 
 def _bdamage_values(atoms: Sequence[EpathAtom]) -> NDArray[np.float64]:

@@ -362,3 +362,59 @@ def test_write_epath_outputs_honours_every_toggle(
     )
     assert minimal == EpathWorkflowOutputFiles()
     assert not (tmp_path / "min").exists()
+
+
+def test_display_chains_only_trim_the_coordinate_files(
+    tmp_path: Path, result: EpathWorkflowResult
+) -> None:
+    from epath.outputs.structures import EpathStructureOutputError
+
+    assert result.analyzed_chains == ("A", "B")
+    everything = write_epath_outputs(
+        result, EpathOutputWorkflowOptions(output_prefix=tmp_path / "all" / "run")
+    )
+    filtered = write_epath_outputs(
+        result,
+        EpathOutputWorkflowOptions(
+            output_prefix=tmp_path / "b" / "run", display_chains=("B",)
+        ),
+    )
+
+    def chains_in(path: Path) -> set[str]:
+        return {
+            line[21]
+            for line in path.read_text().splitlines()
+            if line.startswith(("ATOM", "HETATM"))
+        }
+
+    assert (
+        everything.selected_pdb is not None
+        and filtered.selected_pdb is not None
+        and filtered.model_pdb is not None
+    )
+    assert chains_in(everything.selected_pdb) == {"A", "B"}
+    assert chains_in(filtered.selected_pdb) == {"B"}
+    assert chains_in(filtered.model_pdb) == {"B"}
+    assert "Coordinates limited to chains B." in filtered.selected_pdb.read_text()
+    for path_pdb in filtered.path_pdbs:
+        assert chains_in(path_pdb) == {"B"}
+    assert len(filtered.path_pdbs) == sum(
+        any(atom.chain_id == "B" for atom in report.cluster.atoms)
+        for report in result.path_reports
+    )
+
+    # Analysis outputs are untouched by the display filter.
+    assert everything.combined_csv is not None and filtered.combined_csv is not None
+    assert everything.combined_csv.read_text() == filtered.combined_csv.read_text()
+    assert filtered.summary_report is not None
+    summary = filtered.summary_report.read_text()
+    assert "Chains analyzed: A, B" in summary
+    assert "Chains in coordinate files: B (display filter only)" in summary
+
+    with pytest.raises(EpathStructureOutputError, match="not in the model: Z"):
+        write_epath_outputs(
+            result,
+            EpathOutputWorkflowOptions(
+                output_prefix=tmp_path / "z" / "run", display_chains=("Z",)
+            ),
+        )

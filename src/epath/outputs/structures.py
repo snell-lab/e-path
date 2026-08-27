@@ -39,6 +39,7 @@ def write_structure_outputs(
     cleaned_atoms: Sequence[PreparedAtom] | None = None,
     bdamage_by_source_index: Mapping[int, float] | None = None,
     bdamage_threshold: float | None = None,
+    display_chains: Sequence[str] | None = None,
 ) -> EpathStructureOutputFiles:
     """Write the E-path coordinate outputs.
 
@@ -47,13 +48,38 @@ def write_structure_outputs(
     cleaned model annotated with BDamage, so that solvent, ions, and cofactors
     can be inspected alongside the E-path results even though they were not
     scored.
+
+    `display_chains` restricts every coordinate file to those chains. It is a
+    display filter only: the atoms and pathways were selected over the whole
+    model, and a pathway that has no atoms in the kept chains is skipped.
+
+    Raises:
+        EpathStructureOutputError: If `display_chains` names a chain that is
+            not in the selected atoms or the cleaned model.
     """
     prefix = Path(output_prefix)
+    selected_atom_tuple = tuple(selected_atoms)
+    chain_remarks: tuple[str, ...] = ()
+    if display_chains is not None:
+        kept_chains = tuple(dict.fromkeys(display_chains))
+        _check_display_chains(kept_chains, selected_atom_tuple, cleaned_atoms)
+        chain_remarks = (f"Coordinates limited to chains {', '.join(kept_chains)}.",)
+        selected_atom_tuple = tuple(
+            atom for atom in selected_atom_tuple if atom.chain_id in kept_chains
+        )
+        if cleaned_atoms is not None:
+            cleaned_atoms = tuple(
+                atom for atom in cleaned_atoms if atom.record.chain_id in kept_chains
+            )
+    else:
+        kept_chains = None
+
     selected_pdb = prefix.with_name(f"{prefix.name}_selected.pdb")
-    write_selected_atoms_pdb(
+    write_atom_subset_pdb(
         selected_pdb,
-        selected_atoms,
+        selected_atom_tuple,
         title="E-path selected atoms",
+        remarks=chain_remarks,
     )
 
     model_pdb: Path | None = None
@@ -64,13 +90,32 @@ def write_structure_outputs(
             cleaned_atoms,
             bdamage_by_source_index=bdamage_by_source_index or {},
             bdamage_threshold=bdamage_threshold,
+            remarks=chain_remarks,
         )
 
     return EpathStructureOutputFiles(
         selected_pdb=selected_pdb,
         model_pdb=model_pdb,
-        path_pdbs=write_path_subset_pdbs(prefix, path_reports),
+        path_pdbs=write_path_subset_pdbs(
+            prefix, path_reports, display_chains=kept_chains
+        ),
     )
+
+
+def _check_display_chains(
+    display_chains: Sequence[str],
+    selected_atoms: Sequence[EpathScoredAtom],
+    cleaned_atoms: Sequence[PreparedAtom] | None,
+) -> None:
+    present = {atom.chain_id for atom in selected_atoms}
+    if cleaned_atoms is not None:
+        present.update(atom.record.chain_id for atom in cleaned_atoms)
+    unknown = [chain for chain in display_chains if chain not in present]
+    if unknown:
+        raise EpathStructureOutputError(
+            f"--chains names chains not in the model: {', '.join(unknown)}. "
+            f"Available chains: {', '.join(sorted(present)) or 'none'}."
+        )
 
 
 def write_model_pdb(
@@ -80,6 +125,7 @@ def write_model_pdb(
     bdamage_by_source_index: Mapping[int, float],
     bdamage_threshold: float | None = None,
     title: str = "E-path cleaned model with BDamage",
+    remarks: Iterable[str] = (),
 ) -> Path:
     """Write the complete cleaned model with BDamage in the B-factor column.
 
@@ -111,7 +157,7 @@ def write_model_pdb(
         if atom.record.source_atom_index in bdamage_by_source_index
     )
     # PDB REMARK text is limited to 69 characters, so keep each line short.
-    remarks = [
+    remark_lines = [
         "E-path cleaned model.",
         "Hydrogens removed, alternate sites resolved by occupancy.",
         "B-factor column stores BDamage.",
@@ -120,13 +166,14 @@ def write_model_pdb(
         "Unscored atoms still add to the packing density of scored atoms.",
     ]
     if bdamage_threshold is not None and math.isfinite(bdamage_threshold):
-        remarks.append(
+        remark_lines.append(
             f"Selected atoms satisfy 0.00 < B-factor <= {bdamage_threshold:.4f}."
         )
+    remark_lines.extend(remarks)
 
     with output_file.open("w", encoding="utf-8", newline="\n") as file:
         file.write(_pdb_title_line(title))
-        for remark in remarks:
+        for remark in remark_lines:
             file.write(_pdb_remark_line(remark))
 
         for output_serial, prepared_atom in enumerate(atom_tuple, start=1):
@@ -174,6 +221,8 @@ def write_selected_atoms_pdb(
 def write_path_subset_pdbs(
     output_prefix: str | Path,
     path_reports: Sequence[PathReport],
+    *,
+    display_chains: Sequence[str] | None = None,
 ) -> tuple[Path, ...]:
     """Write one PDB subset per reported pathway.
 
@@ -183,32 +232,45 @@ def write_path_subset_pdbs(
     encoded into the occupancy or B-factor column, which both carry real
     values.
 
-    Path numbers are zero padded so the files sort in path order.
+    Path numbers are zero padded so the files sort in path order, and keep
+    their numbering when `display_chains` drops a pathway with no atoms in the
+    kept chains.
     """
     if not path_reports:
         return ()
 
     prefix = Path(output_prefix)
     width = max(2, len(str(max(report.path_id for report in path_reports))))
-
-    return tuple(
-        write_atom_subset_pdb(
-            prefix.with_name(f"{prefix.name}_path{report.path_id:0{width}d}.pdb"),
-            report.cluster.atoms,
-            title=f"E-path pathway {report.path_id}",
-            remarks=(
-                f"Pathway {report.path_id}, class {report.path_class}.",
-                f"{report.structural_descriptor}.",
-                (
-                    f"{report.residue_count} residues, {report.node_count} nodes, "
-                    f"{report.total_length:.2f} A."
-                ),
-                f"Start: {report.start_endpoint.label}.",
-                f"End: {report.end_endpoint.label}.",
+    written: list[Path] = []
+    for report in path_reports:
+        atoms = report.cluster.atoms
+        remarks = [
+            f"Pathway {report.path_id}, class {report.path_class}.",
+            f"{report.structural_descriptor}.",
+            (
+                f"{report.residue_count} residues, {report.node_count} nodes, "
+                f"{report.total_length:.2f} A."
             ),
+            f"Start: {report.start_endpoint.label}.",
+            f"End: {report.end_endpoint.label}.",
+        ]
+        if display_chains is not None:
+            atoms = tuple(atom for atom in atoms if atom.chain_id in display_chains)
+            if not atoms:
+                continue
+            remarks.append(
+                f"Coordinates limited to chains {', '.join(display_chains)}."
+            )
+        written.append(
+            write_atom_subset_pdb(
+                prefix.with_name(f"{prefix.name}_path{report.path_id:0{width}d}.pdb"),
+                atoms,
+                title=f"E-path pathway {report.path_id}",
+                remarks=remarks,
+            )
         )
-        for report in path_reports
-    )
+
+    return tuple(written)
 
 
 def write_atom_subset_pdb(

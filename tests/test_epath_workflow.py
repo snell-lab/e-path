@@ -143,15 +143,6 @@ def test_workflow_validation() -> None:
                 clustering=EpathClusterWorkflowOptions(minimum_cluster_size=0)
             ),
         )
-    with pytest.raises(EpathWorkflowError, match="Unknown selection method"):
-        analyze_epath_atoms(
-            _grid_atoms(),
-            options=EpathWorkflowOptions(
-                selection=EpathSelectionWorkflowOptions(
-                    method="median"  # type: ignore[arg-type]
-                )
-            ),
-        )
 
 
 def test_workflow_from_a_bdamage_result(synthetic_pdb: Path) -> None:
@@ -165,9 +156,7 @@ def test_workflow_from_a_bdamage_result(synthetic_pdb: Path) -> None:
         return callback()
 
     options = EpathWorkflowOptions(
-        selection=EpathSelectionWorkflowOptions(
-            method="percentile_per_chain", percentile=30.0
-        ),
+        selection=EpathSelectionWorkflowOptions(percentile=30.0),
         clustering=EpathClusterWorkflowOptions(minimum_cluster_size=3),
         paths=PathAnalysisOptions(cofactor_proximity_distance=6.0),
     )
@@ -178,8 +167,7 @@ def test_workflow_from_a_bdamage_result(synthetic_pdb: Path) -> None:
     assert stages == EPATH_STAGES
     assert files.combined_csv is None
     assert result.analyzed_chains == ("A", "B")
-    assert result.selection_result.method == "percentile_per_chain"
-    assert [t.chain_id for t in result.selection_result.chain_thresholds] == ["A", "B"]
+    assert result.selection_result.method == "percentile"
     assert result.bdamage_workflow_result is bdamage
     assert result.crystal is bdamage.crystal
     assert result.cleaned_atoms is not None and len(result.cleaned_atoms) == 84

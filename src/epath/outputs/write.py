@@ -73,6 +73,7 @@ def write_epath_outputs(
                 for scored_atom in selection_result.scored_atoms
             },
             bdamage_threshold=selection_result.bdamage_threshold,
+            display_chains=options.display_chains,
         )
         selected_pdb = structure_files.selected_pdb
         model_pdb = structure_files.model_pdb
@@ -97,7 +98,12 @@ def write_epath_outputs(
     )
 
     if summary_report is not None:
-        write_summary_txt(summary_report, result, output_files=output_files)
+        write_summary_txt(
+            summary_report,
+            result,
+            output_files=output_files,
+            display_chains=options.display_chains,
+        )
 
     return output_files
 

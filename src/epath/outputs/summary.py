@@ -30,6 +30,7 @@ def write_summary_txt(
     result: EpathWorkflowResult,
     *,
     output_files: EpathWorkflowOutputFiles,
+    display_chains: Sequence[str] | None = None,
 ) -> Path:
     """Write a persistent human-readable E-path analysis summary."""
     selection_result = result.selection_result
@@ -43,6 +44,14 @@ def write_summary_txt(
             f"{structure_path if structure_path is not None else 'not provided'}"
         ),
         f"Chains analyzed: {_chain_text(result.analyzed_chains)}",
+        (
+            "Chains in coordinate files: "
+            + (
+                "all"
+                if display_chains is None
+                else f"{_chain_text(display_chains)} (display filter only)"
+            )
+        ),
         "",
         "Selection",
         "---------",
@@ -102,18 +111,6 @@ def write_summary_txt(
         )
     else:
         lines.append("No atoms selected.")
-
-    if selection_result.chain_thresholds:
-        lines.extend(
-            ("", "Per-chain percentile thresholds", "-------------------------------")
-        )
-        for threshold in selection_result.chain_thresholds:
-            lines.append(
-                f"Chain {threshold.chain_id}: atoms={threshold.atom_count}, "
-                f"selected={threshold.selected_count}, "
-                f"BDamage threshold={_number(threshold.bdamage_threshold)}, "
-                f"Z threshold={_number(threshold.z_threshold)}"
-            )
 
     lines.extend(("", "BDamage calculation", "-------------------"))
     lines.extend(bdamage_parameter_lines(result.bdamage_workflow_result))

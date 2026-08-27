@@ -20,7 +20,6 @@ from epath.workflow import (
     EpathClusterWorkflowOptions,
     EpathSelectionWorkflowOptions,
     EpathWorkflowOptions,
-    SelectionMethod,
 )
 from rabdam.workflow import BDamageWorkflowOptions
 from xtal.rcsb import DEFAULT_RCSB_DOWNLOAD_DIR
@@ -123,6 +122,17 @@ def _add_output_arguments(group: Any) -> None:
         action="store_true",
         help="Do not write the cluster, step, and run CSVs or the summary report.",
     )
+    group.add_argument(
+        "--chains",
+        metavar="IDS",
+        type=chain_list,
+        default=None,
+        help=(
+            "Comma-separated chain identifiers to keep in the PDB outputs, for "
+            "example A,B. The analysis itself always covers every chain; this "
+            "only trims the coordinate files. Default: all chains"
+        ),
+    )
 
 
 def _add_epath_selection_arguments(
@@ -139,11 +149,6 @@ def _add_epath_selection_arguments(
             "Lowest BDamage percentile to select for E-path analysis. "
             f"Default: {defaults.selection.percentile}"
         ),
-    )
-    group.add_argument(
-        "--per-chain-percentile",
-        action="store_true",
-        help="Apply the percentile cutoff separately within each chain.",
     )
 
 
@@ -300,6 +305,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return args
 
 
+def chain_list(value: str) -> tuple[str, ...]:
+    """Return a tuple of unique chain identifiers from a comma-separated list."""
+    chains = tuple(dict.fromkeys(item.strip() for item in value.split(",")))
+    if not chains or any(not chain for chain in chains):
+        raise argparse.ArgumentTypeError(
+            f"expected comma-separated chain identifiers, got {value!r}"
+        )
+    return chains
+
+
 def positive_float(value: str) -> float:
     """Return a positive finite float for argparse."""
     parsed = _float_arg(value)
@@ -386,13 +401,8 @@ def epath_workflow_options_from_args(
     output_prefix: Path | None,
 ) -> EpathWorkflowOptions:
     """Build full E-path workflow options from parsed command-line arguments."""
-    selection_method: SelectionMethod = (
-        "percentile_per_chain" if args.per_chain_percentile else "percentile"
-    )
-
     return EpathWorkflowOptions(
         selection=EpathSelectionWorkflowOptions(
-            method=selection_method,
             percentile=args.percentile,
         ),
         clustering=EpathClusterWorkflowOptions(
@@ -408,6 +418,7 @@ def epath_workflow_options_from_args(
             write_step_csv=not args.no_reports,
             write_run_csv=not args.no_reports,
             write_summary_report=not args.no_reports,
+            display_chains=args.chains,
         ),
     )
 
