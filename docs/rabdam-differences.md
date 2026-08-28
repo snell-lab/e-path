@@ -38,7 +38,7 @@ dataframe restart modes, interactive overwrite prompts, or restartable
 dataframe outputs, and it does not produce RABDAM's HTML report, its
 per-structure BDamage plots, or its BDamage-coloured coordinate files. E-path
 writes its own equivalents instead: the `*_zfalloff.png` plot and the
-`*_model.pdb` file with BDamage in the B-factor column.
+`*_model.cif` file with BDamage in the B-factor column.
 
 E-path also does not expose RABDAM's atom-selection controls. RABDAM allows
 HETATM, nucleic-acid, and per-atom or per-component selection overrides;

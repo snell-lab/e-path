@@ -358,13 +358,13 @@ def output_file_entries(
         ("Cluster CSV", output_files.cluster_csv),
         ("Step CSV", output_files.step_csv),
         ("Run CSV", output_files.run_csv),
-        ("Selected-atoms PDB", output_files.selected_pdb),
-        ("Cleaned model PDB", output_files.model_pdb),
+        ("Selected-atoms mmCIF", output_files.selected_cif),
+        ("Cleaned model mmCIF", output_files.model_cif),
         ("Z-score falloff plot", output_files.z_score_falloff),
         ("Summary report", output_files.summary_report),
         *(
-            (f"Pathway PDB {index}", path)
-            for index, path in enumerate(output_files.path_pdbs, start=1)
+            (f"Pathway mmCIF {index}", path)
+            for index, path in enumerate(output_files.path_cifs, start=1)
         ),
     )
     return tuple((label, path) for label, path in entries if path is not None)

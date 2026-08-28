@@ -72,11 +72,11 @@ which is deterministic but is not a walk from one end of a path to the other.
 
 ## Pathway Coordinate Files
 
-`*_selected.pdb` holds every selected atom, including those in components too
+`*_selected.cif` holds every selected atom, including those in components too
 small to be reported as pathways. Alongside it, one file per reported pathway
-is written as `*_path01.pdb`, `*_path02.pdb`, and so on, each holding only that
+is written as `*_path01.cif`, `*_path02.cif`, and so on, each holding only that
 pathway's atoms, with its class, descriptor, size, and endpoints recorded in
-`REMARK` lines.
+an `_epath_remark` loop and `_epath.path_id` / `_epath.path_class` values.
 
 Both are sparse subsets, so residues that are not sequential in the source
 chain are separated by `TER` records. Without them, viewers such as ChimeraX
@@ -88,7 +88,7 @@ cutoff selected. The per-pathway files let a viewer load and colour each
 pathway separately, which is what colouring by class requires. Keeping them
 separate avoids encoding a pathway label into the occupancy or B-factor column,
 both of which already carry real values. Path numbers are zero padded so the
-files sort in path order, and they are suppressed by `--no-pdb` along with the
+files sort in path order, and they are suppressed by `--no-cif` along with the
 other coordinate outputs.
 
 ## Classification

@@ -15,13 +15,18 @@ The summaries report the mean and standard deviation of BDamage for the whole
 model, which are the values the Z-scores are derived from, and again for the
 selected atoms alone.
 
-`*_model.pdb` holds every atom that survived cleaning, so solvent, ions,
+`*_model.cif` holds every atom that survived cleaning, so solvent, ions,
 ligands, and cofactors are retained for inspection alongside the E-path results
 even though they are never scored. Scored atoms carry their BDamage value in
-the B-factor column and unscored atoms carry `0.00`, so colouring by B-factor
-shows the BDamage landscape without the excluded atoms distorting the scale.
-The selected atoms are those with a B-factor above zero and at or below the
-reported BDamage threshold, which the file records in a `REMARK 250` line.
+`_atom_site.B_iso_or_equiv` and unscored atoms carry `0.00`, so colouring by
+B-factor shows the BDamage landscape without the excluded atoms distorting the
+scale. The selected atoms are those with a B-factor above zero and at or below
+the reported BDamage threshold, which the file records as
+`_epath.bdamage_threshold`.
+
+Every coordinate file is mmCIF. Run notes are written as an `_epath_remark`
+loop and machine-readable values (atom counts, the threshold, the pathway
+number and class) as an `_epath` category; viewers ignore both.
 
 Both summaries record the BDamage calculation parameters actually used, so a
 run made with non-default values is identifiable from its output alone. The

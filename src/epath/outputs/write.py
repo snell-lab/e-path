@@ -59,9 +59,9 @@ def write_epath_outputs(
         else None
     )
 
-    selected_pdb: Path | None = None
-    model_pdb: Path | None = None
-    path_pdbs: tuple[Path, ...] = ()
+    selected_cif: Path | None = None
+    model_cif: Path | None = None
+    path_cifs: tuple[Path, ...] = ()
     if options.write_structure_files:
         structure_files = write_structure_outputs(
             prefix,
@@ -75,9 +75,9 @@ def write_epath_outputs(
             bdamage_threshold=selection_result.bdamage_threshold,
             display_chains=options.display_chains,
         )
-        selected_pdb = structure_files.selected_pdb
-        model_pdb = structure_files.model_pdb
-        path_pdbs = structure_files.path_pdbs
+        selected_cif = structure_files.selected_cif
+        model_cif = structure_files.model_cif
+        path_cifs = structure_files.path_cifs
 
     z_score_falloff = (
         plot_z_falloff(prefix, selection_result) if options.write_z_score_plot else None
@@ -90,9 +90,9 @@ def write_epath_outputs(
         cluster_csv=cluster_csv,
         step_csv=step_csv,
         run_csv=run_csv,
-        selected_pdb=selected_pdb,
-        model_pdb=model_pdb,
-        path_pdbs=path_pdbs,
+        selected_cif=selected_cif,
+        model_cif=model_cif,
+        path_cifs=path_cifs,
         z_score_falloff=z_score_falloff,
         summary_report=summary_report,
     )

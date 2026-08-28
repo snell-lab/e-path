@@ -61,7 +61,7 @@ def test_defaults_mirror_the_workflow_options() -> None:
     assert args.minimum_window_size == 11 and args.translation_range == 1
     assert args.output_prefix is None and args.output_dir == "output"
     assert not (
-        args.no_csv or args.no_pdb or args.no_plot or args.no_reports or args.quiet
+        args.no_csv or args.no_cif or args.no_plot or args.no_reports or args.quiet
     )
 
     options = epath_workflow_options_from_args(
@@ -185,12 +185,12 @@ def test_single_run_writes_every_output(synthetic_pdb: Path, tmp_path: Path) -> 
     assert written == [
         "run_clusters.csv",
         "run_epath.csv",
-        "run_model.pdb",
-        "run_path01.pdb",
-        "run_path02.pdb",
-        "run_path03.pdb",
+        "run_model.cif",
+        "run_path01.cif",
+        "run_path02.cif",
+        "run_path03.cif",
         "run_run.csv",
-        "run_selected.pdb",
+        "run_selected.cif",
         "run_steps.csv",
         "run_summary.txt",
         "run_zfalloff.png",
@@ -212,7 +212,7 @@ def test_output_groups_can_be_disabled_and_quiet_silences_progress(
             str(prefix),
             "-q",
             "--no-plot",
-            "--no-pdb",
+            "--no-cif",
             "--no-reports",
         ]
     )
@@ -227,7 +227,7 @@ def test_output_groups_can_be_disabled_and_quiet_silences_progress(
             str(tmp_path / "none" / "run"),
             "-q",
             "--no-plot",
-            "--no-pdb",
+            "--no-cif",
             "--no-reports",
             "--no-csv",
         ]

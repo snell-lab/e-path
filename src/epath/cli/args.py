@@ -105,11 +105,11 @@ def _add_output_arguments(group: Any) -> None:
         help="Do not write the combined E-path CSV output.",
     )
     group.add_argument(
-        "--no-pdb",
+        "--no-cif",
         action="store_true",
         help=(
             "Do not write the coordinate outputs: the selected-atom, cleaned "
-            "model, and per-pathway PDB files."
+            "model, and per-pathway mmCIF files."
         ),
     )
     group.add_argument(
@@ -128,7 +128,7 @@ def _add_output_arguments(group: Any) -> None:
         type=chain_list,
         default=None,
         help=(
-            "Comma-separated chain identifiers to keep in the PDB outputs, for "
+            "Comma-separated chain identifiers to keep in the mmCIF outputs, for "
             "example A,B. The analysis itself always covers every chain; this "
             "only trims the coordinate files. Default: all chains"
         ),
@@ -412,7 +412,7 @@ def epath_workflow_options_from_args(
         output=EpathOutputWorkflowOptions(
             output_prefix=output_prefix,
             write_combined_csv=not args.no_csv,
-            write_structure_files=not args.no_pdb,
+            write_structure_files=not args.no_cif,
             write_z_score_plot=not args.no_plot,
             write_cluster_csv=not args.no_reports,
             write_step_csv=not args.no_reports,

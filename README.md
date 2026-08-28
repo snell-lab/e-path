@@ -104,10 +104,13 @@ PDB ID or input filename stem as the output prefix. A normal run writes:
 - `*_steps.csv`: one row per step of every reported pathway.
 - `*_run.csv`: a single row of run-level results, described in
   [docs/comparing-models.md](docs/comparing-models.md).
-- `*_selected.pdb`: selected E-path atoms.
-- `*_path01.pdb`, `*_path02.pdb`, ...: one file per reported pathway.
-- `*_model.pdb`: the complete cleaned model with BDamage in the B-factor
+- `*_selected.cif`: selected E-path atoms.
+- `*_path01.cif`, `*_path02.cif`, ...: one file per reported pathway.
+- `*_model.cif`: the complete cleaned model with BDamage in the B-factor
   column.
+
+The coordinate files are mmCIF, so chain identifiers, atom counts, and
+residue numbers are written exactly as read, without PDB column limits.
 - `*_zfalloff.png`: rank-ordered BDamage Z-score falloff.
 - `*_summary.txt`: persistent human-readable analysis summary.
 
@@ -118,8 +121,8 @@ overwriting the earlier results. A batch run additionally writes
 `epath_runs.csv` in the output directory, with one row per structure.
 `--output-dir` chooses another output directory and `--output-prefix` bypasses
 the per-run directory and sets the file prefix directly for a single structure; `--no-csv`,
-`--no-pdb`, `--no-plot`, and `--no-reports` disable the corresponding output
-groups. `--chains A,B` keeps only those chains in the PDB files; the analysis
+`--no-cif`, `--no-plot`, and `--no-reports` disable the corresponding output
+groups. `--chains A,B` keeps only those chains in the coordinate files; the analysis
 itself always runs over every chain, so the CSVs and summary are unchanged. How to read each file is described in [docs/outputs.md](docs/outputs.md).
 
 ## Tests

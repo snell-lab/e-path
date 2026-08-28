@@ -38,7 +38,7 @@ analysis to a subset of chains would change both the BDamage Z-score
 distribution the percentile is taken from and the cross-chain connectivity that
 produces interface clusters, so no analysis-level chain restriction is
 provided. `--chains A,B` restricts only the coordinate outputs (the selected
-atom, cleaned model, and per-pathway PDB files) to the named chains, after the
+atom, cleaned model, and per-pathway mmCIF files) to the named chains, after the
 analysis has finished, so figures can focus on one chain while every result
 still reflects the complete model. A pathway with no atoms in the kept chains
-gets no PDB file, and the CSVs and summary always describe every chain.
+gets no coordinate file, and the CSVs and summary always describe every chain.

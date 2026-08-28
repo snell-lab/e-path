@@ -13,9 +13,9 @@ from epath.outputs.files import EpathOutputWorkflowOptions, EpathWorkflowOutputF
 from epath.outputs.plots import write_z_score_falloff
 from epath.outputs.structures import (
     EpathStructureOutputError,
-    write_atom_subset_pdb,
-    write_model_pdb,
-    write_path_subset_pdbs,
+    write_atom_subset_cif,
+    write_model_cif,
+    write_path_subset_cifs,
 )
 from epath.outputs.summary import output_file_entries, write_summary_txt
 from epath.outputs.tables import (
@@ -137,7 +137,7 @@ def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathWorkflowResult) 
     assert runs[0]["clusters_reported"] == str(len(result.path_reports))
 
 
-def test_atom_subset_pdb_round_trips_through_gemmi(tmp_path: Path) -> None:
+def test_atom_subset_cif_round_trips_through_gemmi(tmp_path: Path) -> None:
     atoms = (
         make_scored_atom(
             chain_id="A",
@@ -162,13 +162,22 @@ def test_atom_subset_pdb_round_trips_through_gemmi(tmp_path: Path) -> None:
             bdamage=1.5,
         ),
     )
-    path = write_atom_subset_pdb(
-        tmp_path / "subset.pdb", atoms, remarks=("Custom remark.",)
+    path = write_atom_subset_cif(
+        tmp_path / "subset.cif", atoms, remarks=("Custom remark.",)
     )
-    text = path.read_text()
-    assert text.startswith("TITLE     E-path atom subset\n")
-    assert "REMARK 250 Custom remark.\n" in text
-    assert all(len(line) <= 80 for line in text.splitlines())
+    block = gemmi.cif.read_file(str(path)).sole_block()
+    assert block.name == "subset"
+    assert gemmi.cif.as_string(block.find_value("_struct.title")) == (
+        "E-path atom subset"
+    )
+    remarks = [
+        gemmi.cif.as_string(r[1]) for r in block.find("_epath_remark.", ["id", "text"])
+    ]
+    assert remarks == [
+        "E-path coordinate subset.",
+        "B_iso_or_equiv stores BDamage.",
+        "Custom remark.",
+    ]
 
     structure = gemmi.read_structure(str(path))
     model = structure[0]
@@ -177,7 +186,7 @@ def test_atom_subset_pdb_round_trips_through_gemmi(tmp_path: Path) -> None:
     atom_a = residue_a[0]
     assert atom_a.name == "CA" and atom_a.serial == 1
     assert (atom_a.pos.x, atom_a.pos.y, atom_a.pos.z) == approx((1.234, -5.678, 90.123))
-    assert atom_a.occ == approx(0.5) and atom_a.b_iso == approx(0.43)
+    assert atom_a.occ == approx(0.5) and atom_a.b_iso == approx(0.4321)
     residue_b = model["B"][0]
     assert (
         residue_b.het_flag == "H"
@@ -186,52 +195,32 @@ def test_atom_subset_pdb_round_trips_through_gemmi(tmp_path: Path) -> None:
     )
     assert residue_b[0].serial == 2
 
-    with pytest.raises(EpathStructureOutputError, match="Residue number"):
-        write_atom_subset_pdb(
-            tmp_path / "bad.pdb", (make_epath_atom(residue_number=10000),)
-        )
     with pytest.raises(EpathStructureOutputError, match="finite"):
-        write_atom_subset_pdb(
-            tmp_path / "bad.pdb", (make_epath_atom(bdamage=float("nan")),)
+        write_atom_subset_cif(
+            tmp_path / "bad.cif", (make_epath_atom(bdamage=float("nan")),)
         )
 
 
-def test_atom_subset_pdb_separates_non_sequential_residues_with_ter(
+def test_atom_subset_cif_keeps_fields_that_do_not_fit_pdb_columns(
     tmp_path: Path,
 ) -> None:
     atoms = (
-        make_epath_atom(chain_id="A", residue_number=10, atom_name="N"),
-        make_epath_atom(chain_id="A", residue_number=10, atom_name="CA"),
-        make_epath_atom(chain_id="A", residue_number=11, atom_name="CA"),
-        make_epath_atom(chain_id="A", residue_number=47, atom_name="CA"),
-        make_epath_atom(chain_id="B", residue_number=48, atom_name="CA"),
+        make_epath_atom(chain_id="AB", residue_number=12345, atom_name="CA"),
+        make_epath_atom(chain_id="AB", residue_number=12346, atom_name="CA"),
+        make_epath_atom(chain_id="C", residue_number=-1200, atom_name="CA"),
     )
-    path = write_atom_subset_pdb(tmp_path / "subset.pdb", atoms)
-    records = [line.split()[0] for line in path.read_text().splitlines()]
-    assert records == [
-        "TITLE",
-        "REMARK",
-        "REMARK",
-        "ATOM",
-        "ATOM",
-        "ATOM",
-        "TER",
-        "ATOM",
-        "TER",
-        "ATOM",
-        "TER",
-        "END",
-    ]
+    path = write_atom_subset_cif(tmp_path / "wide.cif", atoms)
+    model = gemmi.read_structure(str(path))[0]
+    assert [chain.name for chain in model] == ["AB", "C"]
+    assert [res.seqid.num for res in model["AB"]] == [12345, 12346]
+    assert model["C"][0].seqid.num == -1200
 
-    structure = gemmi.read_structure(str(path))
-    assert len(structure[0]["A"]) == 3
-    assert len(structure[0]["B"]) == 1
-
-    empty = write_atom_subset_pdb(tmp_path / "empty.pdb", ())
-    assert "TER" not in empty.read_text()
+    empty = write_atom_subset_cif(tmp_path / "empty.cif", ())
+    block = gemmi.cif.read_file(str(empty)).sole_block()
+    assert len(block.find("_atom_site.", ["id"])) == 0
 
 
-def test_model_pdb_marks_unscored_atoms_with_zero_bdamage(
+def test_model_cif_marks_unscored_atoms_with_zero_bdamage(
     tmp_path: Path, result: EpathWorkflowResult
 ) -> None:
     cleaned = result.cleaned_atoms
@@ -241,45 +230,50 @@ def test_model_pdb_marks_unscored_atoms_with_zero_bdamage(
         for a in result.selection_result.scored_atoms
     }
 
-    path = write_model_pdb(
-        tmp_path / "model.pdb",
+    path = write_model_cif(
+        tmp_path / "model.cif",
         cleaned,
         bdamage_by_source_index=scores,
         bdamage_threshold=0.7734,
     )
-    lines = path.read_text().splitlines()
+    block = gemmi.cif.read_file(str(path)).sole_block()
+    assert block.find_value("_epath.atom_count") == str(len(cleaned))
+    assert block.find_value("_epath.scored_atom_count") == str(len(scores))
+    assert block.find_value("_epath.bdamage_threshold") == "0.7734"
+    remarks = [
+        gemmi.cif.as_string(r[1]) for r in block.find("_epath_remark.", ["id", "text"])
+    ]
+    assert f"{len(scores)} of {len(cleaned)} atoms were scored." in remarks
+    assert "Selected atoms satisfy 0.00 < B_iso_or_equiv <= 0.7734." in remarks
 
-    assert f"REMARK 250 {len(scores)} of {len(cleaned)} atoms were scored." in lines
-    assert "REMARK 250 Selected atoms satisfy 0.00 < B-factor <= 0.7734." in lines
-    atom_lines = [line for line in lines if line.startswith(("ATOM", "HETATM"))]
-    assert len(atom_lines) == len(cleaned) == 84
-    b_factors = [float(line[60:66]) for line in atom_lines]
-    unscored = [line for line, b in zip(atom_lines, b_factors, strict=True) if b == 0.0]
-    assert len(unscored) == len(cleaned) - len(scores) == 7
-    assert {line[17:20] for line in unscored} == {"FMN", "GOL", "HOH"}
-    assert [int(line[6:11]) for line in atom_lines] == list(range(1, 85))
-    assert all(
-        line.startswith("HETATM")
-        for line in atom_lines
-        if line[17:20] in {"MSE", "FMN", "HOH"}
+    atom_sites = block.find(
+        "_atom_site.", ["group_PDB", "id", "label_comp_id", "B_iso_or_equiv"]
     )
+    rows = [tuple(row) for row in atom_sites]
+    assert len(rows) == len(cleaned) == 84
+    unscored = [row for row in rows if float(row[3]) == 0.0]
+    assert len(unscored) == len(cleaned) - len(scores) == 7
+    assert {row[2] for row in unscored} == {"FMN", "GOL", "HOH"}
+    assert [int(row[1]) for row in rows] == list(range(1, 85))
+    assert all(row[0] == "HETATM" for row in rows if row[2] in {"MSE", "FMN", "HOH"})
 
 
-def test_path_subset_pdbs_are_zero_padded(
+def test_path_subset_cifs_are_zero_padded(
     tmp_path: Path, result: EpathWorkflowResult
 ) -> None:
-    paths = write_path_subset_pdbs(tmp_path / "run", result.path_reports)
+    paths = write_path_subset_cifs(tmp_path / "run", result.path_reports)
 
     assert [p.name for p in paths] == [
-        f"run_path{r.path_id:02d}.pdb" for r in result.path_reports
+        f"run_path{r.path_id:02d}.cif" for r in result.path_reports
     ]
-    text = paths[0].read_text()
-    assert f"REMARK 250 Pathway 1, class {result.path_reports[0].path_class}." in text
-    assert (
-        text.count("\nATOM") + text.count("\nHETATM")
-        == result.path_reports[0].node_count
-    )
-    assert write_path_subset_pdbs(tmp_path / "run", ()) == ()
+    block = gemmi.cif.read_file(str(paths[0])).sole_block()
+    assert block.find_value("_epath.path_id") == "1"
+    remarks = [
+        gemmi.cif.as_string(r[1]) for r in block.find("_epath_remark.", ["id", "text"])
+    ]
+    assert f"Pathway 1, class {result.path_reports[0].path_class}." in remarks
+    assert len(block.find("_atom_site.", ["id"])) == result.path_reports[0].node_count
+    assert write_path_subset_cifs(tmp_path / "run", ()) == ()
 
 
 def test_z_score_plot_is_written_as_png(
@@ -308,7 +302,7 @@ def test_summary_report_lists_results_and_files(
     tmp_path: Path, result: EpathWorkflowResult
 ) -> None:
     files = EpathWorkflowOutputFiles(
-        combined_csv=tmp_path / "x_epath.csv", path_pdbs=(tmp_path / "x_path01.pdb",)
+        combined_csv=tmp_path / "x_epath.csv", path_cifs=(tmp_path / "x_path01.cif",)
     )
     path = write_summary_txt(tmp_path / "summary.txt", result, output_files=files)
     text = path.read_text()
@@ -320,11 +314,11 @@ def test_summary_report_lists_results_and_files(
     assert "Cofactor sites: FMN (Fmn201 chain A)" in text
     assert f"Path count: {len(result.path_reports)}" in text
     assert "Path 1 [" in text and result.path_reports[0].residue_path in text
-    assert "Combined atom CSV: " in text and "Pathway PDB 1: " in text
+    assert "Combined atom CSV: " in text and "Pathway mmCIF 1: " in text
     assert "Cluster CSV" not in text
     assert output_file_entries(files) == (
         ("Combined atom CSV", files.combined_csv),
-        ("Pathway PDB 1", files.path_pdbs[0]),
+        ("Pathway mmCIF 1", files.path_cifs[0]),
     )
 
 
@@ -345,7 +339,7 @@ def test_write_epath_outputs_honours_every_toggle(
         everything.summary_report is not None
         and "Files written" in everything.summary_report.read_text()
     )
-    assert len(everything.path_pdbs) == len(result.path_reports)
+    assert len(everything.path_cifs) == len(result.path_reports)
 
     minimal = write_epath_outputs(
         result,
@@ -381,24 +375,21 @@ def test_display_chains_only_trim_the_coordinate_files(
     )
 
     def chains_in(path: Path) -> set[str]:
-        return {
-            line[21]
-            for line in path.read_text().splitlines()
-            if line.startswith(("ATOM", "HETATM"))
-        }
+        block = gemmi.cif.read_file(str(path)).sole_block()
+        return {row[0] for row in block.find("_atom_site.", ["auth_asym_id"])}
 
     assert (
-        everything.selected_pdb is not None
-        and filtered.selected_pdb is not None
-        and filtered.model_pdb is not None
+        everything.selected_cif is not None
+        and filtered.selected_cif is not None
+        and filtered.model_cif is not None
     )
-    assert chains_in(everything.selected_pdb) == {"A", "B"}
-    assert chains_in(filtered.selected_pdb) == {"B"}
-    assert chains_in(filtered.model_pdb) == {"B"}
-    assert "Coordinates limited to chains B." in filtered.selected_pdb.read_text()
-    for path_pdb in filtered.path_pdbs:
-        assert chains_in(path_pdb) == {"B"}
-    assert len(filtered.path_pdbs) == sum(
+    assert chains_in(everything.selected_cif) == {"A", "B"}
+    assert chains_in(filtered.selected_cif) == {"B"}
+    assert chains_in(filtered.model_cif) == {"B"}
+    assert "Coordinates limited to chains B." in filtered.selected_cif.read_text()
+    for path_cif in filtered.path_cifs:
+        assert chains_in(path_cif) == {"B"}
+    assert len(filtered.path_cifs) == sum(
         any(atom.chain_id == "B" for atom in report.cluster.atoms)
         for report in result.path_reports
     )
