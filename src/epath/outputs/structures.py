@@ -376,8 +376,8 @@ def _write_mmcif(
     block = document.sole_block()
     block.set_pair("_struct.entry_id", gemmi.cif.quote(structure.name))
     block.set_pair("_struct.title", gemmi.cif.quote(title))
-    for key, value in values.items():
-        block.set_pair(f"_epath.{key}", value)
+    for name, value in values.items():
+        block.set_pair(f"_epath.{name}", value)
     loop = block.init_loop("_epath_remark.", ["id", "text"])
     for index, remark in enumerate(remarks, start=1):
         loop.add_row([str(index), gemmi.cif.quote(remark)])
