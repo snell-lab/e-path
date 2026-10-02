@@ -31,7 +31,7 @@ Z-score plot). Clone the repository, then install the libraries however you
 prefer — pip, your system package manager, conda — for example:
 
 ```bash
-git clone https://github.com/Aspartyl/e-path.git
+git clone https://github.com/snell-lab/e-path.git
 cd e-path
 python3 -m pip install -r requirements.txt
 ./epath --help
