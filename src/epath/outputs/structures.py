@@ -239,7 +239,7 @@ def write_path_subset_cifs(
     for report in path_reports:
         atoms = report.cluster.atoms
         remarks = [
-            f"Pathway {report.path_id}, class {report.path_class}.",
+            f"Pathway {report.path_id}.",
             f"{report.structural_descriptor}.",
             (
                 f"{report.residue_count} residues, {report.node_count} nodes, "
@@ -247,6 +247,7 @@ def write_path_subset_cifs(
             ),
             f"Start: {report.start_endpoint.label}.",
             f"End: {report.end_endpoint.label}.",
+            f"Nearest cofactor: {report.anchor_summary}.",
         ]
         if display_chains is not None:
             atoms = tuple(atom for atom in atoms if atom.chain_id in display_chains)
@@ -263,7 +264,9 @@ def write_path_subset_cifs(
                 remarks=remarks,
                 values={
                     "path_id": str(report.path_id),
-                    "path_class": str(report.path_class),
+                    "anchor_cofactor": (
+                        report.anchor.label if report.anchor is not None else "none"
+                    ),
                 },
             )
         )

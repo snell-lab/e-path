@@ -1,21 +1,14 @@
-"""Describe each E-path cluster as a classified pathway.
+"""Describe each E-path cluster as a pathway.
 
 This module turns the geometric clusters produced by connectivity analysis
 into the pathway description the E-path analysis reports: the residues and
 protected atoms along the path, the environments its two ends terminate in,
-and a class assigned from graph topology, residue chemistry, and cofactor
-context.
+the cofactor it comes nearest to, and its graph topology and residue
+chemistry.
 
-The three-tier framework is applied in the order the analysis describes it.
-Topology and composition are measured first, and the functional role is
-assigned from them conservatively: a path is only called conductive when it
-bridges cofactor environments along an elongated, redox-capable route, and a
-path with no cofactor anchor is only called a reservoir when its chemistry is
-distinctly redox-active rather than ordinary packing.
-
-The framework fixes these criteria but not the numeric thresholds that
-separate the classes, so the defaults here are stated explicitly and can be
-overridden per run.
+These are measurements. Whether a path conducts, modulates, or merely packs
+is a judgement that also draws on what is known about the protein, so no
+functional role is assigned here; that interpretation is left to the analyst.
 """
 
 from __future__ import annotations
@@ -44,9 +37,11 @@ from epath.analysis.endpoints import (
     DEFAULT_SURFACE_PERCENTILE,
     CofactorSite,
     EndpointContext,
+    PathAnchor,
     PathEndpoint,
     annotate_endpoint,
     build_endpoint_context,
+    find_path_anchor,
 )
 from epath.analysis.geometry import (
     maximum_pairwise_distance_pair,
@@ -65,37 +60,6 @@ from epath.analysis.topology import (
     analyze_topology,
 )
 from rabdam.structure.models import PreparedAtom
-
-PathClass = Literal["conductor", "modulator", "reservoir", "structural"]
-
-PATH_CLASS_ORDER: tuple[PathClass, ...] = (
-    "conductor",
-    "modulator",
-    "reservoir",
-    "structural",
-)
-
-PATH_CLASS_LABELS: dict[PathClass, str] = {
-    "conductor": "Cond.",
-    "modulator": "Modu.",
-    "reservoir": "Reser.",
-    "structural": "Struct.",
-}
-
-# A cofactor-anchored path needs this fraction of aromatic or sulfur residues
-# before it is credited as a conduction candidate. One redox-capable residue in
-# a short bridge between two cofactors clears it; a purely aliphatic or charged
-# bridge does not.
-DEFAULT_CONDUCTIVE_REDOX_FRACTION = 0.10
-
-# A path with no cofactor anchor needs stronger chemical evidence before it is
-# called a redox reservoir rather than ordinary structure, because nothing else
-# ties it to a redox centre.
-DEFAULT_RESERVOIR_REDOX_FRACTION = 0.20
-
-# Charged residues at this fraction dominate the electrostatics of a path, which
-# the analysis reads as tuning or gating rather than conduction.
-DEFAULT_MODULATORY_CHARGED_FRACTION = 0.30
 
 # The adjective describes what a path is mostly made of; the plain class name
 # is used when listing the classes it is merely enriched in.
@@ -126,7 +90,7 @@ _TOPOLOGY_NOUNS: dict[str, str] = {
 
 @dataclass(frozen=True, slots=True)
 class PathAnalysisOptions:
-    """Thresholds used to describe and classify E-path clusters."""
+    """Thresholds used to describe E-path clusters."""
 
     linear_ratio: float = DEFAULT_LINEAR_RATIO
     branched_node_fraction: float = DEFAULT_BRANCHED_NODE_FRACTION
@@ -134,9 +98,6 @@ class PathAnalysisOptions:
     cofactor_proximity_distance: float = DEFAULT_COFACTOR_PROXIMITY_ANGSTROM
     interface_distance: float = DEFAULT_INTERFACE_ANGSTROM
     surface_percentile: float = DEFAULT_SURFACE_PERCENTILE
-    conductive_redox_fraction: float = DEFAULT_CONDUCTIVE_REDOX_FRACTION
-    reservoir_redox_fraction: float = DEFAULT_RESERVOIR_REDOX_FRACTION
-    modulatory_charged_fraction: float = DEFAULT_MODULATORY_CHARGED_FRACTION
 
 
 StepKind = Literal["intra_residue", "peptide", "tertiary", "interchain"]
@@ -212,7 +173,7 @@ class PathResidue:
 
 @dataclass(frozen=True, slots=True)
 class PathReport:
-    """One E-path cluster described as a classified pathway."""
+    """One E-path cluster described as a pathway."""
 
     cluster: EpathCluster
     chains: tuple[str, ...]
@@ -220,11 +181,16 @@ class PathReport:
     residue_path: str
     start_endpoint: PathEndpoint
     end_endpoint: PathEndpoint
+    anchor: PathAnchor | None
     topology: PathTopology
     composition: ResidueComposition
     steps: tuple[PathStep, ...]
-    path_class: PathClass
     structural_descriptor: str
+
+    @property
+    def is_cofactor_anchored(self) -> bool:
+        """Return whether any atom of this path lies in a cofactor's environment."""
+        return self.anchor is not None
 
     @property
     def edges(self) -> EdgeProvenance:
@@ -259,9 +225,12 @@ class PathReport:
         return self.cluster.metrics.mst_total_length
 
     @property
-    def class_label(self) -> str:
-        """Return the short class label used in the E-path pathway table."""
-        return PATH_CLASS_LABELS[self.path_class]
+    def anchor_summary(self) -> str:
+        """Return the anchoring cofactor and its distance, or a note that there is none."""
+        if self.anchor is None:
+            return "no cofactor in range"
+
+        return f"{self.anchor.label} at {self.anchor.distance:.1f} A"
 
     @property
     def endpoint_summary(self) -> str:
@@ -271,7 +240,7 @@ class PathReport:
 
 @dataclass(frozen=True, slots=True)
 class PathAnalysisResult:
-    """Classified pathways for one model and the cofactors they were labelled against."""
+    """Described pathways for one model and the cofactors they were labelled against."""
 
     reports: tuple[PathReport, ...]
     cofactor_sites: tuple[CofactorSite, ...]
@@ -285,17 +254,17 @@ def analyze_paths(
     distance_cutoff: float = DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
     options: PathAnalysisOptions | None = None,
 ) -> PathAnalysisResult:
-    """Describe and classify every reported cluster as a pathway.
+    """Describe every reported cluster as a pathway.
 
     Args:
         clusters: Reported clusters, in the order they should be numbered.
         scored_atoms: Every atom that received a BDamage score, used for the
             model's background residue composition and packing distribution.
         cleaned_atoms: The complete cleaned model, which supplies the cofactor
-            sites the endpoints are labelled against.
+            sites the paths are anchored and their endpoints labelled against.
         distance_cutoff: The connectivity cutoff the clusters were built with,
             reused to decide which residues of a path are in contact.
-        options: Threshold overrides for topology, endpoints, and classes.
+        options: Threshold overrides for topology and endpoints.
 
     Returns:
         One report per cluster in cluster order, and the cofactor sites the
@@ -358,12 +327,6 @@ def _build_path_report(
     start_endpoint = annotate_endpoint(cluster.atoms[first_index].atom, context)
     end_endpoint = annotate_endpoint(cluster.atoms[second_index].atom, context)
     endpoints = (start_endpoint, end_endpoint)
-    path_class = _path_class(
-        composition=composition,
-        topology=topology,
-        endpoints=endpoints,
-        options=options,
-    )
 
     return PathReport(
         cluster=cluster,
@@ -372,10 +335,13 @@ def _build_path_report(
         residue_path=_format_residue_path(residues),
         start_endpoint=start_endpoint,
         end_endpoint=end_endpoint,
+        anchor=find_path_anchor(
+            [scored_atom.atom for scored_atom in cluster.atoms],
+            context,
+        ),
         topology=topology,
         composition=composition,
         steps=steps,
-        path_class=path_class,
         structural_descriptor=_structural_descriptor(
             composition=composition,
             topology=topology,
@@ -497,31 +463,6 @@ def _format_residue_path(residues: Sequence[PathResidue]) -> str:
         parts.append(f"{prefix}{residue.label} ({atom_names})")
 
     return " -> ".join(parts)
-
-
-def _path_class(
-    *,
-    composition: ResidueComposition,
-    topology: PathTopology,
-    endpoints: Sequence[PathEndpoint],
-    options: PathAnalysisOptions,
-) -> PathClass:
-    cofactor_anchored = any(endpoint.is_cofactor_anchored for endpoint in endpoints)
-
-    if cofactor_anchored:
-        if (
-            topology.topology == "linear"
-            and composition.redox_fraction >= options.conductive_redox_fraction
-            and composition.charged_fraction < options.modulatory_charged_fraction
-        ):
-            return "conductor"
-
-        return "modulator"
-
-    if composition.redox_fraction >= options.reservoir_redox_fraction:
-        return "reservoir"
-
-    return "structural"
 
 
 def _structural_descriptor(

@@ -1,4 +1,4 @@
-"""Residue chemistry, topology, endpoints, and pathway classification."""
+"""Residue chemistry, topology, endpoints, cofactor anchors, and pathway description."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from epath.analysis.endpoints import (
     build_endpoint_context,
     cofactor_site_summary,
 )
-from epath.analysis.pathways import PathAnalysisOptions, PathReport, analyze_paths
+from epath.analysis.pathways import PathReport, analyze_paths
 from epath.analysis.residues import (
     ResidueClass,
     analyze_composition,
@@ -318,10 +318,11 @@ def _path(
     residue_names: Sequence[str],
     *,
     cofactor_at_start: bool,
+    cofactor_position: tuple[float, float, float] = (-3.0, 0.0, 0.0),
     spacing: float = 3.5,
     extra_atoms: Sequence[tuple[float, float, float]] = (),
 ) -> PathReport:
-    """A straight path with one residue per atom, optionally anchored on FMN."""
+    """A straight path with one residue per atom, optionally with an FMN beside it."""
     count = len(residue_names)
     coordinates = [(spacing * i, 0.0, 0.0) for i in range(count)] + list(extra_atoms)
     scored = scored_atoms_from_coordinates(
@@ -344,7 +345,9 @@ def _path(
                 atom_name="N1",
                 element="N",
                 is_hetatm=True,
-                x=-3.0,
+                x=cofactor_position[0],
+                y=cofactor_position[1],
+                z=cofactor_position[2],
             )
         )
     clusters = cluster_selected_atoms(scored, distance_cutoff=4.0)
@@ -354,47 +357,40 @@ def _path(
     ).reports[0]
 
 
-def test_conductor_modulator_reservoir_and_structural_classes() -> None:
-    conductor = _path(
-        ["TRP", "ALA", "LEU", "TYR", "VAL", "GLY"], cofactor_at_start=True
-    )
-    assert conductor.path_class == "conductor" and conductor.class_label == "Cond."
-    assert conductor.topology.topology == "linear"
+def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
+    at_start = _path(["TRP", "ALA", "LEU", "TYR", "VAL", "GLY"], cofactor_at_start=True)
+    assert at_start.topology.topology == "linear"
     assert (
-        conductor.start_endpoint.kind == "cofactor"
-        and conductor.end_endpoint.kind == "surface"
+        at_start.start_endpoint.kind == "cofactor"
+        and at_start.end_endpoint.kind == "surface"
     )
-    assert conductor.endpoint_summary == "FMN -> Surface region"
+    assert at_start.endpoint_summary == "FMN -> Surface region"
+    assert at_start.anchor is not None and at_start.is_cofactor_anchored
+    assert (at_start.anchor.label, at_start.anchor.residue) == ("FMN", "Trp1")
+    assert at_start.anchor.distance == approx(3.0)
+    assert at_start.anchor_summary == "FMN at 3.0 A"
 
-    charged = _path(["TRP", "ASP", "GLU", "LYS", "ARG", "GLY"], cofactor_at_start=True)
-    assert charged.path_class == "modulator"
+    # A cofactor beside the middle of a long path is out of range of both ends,
+    # so neither endpoint is labelled with it, but the path is still anchored.
+    names = ["ALA", "LEU", "VAL", "GLY", "TRP", "ILE", "PRO", "ALA"]
+    midway = _path(names, cofactor_at_start=True, cofactor_position=(12.25, 3.0, 0.0))
+    assert not midway.start_endpoint.is_cofactor_anchored
+    assert not midway.end_endpoint.is_cofactor_anchored
+    assert midway.anchor is not None and midway.anchor.label == "FMN"
+    assert midway.anchor.distance == approx(np.hypot(1.75, 3.0))
+    assert midway.anchor.residue in {"Gly4", "Trp5"}
 
-    aliphatic = _path(
-        ["ALA", "LEU", "VAL", "GLY", "ILE", "PRO"], cofactor_at_start=True
-    )
-    assert aliphatic.path_class == "modulator"
+    # Just beyond the proximity range of every atom.
+    distant = _path(names, cofactor_at_start=True, cofactor_position=(12.25, 8.5, 0.0))
+    assert distant.anchor is None and not distant.is_cofactor_anchored
 
-    reservoir = _path(
-        ["TRP", "TYR", "ALA", "LEU", "VAL", "GLY"], cofactor_at_start=False
-    )
-    assert (
-        reservoir.path_class == "reservoir"
-        and reservoir.start_endpoint.kind == "surface"
-    )
-
-    structural = _path(
+    unanchored = _path(
         ["ALA", "LEU", "VAL", "GLY", "ILE", "PRO"], cofactor_at_start=False
     )
-    assert structural.path_class == "structural"
-    assert structural.structural_descriptor == "Hydrophobic corridor"
-
-    # Thresholds are options: a stricter redox requirement demotes the reservoir.
-    strict = analyze_paths(
-        [reservoir.cluster],
-        scored_atoms=[a.atom for a in reservoir.cluster.atoms],
-        options=PathAnalysisOptions(reservoir_redox_fraction=0.5),
-    ).reports[0]
-    assert strict.path_class == "structural"
+    assert unanchored.anchor is None
+    assert unanchored.anchor_summary == "no cofactor in range"
+    assert unanchored.start_endpoint.kind == "surface"
+    assert unanchored.structural_descriptor == "Hydrophobic corridor"
 
 
 def test_residue_path_listing_and_step_provenance() -> None:

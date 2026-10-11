@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from epath.analysis.clustering import ComponentStatistics
 from epath.analysis.endpoints import CofactorSite, cofactor_site_summary
-from epath.analysis.pathways import PATH_CLASS_ORDER, PathReport
+from epath.analysis.pathways import PathReport
 from epath.analysis.residues import RESIDUE_CLASS_ORDER
 from epath.outputs.files import EpathWorkflowOutputFiles
 from rabdam.bnet.workflow import BnetWorkflowResult
@@ -155,7 +155,7 @@ def _pathway_summary_lines(
         f"Minimum reported cluster size: {minimum_cluster_size} atoms",
         f"Connected components found: {statistics.total_count}",
         f"Cofactor sites: {cofactor_site_summary(cofactor_sites)}",
-        f"Path count: {len(path_reports)}{_path_class_counts(path_reports)}",
+        f"Path count: {len(path_reports)}{_anchored_count(path_reports)}",
     ]
     if not path_reports:
         lines.extend(_unreported_component_lines(statistics))
@@ -168,7 +168,7 @@ def _pathway_summary_lines(
             (
                 "",
                 (
-                    f"Path {report.path_id} [{report.class_label}] "
+                    f"Path {report.path_id} "
                     f"{report.start_endpoint.label} -> {report.end_endpoint.label}"
                 ),
                 (
@@ -177,6 +177,7 @@ def _pathway_summary_lines(
                     f"{report.end_endpoint.atom_token} "
                     f"({report.end_endpoint.residue})"
                 ),
+                f"  Nearest cofactor: {_anchor_text(report)}",
                 f"  Chains: {_chain_text(report.chains)}",
                 (
                     f"  Residues: {report.residue_count}   "
@@ -231,15 +232,23 @@ def _unreported_component_lines(
     )
 
 
-def _path_class_counts(path_reports: Sequence[PathReport]) -> str:
+def _anchored_count(path_reports: Sequence[PathReport]) -> str:
     if not path_reports:
         return ""
 
-    counts = Counter(report.path_class for report in path_reports)
-    reported = [
-        f"{name} {counts[name]}" for name in PATH_CLASS_ORDER if counts[name] > 0
-    ]
-    return f" ({', '.join(reported)})"
+    anchored = sum(report.is_cofactor_anchored for report in path_reports)
+    return f" ({anchored} within range of a cofactor)"
+
+
+def _anchor_text(report: PathReport) -> str:
+    anchor = report.anchor
+    if anchor is None:
+        return "none in range"
+
+    return (
+        f"{anchor.label} at {_number(anchor.distance)} A from "
+        f"{anchor.atom_token} ({anchor.residue})"
+    )
 
 
 def _composition_text(report: PathReport) -> str:

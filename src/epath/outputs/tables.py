@@ -85,7 +85,9 @@ CLUSTER_FIELDNAMES = [
     "residue_count",
     "atom_count",
     "mst_total_length",
-    "path_class",
+    "anchor_cofactor",
+    "anchor_distance",
+    "anchor_atom",
     "structural_descriptor",
     "chains",
     "mean_step",
@@ -241,13 +243,14 @@ def write_cluster_csv(
 def cluster_rows(
     path_reports: Iterable[PathReport],
 ) -> tuple[dict[str, Any], ...]:
-    """Return one standalone CSV row for each classified E-path pathway."""
+    """Return one standalone CSV row for each reported E-path pathway."""
     return tuple(_cluster_row(report) for report in path_reports)
 
 
 def _cluster_row(report: PathReport) -> dict[str, Any]:
     metrics = report.cluster.metrics
     fractions = report.composition.fractions
+    anchor = report.anchor
 
     return {
         "cluster_id": report.path_id,
@@ -257,7 +260,9 @@ def _cluster_row(report: PathReport) -> dict[str, Any]:
         "residue_count": report.residue_count,
         "atom_count": report.node_count,
         "mst_total_length": metrics.mst_total_length,
-        "path_class": report.path_class,
+        "anchor_cofactor": anchor.label if anchor is not None else "",
+        "anchor_distance": anchor.distance if anchor is not None else "",
+        "anchor_atom": anchor.atom_token if anchor is not None else "",
         "structural_descriptor": report.structural_descriptor,
         "chains": "/".join(report.chains),
         "mean_step": metrics.mean_step,

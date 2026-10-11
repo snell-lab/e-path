@@ -1,13 +1,15 @@
-"""Label the endpoints of an E-path cluster by their structural environment.
+"""Relate an E-path cluster to the cofactors and environments around it.
 
 The E-path pathway table records where each path starts and ends: at a
 cofactor, at a chain interface, or at the protein surface. Cofactors are
 excluded from the connectivity graph, so a path never runs through one, but
-the cofactor a path terminates against is what makes it a candidate electron
+a cofactor within reach of a path is what makes it a candidate electron
 conduit rather than an ordinary rigid region.
 
 Endpoints are the two atoms that define the cluster span, which the analysis
-already reports as the straight-line end-to-end distance of the path.
+already reports as the straight-line end-to-end distance of the path. A path
+can also pass a cofactor part-way along its length, so the nearest cofactor to
+any of its atoms is reported separately as its anchor.
 """
 
 from __future__ import annotations
@@ -142,6 +144,21 @@ class PathEndpoint:
 
 
 @dataclass(frozen=True, slots=True)
+class PathAnchor:
+    """The cofactor nearest to any atom of a path, when one is within range."""
+
+    cofactor: CofactorSite
+    distance: float
+    atom_token: str
+    residue: str
+
+    @property
+    def label(self) -> str:
+        """Return the label of the anchoring cofactor site."""
+        return self.cofactor.label
+
+
+@dataclass(frozen=True, slots=True)
 class EndpointContext:
     """Structural context used to label path endpoints."""
 
@@ -241,6 +258,53 @@ def annotate_endpoint(atom: EpathAtom, context: EndpointContext) -> PathEndpoint
         return _endpoint(atom, label="Surface region", kind="surface")
 
     return _endpoint(atom, label="Buried region", kind="buried")
+
+
+def find_path_anchor(
+    atoms: Sequence[EpathAtom],
+    context: EndpointContext,
+) -> PathAnchor | None:
+    """Return the cofactor nearest to any atom of a path, if one is in range.
+
+    The two endpoints only describe where a path stops. A long or branched path
+    can touch a cofactor part-way along its length while both of its ends lie
+    elsewhere, so every atom is tested, against the same range that places an
+    endpoint in a cofactor's environment.
+
+    Args:
+        atoms: The atoms of one path.
+        context: Cofactor context built by `build_endpoint_context`.
+
+    Returns:
+        The nearest cofactor and the path atom closest to it, or None when the
+        model has no cofactor within the proximity range of the path.
+    """
+    if not atoms or context.cofactor_coordinates.size == 0:
+        return None
+
+    best_index = -1
+    best_site_index = -1
+    best_distance = float("inf")
+    for index, atom in enumerate(atoms):
+        point = np.asarray((atom.x, atom.y, atom.z), dtype=float)
+        distances = row_norms(context.cofactor_coordinates - point)
+        nearest = int(np.argmin(distances))
+        distance = float(distances[nearest])
+        if distance < best_distance:
+            best_index = index
+            best_site_index = int(context.cofactor_site_indices[nearest])
+            best_distance = distance
+
+    if best_distance > context.cofactor_proximity_distance:
+        return None
+
+    anchor_atom = atoms[best_index]
+    return PathAnchor(
+        cofactor=context.sites[best_site_index],
+        distance=best_distance,
+        atom_token=atom_token(anchor_atom),
+        residue=residue_label(anchor_atom),
+    )
 
 
 def _endpoint(

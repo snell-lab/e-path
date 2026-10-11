@@ -104,7 +104,15 @@ def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathWorkflowResult) 
     first = clusters[0]
     report = result.path_reports[0]
     assert first["residue_path"] == report.residue_path
-    assert first["path_class"] == report.path_class
+    for row, path_report in zip(clusters, result.path_reports, strict=True):
+        anchor = path_report.anchor
+        if anchor is None:
+            assert (row["anchor_cofactor"], row["anchor_distance"]) == ("", "")
+            assert row["anchor_atom"] == ""
+        else:
+            assert row["anchor_cofactor"] == anchor.label
+            assert float(row["anchor_distance"]) == approx(anchor.distance)
+            assert row["anchor_atom"] == anchor.atom_token
     assert int(first["atom_count"]) == report.node_count
     assert float(first["mst_total_length"]) == approx(report.total_length)
     assert first["chains"] == "/".join(report.chains)
@@ -271,7 +279,12 @@ def test_path_subset_cifs_are_zero_padded(
     remarks = [
         gemmi.cif.as_string(r[1]) for r in block.find("_epath_remark.", ["id", "text"])
     ]
-    assert f"Pathway 1, class {result.path_reports[0].path_class}." in remarks
+    first = result.path_reports[0]
+    assert "Pathway 1." in remarks
+    assert f"Nearest cofactor: {first.anchor_summary}." in remarks
+    assert block.find_value("_epath.anchor_cofactor") == (
+        first.anchor.label if first.anchor is not None else "none"
+    )
     assert len(block.find("_atom_site.", ["id"])) == result.path_reports[0].node_count
     assert write_path_subset_cifs(tmp_path / "run", ()) == ()
 
@@ -313,7 +326,8 @@ def test_summary_report_lists_results_and_files(
     assert "Protein Bnet sites: 4" in text
     assert "Cofactor sites: FMN (Fmn201 chain A)" in text
     assert f"Path count: {len(result.path_reports)}" in text
-    assert "Path 1 [" in text and result.path_reports[0].residue_path in text
+    assert "Path 1 " in text and result.path_reports[0].residue_path in text
+    assert "  Nearest cofactor: " in text
     assert "Combined atom CSV: " in text and "Pathway mmCIF 1: " in text
     assert "Cluster CSV" not in text
     assert output_file_entries(files) == (

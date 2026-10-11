@@ -10,12 +10,10 @@ warnings and errors are highlighted when the stream is a colour terminal
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING, TextIO
 
 from epath.analysis.endpoints import cofactor_site_summary
-from epath.analysis.pathways import PATH_CLASS_ORDER
 from epath.cli.style import print_lines, style_line, supports_color
 from epath.outputs.summary import (
     bdamage_parameter_lines,
@@ -205,24 +203,18 @@ def _pathway_lines(workflow_result: EpathWorkflowResult) -> tuple[str, ...]:
         f"Connected components: {workflow_result.component_statistics.total_count}",
         f"Count: {len(reports)}",
     ]
-    class_counts = Counter(report.path_class for report in reports)
-    if class_counts:
-        lines.append(
-            "Classes: "
-            + ", ".join(
-                f"{name} {class_counts[name]}"
-                for name in PATH_CLASS_ORDER
-                if class_counts[name] > 0
-            )
-        )
+    if reports:
+        anchored = sum(report.is_cofactor_anchored for report in reports)
+        lines.append(f"Within range of a cofactor: {anchored}")
     lines.append(
         f"Cofactor sites: {cofactor_site_summary(workflow_result.cofactor_sites)}"
     )
     lines.extend(
-        f"Path {report.path_id} [{report.class_label}] "
+        f"Path {report.path_id} "
         f"{report.start_endpoint.label} -> {report.end_endpoint.label}: "
         f"{report.residue_count} residues, {report.node_count} nodes, "
-        f"{report.total_length:.2f} A, {report.structural_descriptor}"
+        f"{report.total_length:.2f} A, nearest cofactor {report.anchor_summary}, "
+        f"{report.structural_descriptor}"
         for report in reports
     )
     return tuple(lines)
