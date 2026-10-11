@@ -29,7 +29,7 @@ options = EpathWorkflowOptions(
 result, files = run_epath_workflow(bdamage, options=options)
 
 for report in result.path_reports:
-    print(report.path_class, report.start_endpoint, report.end_endpoint)
+    print(report.endpoint_summary, report.anchor_summary)
 ```
 
 `EpathWorkflowResult` holds the scored atoms, the selection, the clusters and
@@ -38,5 +38,6 @@ and the run record that becomes `*_run.csv`; `EpathWorkflowOutputFiles` lists
 the files written. Every option group has a frozen dataclass with the same
 defaults as the CLI: `BDamageWorkflowOptions` for the calculation,
 `EpathSelectionWorkflowOptions` and `EpathClusterWorkflowOptions` for the
-selection and clustering, `PathAnalysisOptions` for the classification
-thresholds, and `EpathOutputWorkflowOptions` for which files to write.
+selection and clustering, `PathAnalysisOptions` for the topology thresholds
+and the endpoint and anchor distances, and `EpathOutputWorkflowOptions` for
+which files to write.

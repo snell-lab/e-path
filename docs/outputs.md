@@ -26,7 +26,7 @@ the reported BDamage threshold, which the file records as
 
 Every coordinate file is mmCIF. Run notes are written as an `_epath_remark`
 loop and machine-readable values (atom counts, the threshold, the pathway
-number and class) as an `_epath` category; viewers ignore both.
+number and its nearest cofactor) as an `_epath` category; viewers ignore both.
 
 Both summaries record the BDamage calculation parameters actually used, so a
 run made with non-default values is identifiable from its output alone. The
