@@ -16,10 +16,8 @@ published. Each pathway is reported with:
 - the topology, step provenance, and residue-chemistry measurements, and a
   structural descriptor that summarizes them.
 
-E-path reports these measurements and does not assign a functional role.
-Whether a path is a conduction route, a modulating network, a reservoir, or
-ordinary packing depends on what is known about the protein as well as on the
-numbers here, so that interpretation is left to the analyst.
+These measurements are the basis for interpreting a path with the protein's
+known chemistry in view.
 
 ## Endpoints
 
@@ -143,14 +141,3 @@ Structural descriptors are generated from the same measurements, naming what
 the path is mostly made of, its topology, and the classes it is enriched in,
 which gives phrasings such as `Hydrophobic corridor with aromatic/sulfur
 enrichment` or `Single aromatic hotspot`.
-
-## Interpreting a Pathway
-
-Earlier versions assigned each path one of four roles (conductor, modulator,
-reservoir, or structural) from fixed thresholds on these measurements. That
-label has been removed. The thresholds had been chosen to reproduce a small
-set of hand-assigned pathways, there is no independent reference to test them
-against, and the label changed with small differences in how neighbouring
-components merged, including between two copies of the same complex in one
-crystal. The measurements it was built from are all still reported, so the
-same roles can be assigned by hand with the protein's known chemistry in view.

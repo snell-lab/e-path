@@ -41,8 +41,9 @@ COMBINED_ATOM_FIELDNAMES = [
 ]
 
 # The leading columns are the E-path pathway table: the path, where it
-# starts and ends, what it is made of, and how it was classified. The columns
-# after them are the geometry and the measurements the class was assigned from.
+# starts and ends, the cofactor it comes nearest to, and what it is made of.
+# The columns after them are the geometry and the measurements behind the
+# descriptor.
 RUN_FIELDNAMES = [
     "structure",
     "input_path",

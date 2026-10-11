@@ -6,9 +6,8 @@ protected atoms along the path, the environments its two ends terminate in,
 the cofactor it comes nearest to, and its graph topology and residue
 chemistry.
 
-These are measurements. Whether a path conducts, modulates, or merely packs
-is a judgement that also draws on what is known about the protein, so no
-functional role is assigned here; that interpretation is left to the analyst.
+These are measurements, reported as the basis for interpreting a path with
+the protein's known chemistry in view.
 """
 
 from __future__ import annotations
