@@ -195,7 +195,38 @@ def _cleaned_model() -> tuple[PreparedAtom, ...]:
     )
 
 
-def test_cofactor_sites_are_numbered_and_additives_ignored() -> None:
+def test_only_redox_capable_groups_are_cofactors() -> None:
+    def group(index: int, name: str, element: str) -> PreparedAtom:
+        return make_prepared_atom(
+            source_atom_index=index,
+            residue_name=name,
+            residue_number=100 + index,
+            atom_name=element,
+            element=element,
+            is_hetatm=True,
+            x=20.0 * index,
+        )
+
+    cleaned = (
+        make_prepared_atom(source_atom_index=0, residue_number=1),
+        group(1, "CDN", "C"),  # a lipid
+        group(2, "NAG", "C"),  # a sugar
+        group(3, "ZN", "ZN"),  # a redox-inert ion
+        group(4, "CA", "CA"),
+        group(5, "HG", "HG"),  # a heavy-atom derivative
+        group(6, "ZNH", "ZN"),  # zinc porphyrin, listed by name
+        group(7, "U10", "C"),  # a quinone, listed by name
+        group(8, "CU", "CU"),  # a redox-active metal ion
+        group(9, "XYZ", "FE"),  # an unfamiliar name that holds iron
+    )
+    context = build_endpoint_context(
+        scored_atoms=[make_epath_atom()], cleaned_atoms=cleaned
+    )
+
+    assert [site.label for site in context.sites] == ["ZNH", "U10", "CU", "XYZ"]
+
+
+def test_cofactor_sites_are_numbered_and_other_groups_ignored() -> None:
     context = build_endpoint_context(
         scored_atoms=[make_epath_atom()], cleaned_atoms=_cleaned_model()
     )

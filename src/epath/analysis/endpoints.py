@@ -54,57 +54,66 @@ DEFAULT_INTERFACE_ANGSTROM = 4.0
 # scored atom, so no separate solvent-accessibility calculation is needed.
 DEFAULT_SURFACE_PERCENTILE = 25.0
 
-# Common crystallization and cryoprotection additives. These are kept in the
-# model and still contribute to packing density, but they are not treated as
-# cofactors when labelling an endpoint, because terminating beside a glycerol
+# Only redox-capable groups are treated as cofactors. Every other bound group
+# (lipids, detergents, sugars, buffer and cryoprotectant molecules, substrates
+# and inhibitors, and redox-inert ions such as Na, K, Mg, Ca and Zn) is kept in
+# the model and still contributes to packing density, but ending beside one
 # does not make a path an electron conduit.
-CRYSTALLIZATION_ADDITIVES = frozenset(
+#
+# A group qualifies by containing one of these transition metals, which covers
+# haems, iron-sulfur clusters, copper centres and molybdenum or tungsten
+# cofactors under whatever component name they were deposited.
+REDOX_ACTIVE_METALS = frozenset({"V", "MN", "FE", "CO", "NI", "CU", "MO", "W"})
+
+# Organic redox cofactors hold no such metal, so they are listed by chemical
+# component code: flavins, nicotinamides, quinones, chlorophylls and
+# pheophytins, metal-free and zinc porphyrins, and pterins.
+ORGANIC_REDOX_COFACTORS = frozenset(
     {
-        "ACT",
-        "ACY",
-        "BME",
-        "BR",
-        "CAC",
-        "CIT",
-        "CL",
-        "CS",
-        "DMS",
-        "DTT",
-        "EDO",
-        "EPE",
-        "FLC",
-        "FMT",
-        "GOL",
-        "IMD",
-        "IOD",
-        "IPA",
-        "K",
-        "MES",
-        "MPD",
-        "MRD",
-        "NA",
-        "NH4",
-        "NO3",
-        "OXL",
-        "P6G",
-        "PE4",
-        "PEG",
-        "PG4",
-        "PGE",
-        "PO4",
-        "RB",
-        "SO4",
-        "TAR",
-        "TLA",
-        "TRS",
-        "UNX",
+        "BCB",
+        "BCL",
+        "BPB",
+        "BPH",
+        "CHL",
+        "CLA",
+        "DCQ",
+        "F42",
+        "FAD",
+        "FDA",
+        "FMN",
+        "H4B",
+        "MD1",
+        "MGD",
+        "MQ7",
+        "MQ8",
+        "MQ9",
+        "MTE",
+        "NAD",
+        "NAI",
+        "NAP",
+        "NDP",
+        "PHO",
+        "PL9",
+        "PP9",
+        "PQN",
+        "PQQ",
+        "RBF",
+        "U10",
+        "UQ1",
+        "UQ2",
+        "UQ5",
+        "UQ6",
+        "UQ7",
+        "UQ8",
+        "UQ9",
+        "ZNH",
     }
 )
 
 
 @dataclass(frozen=True, slots=True)
 class CofactorSite:
-    """One modelled cofactor, ligand, or metal site."""
+    """One modelled redox cofactor or redox-active metal site."""
 
     label: str
     chain_id: str
@@ -300,9 +309,9 @@ def _cofactor_sites(
     if not cleaned_atoms:
         return (), empty_coordinates, empty_indices
 
-    grouped: dict[tuple[str, str, int | None, str], list[PreparedAtom]] = {}
+    bound_groups: dict[tuple[str, str, int | None, str], list[PreparedAtom]] = {}
     for atom in cleaned_atoms:
-        if not _is_cofactor_atom(atom):
+        if not _is_bound_group_atom(atom):
             continue
 
         record = atom.record
@@ -312,8 +321,13 @@ def _cofactor_sites(
             record.residue_number,
             record.insertion_code.strip(),
         )
-        grouped.setdefault(key, []).append(atom)
+        bound_groups.setdefault(key, []).append(atom)
 
+    grouped = {
+        key: atoms
+        for key, atoms in bound_groups.items()
+        if _is_redox_cofactor(key[1], atoms)
+    }
     if not grouped:
         return (), empty_coordinates, empty_indices
 
@@ -372,11 +386,19 @@ def _site_labels(
     return labels
 
 
-def _is_cofactor_atom(atom: PreparedAtom) -> bool:
-    if atom.is_protein or atom.is_solvent or atom.is_nucleic_acid or atom.is_hydrogen:
-        return False
+def _is_bound_group_atom(atom: PreparedAtom) -> bool:
+    return not (
+        atom.is_protein or atom.is_solvent or atom.is_nucleic_acid or atom.is_hydrogen
+    )
 
-    return atom.record.residue_name.strip().upper() not in CRYSTALLIZATION_ADDITIVES
+
+def _is_redox_cofactor(residue_name: str, atoms: Sequence[PreparedAtom]) -> bool:
+    if residue_name in ORGANIC_REDOX_COFACTORS:
+        return True
+
+    return any(
+        atom.record.element.strip().upper() in REDOX_ACTIVE_METALS for atom in atoms
+    )
 
 
 def _protein_chain_map(
