@@ -173,15 +173,6 @@ def print_epath_batch_summary(
 def _selection_lines(workflow_result: EpathWorkflowResult) -> tuple[str, ...]:
     selection_result = workflow_result.selection_result
     analyzed_chains = workflow_result.analyzed_chains
-    plateau = selection_result.plateau
-    plateau_text = (
-        "none detected"
-        if plateau is None
-        else (
-            f"{plateau.atom_count} atoms at Z "
-            f"{plateau.lowest_z_score:.3f} to {plateau.highest_z_score:.3f}"
-        )
-    )
     return (
         "Chains: " + (", ".join(analyzed_chains) if analyzed_chains else "none"),
         f"Method: {selection_result.description}",
@@ -193,7 +184,6 @@ def _selection_lines(workflow_result: EpathWorkflowResult) -> tuple[str, ...]:
             f"BDamage mean: {selection_result.bdamage_mean:.4f}, "
             f"SD: {selection_result.bdamage_standard_deviation:.4f}"
         ),
-        f"Z-score plateau: {plateau_text}",
     )
 
 

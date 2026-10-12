@@ -90,16 +90,6 @@ def write_summary_txt(
             ),
         )
     )
-    plateau = selection_result.plateau
-    if plateau is None:
-        lines.append("Z-score plateau: none detected in the selected atoms")
-    else:
-        lines.append(
-            f"Z-score plateau: {plateau.atom_count} atoms from rank "
-            f"{plateau.first_rank}, Z {_number(plateau.lowest_z_score)} to "
-            f"{_number(plateau.highest_z_score)}"
-        )
-
     selected_chain_counts = Counter(
         atom.atom.chain_id for atom in selection_result.selected_atoms
     )

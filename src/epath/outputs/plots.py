@@ -1,9 +1,7 @@
 """Plot outputs for E-path analysis.
 
 The falloff plot ranks atoms by ascending BDamage Z-score and shows the
-negative tail, which is the region E-path selects from. A plateau in that
-falloff, where many consecutive atoms share a Z-score, indicates a commonly
-protected region rather than a smooth decay.
+negative tail, which is the region E-path selects from.
 """
 
 from __future__ import annotations
@@ -18,7 +16,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from epath.analysis.selection import EpathSelectionResult, ZScorePlateau
+from epath.analysis.selection import EpathSelectionResult
 
 DEFAULT_PLOT_DPI = 300
 DEFAULT_PLOT_FIGSIZE = (6.0, 4.0)
@@ -51,8 +49,8 @@ def write_z_score_falloff(
 ) -> Path | None:
     """Write rank-ordered BDamage Z-scores for the negative tail.
 
-    The selection threshold and any detected plateau are marked, so the plot
-    shows both what was selected and whether the falloff flattens within it.
+    The selection threshold is marked, so the plot shows where the cutoff
+    falls on the falloff.
     """
     z_scores = _z_score_array(
         [scored_atom.bdamage_z_score for scored_atom in selection_result.scored_atoms]
@@ -87,12 +85,11 @@ def write_z_score_falloff(
                 linewidth=1.0,
                 label=f"selection threshold Z = {threshold:.3f}",
             )
-        _mark_plateau(pyplot, selection_result.plateau)
         pyplot.xlabel("Atom rank by ascending BDamage Z-score")
         pyplot.ylabel("BDamage Z-score")
         pyplot.title("BDamage Z-score falloff")
         # A legend with no labelled artists only produces a warning.
-        if math.isfinite(threshold) or selection_result.plateau is not None:
+        if math.isfinite(threshold):
             pyplot.legend(loc="lower right", fontsize="small")
         figure.tight_layout()
         figure.savefig(output_file, dpi=dpi)
@@ -100,19 +97,6 @@ def write_z_score_falloff(
         pyplot.close(figure)
 
     return output_file
-
-
-def _mark_plateau(pyplot: Any, plateau: ZScorePlateau | None) -> None:
-    if plateau is None:
-        return
-
-    pyplot.axvspan(
-        plateau.first_rank,
-        plateau.first_rank + plateau.atom_count - 1,
-        color="tab:blue",
-        alpha=0.2,
-        label=f"plateau, {plateau.atom_count} atoms",
-    )
 
 
 def _pyplot() -> Any:

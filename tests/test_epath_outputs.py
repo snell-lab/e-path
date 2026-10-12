@@ -302,7 +302,7 @@ def test_z_score_plot_is_written_as_png(
     empty = select_atoms_by_percentile((), percentile=2.0)
     assert write_z_score_falloff(tmp_path / "none.png", empty) is None
 
-    # No threshold and no plateau: nothing to put in a legend, but still a plot.
+    # No threshold: nothing to put in a legend, but still a plot.
     unthresholded = select_atoms_by_percentile(
         [a.atom for a in result.selection_result.scored_atoms], percentile=100.0
     )
