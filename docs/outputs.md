@@ -5,11 +5,7 @@ page explains what each one contains.
 
 `*_zfalloff.png` ranks atoms by ascending BDamage Z-score and plots the
 negative tail, which is the region the selection is drawn from. The selection
-threshold is marked, as is any detected plateau: a run of atoms packed more
-densely in Z than the runs on either side of it. Atom density always rises
-toward the threshold, so a plateau is only reported where the falloff has a
-genuine local shelf rather than merely flattening as it approaches the bulk. A
-plateau indicates that many atoms share a protection level.
+threshold is marked, so the plot shows where the cutoff falls on the falloff.
 
 The summaries report the mean and standard deviation of BDamage for the whole
 model, which are the values the Z-scores are derived from, and again for the
