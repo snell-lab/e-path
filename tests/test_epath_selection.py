@@ -1,4 +1,4 @@
-"""E-path atom selection: Z-scores, percentiles, plateaus."""
+"""E-path atom selection: Z-scores and percentiles."""
 
 from __future__ import annotations
 
@@ -8,12 +8,11 @@ from typing import Any
 
 import numpy as np
 import pytest
-from support import approx, make_epath_atom, make_scored_atom
+from support import approx, make_epath_atom
 
 from epath.analysis.atoms import EpathAtom
 from epath.analysis.selection import (
     EpathSelectionError,
-    find_z_score_plateau,
     score_bdamage_atoms,
     select_atoms_by_percentile,
 )
@@ -74,7 +73,6 @@ def test_lowest_percentile_selects_the_smallest_bdamage_values() -> None:
         "lowest 2.000% by BDamage" in result.description
         and "selected 2 of 100" in result.description
     )
-    assert result.plateau is None
 
 
 def test_percentile_extremes() -> None:
@@ -95,31 +93,3 @@ def test_percentile_extremes() -> None:
 def test_invalid_percentiles_are_rejected(percentile: Any) -> None:
     with pytest.raises(EpathSelectionError):
         select_atoms_by_percentile(_atoms([1.0, 2.0]), percentile=percentile)
-
-
-def test_plateau_is_a_local_shelf_in_the_rank_ordered_z_scores() -> None:
-    before = np.linspace(-3.0, -2.0, 5)  # 5 atoms per Z unit
-    shelf = np.linspace(-1.9, -1.8, 5)  # 50 atoms per Z unit
-    after = np.linspace(-1.7, -0.7, 5)  # 5 atoms per Z unit
-    scored = [make_scored_atom(z) for z in np.concatenate([after, shelf, before])]
-
-    plateau = find_z_score_plateau(scored)
-
-    assert plateau is not None
-    assert plateau.atom_count == 5 and plateau.first_rank == 6
-    assert plateau.lowest_z_score == approx(-1.9) and plateau.highest_z_score == approx(
-        -1.8
-    )
-
-
-def test_smooth_falloff_has_no_plateau() -> None:
-    ranks = np.arange(1, 61)
-    smooth = [make_scored_atom(float(z)) for z in -3.0 + 0.0008 * ranks**2]
-    assert find_z_score_plateau(smooth) is None
-    assert (
-        find_z_score_plateau(
-            [make_scored_atom(float(z)) for z in np.linspace(-3, -1, 14)]
-        )
-        is None
-    )
-    assert find_z_score_plateau(()) is None

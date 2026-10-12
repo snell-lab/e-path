@@ -11,14 +11,6 @@ from numpy.typing import NDArray
 
 from epath.analysis.atoms import EpathAtom
 
-# A plateau is a run of rank-ordered atoms packed more densely in Z than the
-# runs on either side of it, which is a local shelf in the falloff rather than
-# part of its overall slope. Atom density always rises toward the selection
-# threshold, so an absolute flatness test would fire on that gradient alone;
-# requiring the run to be denser than both neighbours avoids that.
-PLATEAU_DENSITY_FACTOR = 1.5
-MINIMUM_PLATEAU_ATOMS = 5
-
 
 class EpathSelectionError(ValueError):
     """Raised when E-path atom selection cannot be calculated."""
@@ -43,16 +35,6 @@ class EpathScoredAtom:
 
 
 @dataclass(frozen=True, slots=True)
-class ZScorePlateau:
-    """A run of rank-ordered atoms sharing essentially the same Z-score."""
-
-    atom_count: int
-    first_rank: int
-    lowest_z_score: float
-    highest_z_score: float
-
-
-@dataclass(frozen=True, slots=True)
 class EpathSelectionResult:
     """Result of selecting candidate E-path atoms."""
 
@@ -68,7 +50,6 @@ class EpathSelectionResult:
     boundary_z_score: float | None = None
     selected_bdamage_mean: float = float("nan")
     selected_bdamage_standard_deviation: float = float("nan")
-    plateau: ZScorePlateau | None = None
 
 
 def score_bdamage_atoms(
@@ -130,7 +111,6 @@ def select_atoms_by_percentile(
         boundary_z_score=boundary_z_score,
         selected_bdamage_mean=_mean(selected_atoms),
         selected_bdamage_standard_deviation=_standard_deviation(selected_atoms),
-        plateau=find_z_score_plateau(selected_atoms),
     )
 
 
@@ -214,47 +194,6 @@ def _z_score_for_bdamage_value(
         standard_deviation = 1.0
 
     return float((bdamage - mean) / standard_deviation)
-
-
-def find_z_score_plateau(
-    scored_atoms: Sequence[EpathScoredAtom],
-) -> ZScorePlateau | None:
-    """Return the longest local shelf in the rank-ordered Z-score falloff.
-
-    Atoms are ranked by ascending Z-score. A run qualifies when its atom
-    density, in atoms per Z unit, is at least `PLATEAU_DENSITY_FACTOR` times
-    the density of the equally sized runs immediately before and after it. A
-    smooth falloff has no such run, because its density increases steadily
-    toward the selection threshold.
-
-    Returns:
-        The longest qualifying run, or None when the falloff is smooth.
-    """
-    z_scores = sorted(scored_atom.bdamage_z_score for scored_atom in scored_atoms)
-    atom_count = len(z_scores)
-    if atom_count < 3 * MINIMUM_PLATEAU_ATOMS:
-        return None
-
-    def density(start: int, length: int) -> float:
-        span = z_scores[start + length - 1] - z_scores[start]
-        if span <= 0.0:
-            return float("inf")
-        return length / span
-
-    for length in range(atom_count // 3, MINIMUM_PLATEAU_ATOMS - 1, -1):
-        for start in range(length, atom_count - 2 * length + 1):
-            inner = density(start, length)
-            before = density(start - length, length)
-            after = density(start + length, length)
-            if inner >= PLATEAU_DENSITY_FACTOR * max(before, after):
-                return ZScorePlateau(
-                    atom_count=length,
-                    first_rank=start + 1,
-                    lowest_z_score=z_scores[start],
-                    highest_z_score=z_scores[start + length - 1],
-                )
-
-    return None
 
 
 def _mean(scored_atoms: Sequence[EpathScoredAtom]) -> float:
