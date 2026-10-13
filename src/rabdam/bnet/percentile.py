@@ -1,58 +1,57 @@
-"""Calculate resolution-matched Bnet percentiles."""
+"""Rank a Bnet value against reference structures of similar resolution.
 
-from __future__ import annotations
+`rabdam.bnet.pipeline` calls this with the Bnet from `rabdam.bnet.metric` and
+the database loaded by `rabdam.bnet.reference`.
+"""
 
 import math
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
 
 from rabdam.bnet.reference import BnetReferenceDatabase
 
-# A 1,000-structure neighbourhood follows the published RABDAM definition and
-# balances resolution matching against reference-sample size.
 DEFAULT_NEAREST_RESOLUTION_COUNT = 1000
-BNET_PERCENTILE_RANK_METHOD = "nearest_reference"
 
 
 class BnetPercentileError(ValueError):
-    """Report invalid input to a Bnet percentile calculation."""
+    """Report invalid input to a Bnet percentile calculation.
 
-
-@dataclass(frozen=True, slots=True)
-class ResolutionMatchedReferenceSet:
-    """Store reference rows spanning a local resolution interval."""
-
-    indices: tuple[int, ...]
-    resolution_min: float
-    resolution_max: float
-
-    @property
-    def count(self) -> int:
-        """Return the number of matched reference rows."""
-        return len(self.indices)
+    `rabdam.bnet.pipeline` catches it and reports the percentile as
+    unavailable, with the message as the reason.
+    """
 
 
 @dataclass(frozen=True, slots=True)
 class BnetPercentileResult:
-    """Store a resolution-matched Bnet rank and its reference context."""
+    """Store a Bnet percentile and the reference set it was ranked against.
 
-    bnet: float
+    `calculate_bnet_percentile` says how `percentile_percent` is derived.
+    `local_reference_count` is the number of rows ranked against, those
+    between `local_resolution_min` and `local_resolution_max` angstroms, and
+    `reference_entry_count` is the size of the whole database.
+    """
+
     resolution_angstrom: float
     percentile_percent: float
-    percentile_fraction: float
-    rank: int
-    rank_method: str
     reference_database_id: str
     reference_entry_count: int
-    nearest_resolution_count: int
     local_reference_count: int
     local_resolution_min: float
     local_resolution_max: float
-    local_bnet_min: float
-    local_bnet_max: float
-    nearest_reference_bnet: float
+
+
+@dataclass(frozen=True, slots=True)
+class ResolutionMatchedReferenceSet:
+    """Store the reference rows inside one inclusive resolution interval.
+
+    `indices` are positions in the database's entry order, ascending. The
+    interval bounds are in angstroms.
+    """
+
+    indices: tuple[int, ...]
+    resolution_min: float
+    resolution_max: float
 
 
 def calculate_bnet_percentile(
@@ -62,22 +61,18 @@ def calculate_bnet_percentile(
     reference_database: BnetReferenceDatabase,
     nearest_resolution_count: int = DEFAULT_NEAREST_RESOLUTION_COUNT,
 ) -> BnetPercentileResult:
-    """Rank Bnet against a resolution-matched reference neighbourhood.
+    """Return the percentile of `bnet` among the resolution-matched references.
 
-    Args:
-        bnet: Raw Bnet value to rank.
-        resolution_angstrom: Positive experimental resolution in angstroms.
-        reference_database: Validated reference entries and metadata.
-        nearest_resolution_count: Minimum number of nearest-resolution rows used
-            to establish the local interval.
+    The comparison set comes from `find_resolution_matched_reference_set`. Its
+    Bnet values are put in ascending order, and the rank is the one-based
+    position of the value closest to `bnet`, the lowest such position when
+    several are equally close. The percentile is that rank as a percentage of
+    the set size. It therefore runs from just above 0 to 100, and a Bnet
+    outside the local range takes the first or the last rank.
 
-    Returns:
-        A discrete nearest-reference percentile and the local range and database
-        metadata needed to interpret it.
-
-    Raises:
-        BnetPercentileError: If numeric inputs are invalid or the requested
-            neighbourhood is larger than the reference database.
+    `BnetPercentileError` is raised when `bnet` or `resolution_angstrom` is
+    not finite, the resolution is not positive, or `nearest_resolution_count`
+    is below one or above the number of entries in the database.
     """
     bnet_value = _finite_float(bnet, name="bnet")
     resolution_value = _finite_float(
@@ -105,37 +100,31 @@ def calculate_bnet_percentile(
         reference_database=reference_database,
         nearest_resolution_count=nearest_resolution_count,
     )
-
     local_bnet_values = np.sort(
-        reference_database.bnet_values[list(matched_set.indices)],
-        kind="stable",
+        reference_database.bnet_values[list(matched_set.indices)]
     )
     local_count = local_bnet_values.size
 
-    rank, nearest_reference_bnet = _rank_bnet_by_nearest_reference_value(
-        bnet_value,
-        local_bnet_values=local_bnet_values,
-    )
-
+    rank = int(np.abs(local_bnet_values - bnet_value).argmin()) + 1
     percentile_percent = (100.0 * rank) / local_count
 
     return BnetPercentileResult(
-        bnet=bnet_value,
         resolution_angstrom=resolution_value,
         percentile_percent=percentile_percent,
-        percentile_fraction=percentile_percent / 100.0,
-        rank=rank,
-        rank_method=BNET_PERCENTILE_RANK_METHOD,
-        reference_database_id=reference_database.metadata.database_id,
+        reference_database_id=reference_database.database_id,
         reference_entry_count=reference_database.entry_count,
-        nearest_resolution_count=nearest_resolution_count,
         local_reference_count=local_count,
         local_resolution_min=matched_set.resolution_min,
         local_resolution_max=matched_set.resolution_max,
-        local_bnet_min=float(local_bnet_values[0]),
-        local_bnet_max=float(local_bnet_values[-1]),
-        nearest_reference_bnet=nearest_reference_bnet,
     )
+
+
+def _finite_float(value: float, *, name: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise BnetPercentileError(f"{name} must be finite, got {number!r}.")
+
+    return number
 
 
 def find_resolution_matched_reference_set(
@@ -144,19 +133,27 @@ def find_resolution_matched_reference_set(
     reference_database: BnetReferenceDatabase,
     nearest_resolution_count: int = DEFAULT_NEAREST_RESOLUTION_COUNT,
 ) -> ResolutionMatchedReferenceSet:
-    """Select the nearest-resolution interval, including boundary ties.
+    """Return the reference rows spanning the nearest resolutions.
 
-    The initial nearest-neighbour selection establishes inclusive minimum and
-    maximum resolutions. All database rows inside that interval are returned,
-    so the final count can exceed `nearest_resolution_count`. The inputs are
-    expected to have passed the checks in `calculate_bnet_percentile`.
+    The `nearest_resolution_count` rows closest in resolution to
+    `resolution_angstrom` set an inclusive resolution interval, and every row
+    inside that interval is returned. Rows sharing a boundary resolution are
+    therefore all kept, and the set can be larger than the count asked for.
+
+    Only resolutions equal to a boundary are added back. Two resolutions the
+    same distance either side of the target are ordered by floating-point
+    rounding, or by database order when the distances are exactly equal, so
+    when the count runs out between them the interval reaches further on one
+    side of the target than on the other.
+
+    The arguments are not checked here. `calculate_bnet_percentile` validates
+    them before calling.
     """
     resolutions = reference_database.resolution_values
     distances = np.abs(resolutions - resolution_angstrom)
 
-    # Stable sort preserves CSV order for exact distance ties while avoiding
-    # repeated nearest-neighbour searches.
-    nearest_indices = np.argsort(distances, kind="mergesort")[:nearest_resolution_count]
+    # A stable sort takes the earliest of several rows at the same distance.
+    nearest_indices = np.argsort(distances, kind="stable")[:nearest_resolution_count]
     nearest_resolutions = resolutions[nearest_indices]
 
     resolution_min = float(np.min(nearest_resolutions))
@@ -172,33 +169,3 @@ def find_resolution_matched_reference_set(
         resolution_min=resolution_min,
         resolution_max=resolution_max,
     )
-
-
-def _rank_bnet_by_nearest_reference_value(
-    bnet: float,
-    *,
-    local_bnet_values: NDArray[np.float64],
-) -> tuple[int, float]:
-    """Return the one-based rank and value of the nearest local reference."""
-    # RABDAM defines a discrete reference rank rather than an interpolated ECDF.
-    nearest_index = int(np.abs(local_bnet_values - bnet).argmin())
-    return nearest_index + 1, float(local_bnet_values[nearest_index])
-
-
-def _finite_float(value: float, *, name: str) -> float:
-    number = float(value)
-    if not math.isfinite(number):
-        raise BnetPercentileError(f"{name} must be finite, got {number!r}.")
-
-    return number
-
-
-__all__ = [
-    "BNET_PERCENTILE_RANK_METHOD",
-    "DEFAULT_NEAREST_RESOLUTION_COUNT",
-    "BnetPercentileError",
-    "BnetPercentileResult",
-    "ResolutionMatchedReferenceSet",
-    "calculate_bnet_percentile",
-    "find_resolution_matched_reference_set",
-]
