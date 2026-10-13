@@ -1,29 +1,19 @@
-"""Symmetry expansion, unit-cell translation, and neighbour-block trimming."""
-
-from __future__ import annotations
+"""Symmetry expansion and the trimmed block of neighbouring cells."""
 
 import itertools
-from collections.abc import Iterator
 from pathlib import Path
 
 import gemmi
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 from support import approx, make_metadata, make_prepared_atom, write_synthetic_pdb
 
-from rabdam.crystal.symmetry import (
-    expand_atoms_by_symmetry,
-    expand_prepared_structure_by_symmetry,
-)
-from rabdam.crystal.translate import (
-    translate_expanded_unit_cell,
-    translation_vector_for_offsets,
-)
+from rabdam.crystal.symmetry import symmetry_image_coordinates
 from rabdam.crystal.trim import (
-    CrystalTrimError,
     bounds_from_prepared_atoms,
     expand_bounds,
-    trim_expanded_unit_cell_to_reference_atoms,
+    trim_crystal_to_reference_atoms,
 )
 from rabdam.structure.models import PreparedAtom
 from rabdam.structure.prepare import prepare_structure
@@ -45,33 +35,56 @@ ATOMS = (
 
 
 def _gemmi_images(
-    crystal: ValidatedCrystal, atom: PreparedAtom
-) -> Iterator[tuple[str, tuple[float, float, float]]]:
-    """Every symmetry image of an atom, computed by Gemmi alone."""
-    fractional = crystal.gemmi_cell.fractionalize(
-        gemmi.Position(atom.record.x, atom.record.y, atom.record.z)
+    crystal: ValidatedCrystal,
+    atoms: tuple[PreparedAtom, ...],
+    *,
+    translation_range: int = 0,
+) -> list[tuple[float, float, float]]:
+    """Every image of `atoms` in the block of cells, computed by Gemmi alone.
+
+    The images are ordered by atom, then by operation, then by cell offset,
+    and the offsets are added in fractional space, so no code is shared with
+    the implementation.
+    """
+    cell = crystal.gemmi_cell
+    offsets = list(
+        itertools.product(range(-translation_range, translation_range + 1), repeat=3)
     )
-    for operation in crystal.space_group.operations():
-        moved = operation.apply_to_xyz([fractional.x, fractional.y, fractional.z])
-        position = crystal.gemmi_cell.orthogonalize(gemmi.Fractional(*moved))
-        yield operation.triplet(), (position.x, position.y, position.z)
+    images: list[tuple[float, float, float]] = []
+    for atom in atoms:
+        fractional = cell.fractionalize(
+            gemmi.Position(atom.record.x, atom.record.y, atom.record.z)
+        )
+        for operation in crystal.space_group.operations():
+            moved = operation.apply_to_xyz([fractional.x, fractional.y, fractional.z])
+            for a_offset, b_offset, c_offset in offsets:
+                position = cell.orthogonalize(
+                    gemmi.Fractional(
+                        moved[0] + a_offset, moved[1] + b_offset, moved[2] + c_offset
+                    )
+                )
+                images.append((position.x, position.y, position.z))
+    return images
+
+
+def _rows_in_canonical_order(rows: object) -> NDArray[np.float64]:
+    """Return `(n, 3)` coordinate rows sorted by x, then y, then z."""
+    array = np.asarray(rows, dtype=np.float64).reshape(-1, 3)
+    rounded = np.round(array, 6)
+    return array[np.lexsort((rounded[:, 2], rounded[:, 1], rounded[:, 0]))]
 
 
 def test_p1_expansion_is_the_identity() -> None:
     crystal = validate_crystal(make_metadata(space_group="P 1"))
 
-    expanded = expand_atoms_by_symmetry(atoms=ATOMS, crystal=crystal)
+    images = symmetry_image_coordinates(ATOMS, crystal=crystal)
 
-    assert expanded.operation_count == 1 and expanded.space_group_name == "P 1"
-    assert expanded.translation_vectors == crystal.translation_vectors
-    assert [atom.unit_cell_atom_index for atom in expanded.atoms] == [1, 2, 3]
-    for image, atom in zip(expanded.atoms, ATOMS, strict=True):
-        assert image.is_identity_symmetry_operation
-        assert image.symmetry_operation_index == 1
-        assert image.source_atom_index == atom.record.source_atom_index
-        assert (image.x, image.y, image.z) == approx(
-            (atom.record.x, atom.record.y, atom.record.z), abs=1e-9
-        )
+    assert images.shape == (len(ATOMS), 3)
+    assert np.allclose(
+        images,
+        [[atom.record.x, atom.record.y, atom.record.z] for atom in ATOMS],
+        atol=1e-9,
+    )
 
 
 @pytest.mark.parametrize(
@@ -85,38 +98,18 @@ def test_images_match_gemmi_operations_without_wrapping(space_group: str) -> Non
     )
     crystal = validate_crystal(make_metadata(cell=cell, space_group=space_group))
 
-    expanded = expand_atoms_by_symmetry(atoms=ATOMS, crystal=crystal)
+    images = symmetry_image_coordinates(ATOMS, crystal=crystal)
 
-    assert expanded.operation_count == len(crystal.operations)
-    assert len(expanded.atoms) == len(ATOMS) * expanded.operation_count
-    images = iter(expanded.atoms)
-    for atom in ATOMS:
-        for operation_index, (triplet, position) in enumerate(
-            _gemmi_images(crystal, atom), start=1
-        ):
-            image = next(images)
-            assert image.source_atom_index == atom.record.source_atom_index
-            assert image.symmetry_operation_index == operation_index
-            assert image.symmetry_operation == triplet
-            assert image.is_identity_symmetry_operation is (
-                triplet.replace(" ", "") == "x,y,z"
-            )
-            assert (image.x, image.y, image.z) == approx(position, abs=1e-9)
-    assert sum(atom.is_identity_symmetry_operation for atom in expanded.atoms) == len(
-        ATOMS
-    )
+    # Rows follow the input atoms and then Gemmi's operation order.
+    expected = _gemmi_images(crystal, ATOMS)
+    assert images.shape == (len(ATOMS) * len(crystal.operations), 3)
+    assert np.allclose(images, np.asarray(expected), atol=1e-9)
 
 
-def test_prepared_structure_expansion_uses_all_cleaned_atoms(
-    synthetic_pdb: Path,
-) -> None:
-    prepared = prepare_structure(
-        read_structure(resolve_structure_input(str(synthetic_pdb)))
-    )
+def test_no_atoms_give_no_images() -> None:
+    crystal = validate_crystal(make_metadata(space_group="P 1 21 1"))
 
-    expanded = expand_prepared_structure_by_symmetry(prepared)
-
-    assert len(expanded.atoms) == 2 * len(prepared.cleaned_atoms)
+    assert symmetry_image_coordinates((), crystal=crystal).shape == (0, 3)
 
 
 def _standard_frame_vectors(
@@ -138,42 +131,45 @@ def test_standard_translation_vectors() -> None:
         (-15, 0, 30 * np.sin(np.radians(120))), abs=1e-9
     )
 
-    shift = translation_vector_for_offsets(ortho, a_offset=1, b_offset=-1, c_offset=2)
-    assert (shift.x, shift.y, shift.z) == approx((10, -20, 60), abs=1e-9)
 
+def test_an_untrimmed_block_holds_every_neighbouring_cell() -> None:
+    crystal = validate_crystal(make_metadata(space_group="P 1 21 1"))
+    images = symmetry_image_coordinates(ATOMS, crystal=crystal)
 
-def test_translation_generates_every_neighbouring_cell() -> None:
-    crystal = validate_crystal(make_metadata(space_group="P 1"))
-    expanded = expand_atoms_by_symmetry(atoms=ATOMS, crystal=crystal)
-
-    block = translate_expanded_unit_cell(expanded, translation_range=1)
-
-    assert len(block.atoms) == 27 * len(ATOMS)
-    assert block.source_unit_cell_atom_count == len(ATOMS)
-    assert block.translation_vectors == crystal.translation_vectors
-    offsets = {
-        (atom.translation_a, atom.translation_b, atom.translation_c)
-        for atom in block.atoms
-    }
-    assert offsets == set(itertools.product((-1, 0, 1), repeat=3))
-    vectors = block.translation_vectors
-    for atom in block.atoms:
-        base = expanded.atoms[atom.unit_cell_atom_index - 1]
-        shift = translation_vector_for_offsets(
-            vectors,
-            a_offset=atom.translation_a,
-            b_offset=atom.translation_b,
-            c_offset=atom.translation_c,
+    # A padding far larger than the block keeps every image of every cell.
+    for translation_range, cell_count in ((0, 1), (1, 27), (2, 125)):
+        block = trim_crystal_to_reference_atoms(
+            image_coordinates=images,
+            translation_vectors=crystal.translation_vectors,
+            reference_atoms=ATOMS,
+            padding=1000.0,
+            translation_range=translation_range,
         )
-        assert (atom.x, atom.y, atom.z) == approx(
-            (base.x + shift.x, base.y + shift.y, base.z + shift.z), abs=1e-9
+
+        expected = _gemmi_images(crystal, ATOMS, translation_range=translation_range)
+        assert block.shape == (cell_count * len(images), 3)
+        assert np.allclose(
+            _rows_in_canonical_order(block),
+            _rows_in_canonical_order(expected),
+            atol=1e-9,
         )
-    assert [atom.translated_atom_index for atom in block.atoms] == list(
-        range(1, len(block.atoms) + 1)
+
+    # Rows are ordered by cell, with a slowest and c fastest, and the images
+    # of one cell keep their order.
+    vectors = crystal.translation_vectors
+    first_cell_shift = (
+        -vectors.a.x - vectors.b.x - vectors.c.x,
+        -vectors.a.y - vectors.b.y - vectors.c.y,
+        -vectors.a.z - vectors.b.z - vectors.c.z,
     )
-
-    single = translate_expanded_unit_cell(expanded, translation_range=0)
-    assert len(single.atoms) == len(ATOMS)
+    block = trim_crystal_to_reference_atoms(
+        image_coordinates=images,
+        translation_vectors=vectors,
+        reference_atoms=ATOMS,
+        padding=1000.0,
+    )
+    assert np.allclose(block[: len(images)], images + first_cell_shift, atol=1e-9)
+    assert np.allclose(block[13 * len(images) : 14 * len(images)], images, atol=1e-9)
 
 
 def test_bounds_and_padding() -> None:
@@ -192,89 +188,48 @@ def test_bounds_and_padding() -> None:
 
 def test_trimmed_block_matches_brute_force_translation() -> None:
     crystal = validate_crystal(make_metadata(space_group="P 1 21 1"))
-    expanded = expand_atoms_by_symmetry(atoms=ATOMS, crystal=crystal)
+    images = symmetry_image_coordinates(ATOMS, crystal=crystal)
     reference = ATOMS[:2]
     padding = 7.0
 
-    trimmed = trim_expanded_unit_cell_to_reference_atoms(
-        expanded_structure=expanded, reference_atoms=reference, padding=padding
+    trimmed = trim_crystal_to_reference_atoms(
+        image_coordinates=images,
+        translation_vectors=crystal.translation_vectors,
+        reference_atoms=reference,
+        padding=padding,
     )
 
-    full = translate_expanded_unit_cell(expanded, translation_range=1)
+    full = _gemmi_images(crystal, ATOMS, translation_range=1)
     bounds = expand_bounds(bounds_from_prepared_atoms(reference), padding)
-    expected = {
-        (
-            atom.source_atom_index,
-            atom.symmetry_operation_index,
-            atom.translation_a,
-            atom.translation_b,
-            atom.translation_c,
-            round(atom.x, 6),
-            round(atom.y, 6),
-            round(atom.z, 6),
-        )
-        for atom in full.atoms
-        if bounds.x_min <= atom.x <= bounds.x_max
-        and bounds.y_min <= atom.y <= bounds.y_max
-        and bounds.z_min <= atom.z <= bounds.z_max
-    }
-    actual: set[tuple[int, int, int, int, int, float, float, float]] = set()
-    identity_by_source = {
-        a.source_atom_index: a.symmetry_operation_index
-        for a in expanded.atoms
-        if a.is_identity_symmetry_operation
-    }
-    for row in range(trimmed.atom_count):
-        source = int(trimmed.source_atom_indices[row])
-        x, y, z = trimmed.coordinates[row]
-        # Recover the operation index by matching the unshifted image.
-        shift = translation_vector_for_offsets(
-            trimmed.translation_vectors,
-            a_offset=int(trimmed.translation_offsets[row][0]),
-            b_offset=int(trimmed.translation_offsets[row][1]),
-            c_offset=int(trimmed.translation_offsets[row][2]),
-        )
-        base = (x - shift.x, y - shift.y, z - shift.z)
-        operation_index = next(
-            a.symmetry_operation_index
-            for a in expanded.atoms
-            if a.source_atom_index == source
-            and np.allclose((a.x, a.y, a.z), base, atol=1e-6)
-        )
-        assert bool(trimmed.is_identity_symmetry_operation[row]) is (
-            operation_index == identity_by_source[source]
-        )
-        actual.add(
-            (
-                source,
-                operation_index,
-                int(trimmed.translation_offsets[row][0]),
-                int(trimmed.translation_offsets[row][1]),
-                int(trimmed.translation_offsets[row][2]),
-                round(x, 6),
-                round(y, 6),
-                round(z, 6),
-            )
-        )
+    expected = [
+        (x, y, z)
+        for x, y, z in full
+        if bounds.x_min <= x <= bounds.x_max
+        and bounds.y_min <= y <= bounds.y_max
+        and bounds.z_min <= z <= bounds.z_max
+    ]
 
-    assert actual == expected
-    assert 0 < trimmed.atom_count < len(full.atoms)
-    assert trimmed.original_atom_count == len(full.atoms)
-    assert trimmed.padding == padding and trimmed.trim_bounds == bounds
+    # The trimmed block must hold exactly the images of the full block that
+    # lie in the box, each once, whatever their order.
+    assert 0 < len(trimmed) == len(expected) < len(full)
+    assert np.allclose(
+        _rows_in_canonical_order(trimmed),
+        _rows_in_canonical_order(expected),
+        atol=1e-9,
+    )
 
 
-def test_trim_rejects_a_region_that_retains_no_atoms() -> None:
-    crystal = validate_crystal(make_metadata(space_group="P 1"))
-    expanded = expand_atoms_by_symmetry(atoms=ATOMS, crystal=crystal)
-    # A reference atom far from every image leaves an empty neighbour region.
-    far_away = (make_prepared_atom(source_atom_index=99, x=1000.0),)
-    with pytest.raises(CrystalTrimError, match="no atoms"):
-        trim_expanded_unit_cell_to_reference_atoms(
-            expanded_structure=expanded,
-            reference_atoms=far_away,
-            padding=1.0,
-            translation_range=0,
-        )
+def test_every_cleaned_atom_of_a_structure_is_in_the_block(
+    synthetic_pdb: Path,
+) -> None:
+    prepared = prepare_structure(
+        read_structure(resolve_structure_input(str(synthetic_pdb)))
+    )
+    crystal = validate_crystal(prepared.metadata)
+
+    images = symmetry_image_coordinates(prepared.cleaned_atoms, crystal=crystal)
+
+    assert len(images) == 2 * len(prepared.cleaned_atoms)
 
 
 def test_file_specific_orthogonalization_frame_is_kept(tmp_path: Path) -> None:

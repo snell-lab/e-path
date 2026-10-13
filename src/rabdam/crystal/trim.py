@@ -1,23 +1,21 @@
-"""Trim translated crystal atoms to the BDamage neighbour region."""
+"""Build the block of crystal atoms that can be neighbours of the scored atoms.
 
-from __future__ import annotations
+Packing density counts the atoms within a fixed radius of each scored atom, so
+only atom images close to the scored atoms are needed. This module copies the
+symmetry images from `rabdam.crystal.symmetry` into the neighbouring cells and
+keeps the ones inside a padded box around the scored atoms, as an array of
+positions for `rabdam.packing`.
+"""
 
+import itertools
 from collections.abc import Iterable
 from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
 
-from rabdam.crystal.symmetry import SymmetryExpandedStructure
-from rabdam.crystal.translate import (
-    UnitCellTranslationVectors,
-    translation_vector_for_offsets,
-)
-from rabdam.structure.models import PreparedAtom, PreparedStructure
-
-
-class CrystalTrimError(ValueError):
-    """Report invalid bounds or an unusable trimmed crystal block."""
+from rabdam.structure.models import PreparedAtom
+from xtal.cell import UnitCellTranslationVectors
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,168 +30,87 @@ class CartesianBounds:
     z_max: float
 
 
-@dataclass(frozen=True, slots=True)
-class ArrayTrimmedCrystalBlock:
-    """Store a vectorized trimmed crystal block.
-
-    Coordinates have shape `(n, 3)` in angstroms. Source indices and identity
-    flags have shape `(n,)`, and integer translation offsets have shape `(n, 3)`.
-    Rows across all four arrays describe the same translated atom.
-    """
-
-    coordinates: NDArray[np.float64]
-    source_atom_indices: NDArray[np.int64]
-    is_identity_symmetry_operation: NDArray[np.bool_]
-    translation_offsets: NDArray[np.int64]
-    reference_bounds: CartesianBounds
-    trim_bounds: CartesianBounds
-    padding: float
-    original_atom_count: int
-    translation_vectors: UnitCellTranslationVectors
-    translation_range: int
-    source_unit_cell_atom_count: int
-
-    @property
-    def atom_count(self) -> int:
-        """Return the number of retained coordinate rows."""
-        return int(self.coordinates.shape[0])
-
-
-def trim_expanded_unit_cell_for_bdamage(
+def trim_crystal_to_reference_atoms(
     *,
-    expanded_structure: SymmetryExpandedStructure,
-    prepared_structure: PreparedStructure,
-    padding: float,
-    translation_range: int = 1,
-) -> ArrayTrimmedCrystalBlock:
-    """Translate and trim an expanded cell around selected BDamage atoms."""
-    return trim_expanded_unit_cell_to_reference_atoms(
-        expanded_structure=expanded_structure,
-        reference_atoms=prepared_structure.selected_atoms,
-        padding=padding,
-        translation_range=translation_range,
-    )
-
-
-def trim_expanded_unit_cell_to_reference_atoms(
-    *,
-    expanded_structure: SymmetryExpandedStructure,
+    image_coordinates: NDArray[np.float64],
+    translation_vectors: UnitCellTranslationVectors,
     reference_atoms: Iterable[PreparedAtom],
     padding: float,
     translation_range: int = 1,
-) -> ArrayTrimmedCrystalBlock:
-    """Translate and retain atom images near reference atoms.
+) -> NDArray[np.float64]:
+    """Copy symmetry images into neighbouring cells and keep those near atoms.
 
-    The reference bounding box is expanded by `padding` angstroms on every
-    Cartesian face. Translation and trimming are fused to avoid materializing
-    every atom copy.
+    `image_coordinates` holds the symmetry images of one unit cell, with shape
+    `(n, 3)` in angstroms, and `translation_vectors` the cell axes in the same
+    Cartesian frame. Every image is copied into each cell whose integer
+    offsets along a, b and c run from `-translation_range` to
+    `translation_range`. A copy is kept when it lies inside the axis-aligned
+    Cartesian box around `reference_atoms`, grown by `padding` angstroms on
+    every face, with the faces included.
 
-    Args:
-        expanded_structure: Symmetry-expanded source unit cell.
-        reference_atoms: Atoms whose Cartesian extent defines the trim region.
-        padding: Nonnegative extension of each bounding-box face in angstroms.
-        translation_range: Maximum integer unit-cell offset along each axis.
+    The kept positions are returned with shape `(m, 3)`, ordered by cell
+    offset, a slowest and c fastest, and then by image order. Cells are
+    translated and trimmed one at a time, so the full block of images is never
+    held in memory.
 
-    Returns:
-        Row-aligned coordinate, source-index, symmetry, and translation arrays
-        for retained atom images.
-
-    Raises:
-        CrystalTrimError: If trimming retains no atoms.
+    At least one reference atom, a nonnegative `padding` and a nonnegative
+    `translation_range` are required, which
+    `run_bdamage_pipeline_from_prepared` checks before this is called. The box
+    always holds the reference atoms' own images when they are among
+    `image_coordinates`, as the selected atoms of a structure are.
     """
-    expanded_atoms = expanded_structure.atoms
-    reference_bounds = bounds_from_prepared_atoms(reference_atoms)
-    trim_bounds = expand_bounds(reference_bounds, padding)
-    vectors = expanded_structure.translation_vectors
-
-    base_coordinates = np.asarray(
-        [(atom.x, atom.y, atom.z) for atom in expanded_atoms],
+    trim_bounds = expand_bounds(bounds_from_prepared_atoms(reference_atoms), padding)
+    lower_corner = np.asarray(
+        (trim_bounds.x_min, trim_bounds.y_min, trim_bounds.z_min),
         dtype=np.float64,
     )
-    source_atom_indices = np.asarray(
-        [atom.source_atom_index for atom in expanded_atoms],
-        dtype=np.int64,
-    )
-    identity_flags = np.asarray(
-        [atom.is_identity_symmetry_operation for atom in expanded_atoms],
-        dtype=np.bool_,
+    upper_corner = np.asarray(
+        (trim_bounds.x_max, trim_bounds.y_max, trim_bounds.z_max),
+        dtype=np.float64,
     )
 
     coordinate_chunks: list[NDArray[np.float64]] = []
-    source_index_chunks: list[NDArray[np.int64]] = []
-    identity_flag_chunks: list[NDArray[np.bool_]] = []
-    offset_chunks: list[NDArray[np.int64]] = []
 
-    for a_offset in range(-translation_range, translation_range + 1):
-        for b_offset in range(-translation_range, translation_range + 1):
-            for c_offset in range(-translation_range, translation_range + 1):
-                shift = translation_vector_for_offsets(
-                    vectors,
-                    a_offset=a_offset,
-                    b_offset=b_offset,
-                    c_offset=c_offset,
-                )
-                shifted_coordinates = base_coordinates + np.asarray(
-                    (shift.x, shift.y, shift.z),
-                    dtype=np.float64,
-                )
-                inside_bounds = (
-                    (trim_bounds.x_min <= shifted_coordinates[:, 0])
-                    & (shifted_coordinates[:, 0] <= trim_bounds.x_max)
-                    & (trim_bounds.y_min <= shifted_coordinates[:, 1])
-                    & (shifted_coordinates[:, 1] <= trim_bounds.y_max)
-                    & (trim_bounds.z_min <= shifted_coordinates[:, 2])
-                    & (shifted_coordinates[:, 2] <= trim_bounds.z_max)
-                )
-
-                retained_count = int(np.count_nonzero(inside_bounds))
-                if retained_count == 0:
-                    continue
-
-                coordinate_chunks.append(shifted_coordinates[inside_bounds])
-                source_index_chunks.append(source_atom_indices[inside_bounds])
-                identity_flag_chunks.append(identity_flags[inside_bounds])
-                offset_chunks.append(
-                    np.asarray(
-                        np.repeat(
-                            np.asarray(
-                                ((a_offset, b_offset, c_offset),),
-                                dtype=np.int64,
-                            ),
-                            retained_count,
-                            axis=0,
-                        ),
-                        dtype=np.int64,
-                    )
-                )
-
-    if not coordinate_chunks:
-        raise CrystalTrimError(
-            "Trimmed crystal block contains no atoms. Check unit-cell translation "
-            "and packing-density threshold."
+    cell_offsets = range(-translation_range, translation_range + 1)
+    for a_offset, b_offset, c_offset in itertools.product(cell_offsets, repeat=3):
+        shifted_coordinates = image_coordinates + _cell_shift(
+            translation_vectors, a_offset, b_offset, c_offset
         )
+        inside_bounds = np.logical_and(
+            lower_corner <= shifted_coordinates,
+            shifted_coordinates <= upper_corner,
+        ).all(axis=1)
 
-    translated_cell_count = (2 * translation_range + 1) ** 3
+        if inside_bounds.any():
+            coordinate_chunks.append(shifted_coordinates[inside_bounds])
 
-    return ArrayTrimmedCrystalBlock(
-        coordinates=np.concatenate(coordinate_chunks, axis=0),
-        source_atom_indices=np.concatenate(source_index_chunks, axis=0),
-        is_identity_symmetry_operation=np.concatenate(identity_flag_chunks, axis=0),
-        translation_offsets=np.concatenate(offset_chunks, axis=0),
-        reference_bounds=reference_bounds,
-        trim_bounds=trim_bounds,
-        padding=padding,
-        original_atom_count=len(expanded_atoms) * translated_cell_count,
-        translation_vectors=vectors,
-        translation_range=translation_range,
-        source_unit_cell_atom_count=len(expanded_atoms),
+    return np.concatenate(coordinate_chunks, axis=0)
+
+
+def _cell_shift(
+    vectors: UnitCellTranslationVectors,
+    a_offset: int,
+    b_offset: int,
+    c_offset: int,
+) -> NDArray[np.float64]:
+    """Return the Cartesian displacement of a whole-cell offset."""
+    return np.asarray(
+        (
+            a_offset * vectors.a.x + b_offset * vectors.b.x + c_offset * vectors.c.x,
+            a_offset * vectors.a.y + b_offset * vectors.b.y + c_offset * vectors.c.y,
+            a_offset * vectors.a.z + b_offset * vectors.b.z + c_offset * vectors.c.z,
+        ),
+        dtype=np.float64,
     )
 
 
 def bounds_from_prepared_atoms(
     atoms: Iterable[PreparedAtom],
 ) -> CartesianBounds:
-    """Compute inclusive Cartesian bounds for prepared atoms."""
+    """Return the smallest axis-aligned box that holds every atom.
+
+    At least one atom is required.
+    """
     atom_tuple = tuple(atoms)
     x_values = tuple(atom.record.x for atom in atom_tuple)
     y_values = tuple(atom.record.y for atom in atom_tuple)
@@ -210,7 +127,7 @@ def bounds_from_prepared_atoms(
 
 
 def expand_bounds(bounds: CartesianBounds, padding: float) -> CartesianBounds:
-    """Expand Cartesian bounds by a nonnegative padding in angstroms."""
+    """Return `bounds` moved outward by `padding` angstroms on every face."""
     # Cartesian padding cannot exclude a Euclidean neighbour because that atom
     # must be within the cutoff along every individual axis.
     return CartesianBounds(

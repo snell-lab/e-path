@@ -1,19 +1,17 @@
 """Calculate per-atom BDamage scores.
 
 BDamage is an atom's B-factor divided by the average B-factor of atoms with
-similar packing density.
+similar packing density. This is the last stage of the BDamage calculation:
+`rabdam.packing` supplies the packing densities, and `rabdam.pipeline` chooses
+the window size and checks it against the selection before calling in here.
 """
 
-from __future__ import annotations
-
 import math
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
 
-from rabdam.packing import PackingDensityAtomResult, PackingDensityResult
 from rabdam.structure.models import PreparedAtom, PreparedStructure
 
 
@@ -23,7 +21,13 @@ class BDamageScoreError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class BDamageAtomInput:
-    """Store one selected atom's B-factor and packing density."""
+    """Store one selected atom's B-factor and packing density.
+
+    `bdamage_atom_index` is the atom's position among the selected atoms,
+    counted from 1. `source_atom_index` and `atom_serial` are copied from the
+    atom's `xtal.reader.AtomRecord`. `packing_density` is the atom's neighbour
+    count.
+    """
 
     bdamage_atom_index: int
     source_atom_index: int
@@ -34,51 +38,41 @@ class BDamageAtomInput:
 
 @dataclass(frozen=True, slots=True)
 class BDamageAtomResult:
-    """Store one atom's BDamage score and normalization details."""
+    """Store one atom's BDamage score and normalization details.
+
+    `average_b_factor` is the mean B-factor of the atom's packing-density
+    window, and `bdamage` is the atom's B-factor divided by it. The other
+    fields are those of the atom's `BDamageAtomInput`.
+    """
 
     bdamage_atom_index: int
     source_atom_index: int
-    atom_serial: int | None
-    b_factor: float
     packing_density: int
     average_b_factor: float
     bdamage: float
-    sorted_packing_density_index: int
-
-
-@dataclass(frozen=True, slots=True)
-class BDamageScoreResult:
-    """Store per-atom BDamage results and calculation summary values."""
-
-    atom_results: tuple[BDamageAtomResult, ...]
-    window_size: int
-    selected_atom_count: int
 
 
 def calculate_bdamage_scores_for_structure(
     *,
     prepared_structure: PreparedStructure,
-    packing_density_result: PackingDensityResult,
+    packing_densities: Sequence[int],
     window_size: int,
-) -> BDamageScoreResult:
+) -> tuple[BDamageAtomResult, ...]:
     """Calculate BDamage scores for a prepared structure.
 
-    Packing-density rows are built one per selected atom in selected-atom
-    order, so they are paired with the selected atoms by position. Scores are
-    returned in selected-atom order.
+    `packing_densities` holds one neighbour count per selected atom, in
+    selected-atom order, so the two are paired by position. Scores are
+    returned in selected-atom order. A selected atom whose B-factor is not
+    finite and positive raises `BDamageScoreError`.
     """
     atom_inputs = tuple(
-        bdamage_input_from_prepared_atom(
+        _bdamage_input_from_prepared_atom(
             bdamage_atom_index=index,
             atom=atom,
-            packing_density_atom_result=packing_result,
+            packing_density=packing_density,
         )
-        for index, (atom, packing_result) in enumerate(
-            zip(
-                prepared_structure.selected_atoms,
-                packing_density_result.atom_results,
-                strict=True,
-            ),
+        for index, (atom, packing_density) in enumerate(
+            zip(prepared_structure.selected_atoms, packing_densities, strict=True),
             start=1,
         )
     )
@@ -89,13 +83,13 @@ def calculate_bdamage_scores_for_structure(
     )
 
 
-def bdamage_input_from_prepared_atom(
+def _bdamage_input_from_prepared_atom(
     *,
     bdamage_atom_index: int,
     atom: PreparedAtom,
-    packing_density_atom_result: PackingDensityAtomResult,
+    packing_density: int,
 ) -> BDamageAtomInput:
-    """Combine an aligned prepared atom and packing-density result.
+    """Combine a prepared atom with its packing density.
 
     This is where B-factors enter the score calculation, so a B-factor that is
     not finite and positive raises `BDamageScoreError` here.
@@ -113,7 +107,7 @@ def bdamage_input_from_prepared_atom(
         source_atom_index=atom.record.source_atom_index,
         atom_serial=atom.record.atom_serial,
         b_factor=b_factor,
-        packing_density=packing_density_atom_result.neighbour_count,
+        packing_density=packing_density,
     )
 
 
@@ -121,24 +115,20 @@ def calculate_bdamage_scores(
     *,
     atom_inputs: Iterable[BDamageAtomInput],
     window_size: int,
-) -> BDamageScoreResult:
+) -> tuple[BDamageAtomResult, ...]:
     """Normalize atom B-factors within packing-density windows.
 
-    Atoms are sorted by packing density before centered-window averages are
-    computed. Results are restored to their original one-based BDamage order.
-    The workflow entry point has already checked that there are atoms and that
-    the window fits them.
+    The atoms are sorted by packing density, and each B-factor is divided by
+    the mean B-factor of the `window_size` atoms centered on it in that order.
+    Results are returned in order of `bdamage_atom_index`, which is the input
+    order when the inputs are numbered from 1 as
+    `calculate_bdamage_scores_for_structure` numbers them.
 
-    Args:
-        atom_inputs: Selected atoms with B-factors and neighbour counts.
-        window_size: Positive odd number of atoms in each normalization window.
-
-    Returns:
-        Per-atom BDamage values and intermediate normalization values in input
-        order.
+    `window_size` is the positive odd number of atoms in each window. The
+    pipeline entry point has already checked that there are atoms and that the
+    window fits them.
     """
-    atom_input_tuple = tuple(atom_inputs)
-    sorted_inputs = sort_atom_inputs_for_bdamage(atom_input_tuple)
+    sorted_inputs = sort_atom_inputs_for_bdamage(atom_inputs)
     sorted_average_b_factors = centered_window_average_b_factors(
         sorted_inputs,
         window_size=window_size,
@@ -148,38 +138,24 @@ def calculate_bdamage_scores(
         BDamageAtomResult(
             bdamage_atom_index=atom_input.bdamage_atom_index,
             source_atom_index=atom_input.source_atom_index,
-            atom_serial=atom_input.atom_serial,
-            b_factor=atom_input.b_factor,
             packing_density=atom_input.packing_density,
             average_b_factor=average_b_factor,
             bdamage=atom_input.b_factor / average_b_factor,
-            sorted_packing_density_index=sorted_index,
         )
-        for sorted_index, (atom_input, average_b_factor) in enumerate(
-            zip(sorted_inputs, sorted_average_b_factors, strict=True), start=1
+        for atom_input, average_b_factor in zip(
+            sorted_inputs, sorted_average_b_factors, strict=True
         )
     )
 
-    results_by_original_index = {
-        result.bdamage_atom_index: result for result in sorted_results
-    }
-
-    return BDamageScoreResult(
-        atom_results=tuple(
-            results_by_original_index[index]
-            for index in range(1, len(atom_input_tuple) + 1)
-        ),
-        window_size=window_size,
-        selected_atom_count=len(atom_input_tuple),
-    )
+    return tuple(sorted(sorted_results, key=lambda result: result.bdamage_atom_index))
 
 
 def sort_atom_inputs_for_bdamage(
     atom_inputs: Iterable[BDamageAtomInput],
 ) -> tuple[BDamageAtomInput, ...]:
     """Sort atom inputs deterministically by increasing packing density."""
-    # Deterministic tie-breakers preserve RABDAM's window membership when many
-    # atoms share the same packing density.
+    # The tie-breakers fix which atoms fall in each window when many share a
+    # packing density.
     return tuple(
         sorted(
             atom_inputs,
@@ -196,8 +172,8 @@ def _atom_serial_sort_value(atom_input: BDamageAtomInput) -> int:
     if atom_input.atom_serial is not None:
         return atom_input.atom_serial
 
-    # Serials are almost always present; falling back to the reader index keeps
-    # the sort deterministic when one is missing.
+    # A file can leave an atom's serial blank. Its position in the file is used
+    # instead, so every atom still has a number to sort by.
     return atom_input.source_atom_index
 
 
@@ -206,76 +182,44 @@ def centered_window_average_b_factors(
     *,
     window_size: int,
 ) -> tuple[float, ...]:
-    """Compute centered-window B-factor averages for sorted atoms.
+    """Return the average B-factor of the window around each sorted atom.
 
-    The first and last complete windows are reused at the distribution edges,
-    so every atom is normalized by exactly `window_size` B-factors.
+    An atom's window is the `window_size` atoms centred on it in the sorted
+    order. Near either end of the list a centred window would run past the
+    end, so those atoms use the first or last window that fits. Every average
+    is therefore taken over exactly `window_size` B-factors. The averages are
+    returned in the same order as the atoms.
 
-    The workflow entry point has already checked `window_size` against the
-    atom count, and `bdamage_input_from_prepared_atom` each B-factor.
-
-    Returns:
-        Average B-factors aligned with the sorted input atoms.
+    The pipeline entry point has already checked `window_size` against the
+    atom count, and `_bdamage_input_from_prepared_atom` each B-factor.
     """
-    sorted_input_tuple = tuple(sorted_atom_inputs)
     b_factors = np.asarray(
-        [atom_input.b_factor for atom_input in sorted_input_tuple],
+        [atom_input.b_factor for atom_input in sorted_atom_inputs],
         dtype=np.float64,
     )
-    half_window = math.floor(window_size / 2)
+    atom_count = len(b_factors)
 
-    # Cumulative sums make each window average an O(1) subtraction instead of
-    # re-summing window_size B-factors per atom.
-    prefix_sums = np.empty(len(b_factors) + 1, dtype=np.float64)
+    # With running totals, the sum of any window is one subtraction, so the
+    # B-factors are not added up again for every atom.
+    prefix_sums = np.empty(atom_count + 1, dtype=np.float64)
     prefix_sums[0] = 0.0
     np.cumsum(b_factors, out=prefix_sums[1:])
+    complete_window_averages = (
+        prefix_sums[window_size:] - prefix_sums[:-window_size]
+    ) / window_size
 
-    first_window_average = _window_average_from_prefix_sums(
-        prefix_sums,
-        start=0,
-        window_size=window_size,
+    # An atom's window starts half a window before it. Near the ends that
+    # start is moved so the whole window stays inside the list.
+    window_starts = np.clip(
+        np.arange(atom_count) - window_size // 2,
+        0,
+        atom_count - window_size,
     )
-    last_window_average = _window_average_from_prefix_sums(
-        prefix_sums,
-        start=len(b_factors) - window_size,
-        window_size=window_size,
-    )
-
-    averages: list[float] = []
-    for index in range(len(b_factors)):
-        # Reusing a complete edge window avoids changing the normalization
-        # merely because an atom is near an end of the sorted distribution.
-        if index <= half_window - 1:
-            averages.append(first_window_average)
-            continue
-
-        if index >= len(b_factors) - half_window:
-            averages.append(last_window_average)
-            continue
-
-        start = index - half_window
-        averages.append(
-            _window_average_from_prefix_sums(
-                prefix_sums,
-                start=start,
-                window_size=window_size,
-            )
-        )
-
-    return tuple(averages)
-
-
-def _window_average_from_prefix_sums(
-    prefix_sums: NDArray[np.float64],
-    *,
-    start: int,
-    window_size: int,
-) -> float:
-    return float((prefix_sums[start + window_size] - prefix_sums[start]) / window_size)
+    return tuple(complete_window_averages[window_starts].tolist())
 
 
 def bdamage_scores_as_tuple(
-    result: BDamageScoreResult,
+    results: Iterable[BDamageAtomResult],
 ) -> tuple[float, ...]:
-    """Return BDamage values in selected-atom order."""
-    return tuple(atom_result.bdamage for atom_result in result.atom_results)
+    """Return the BDamage value of each result, in the same order."""
+    return tuple(result.bdamage for result in results)

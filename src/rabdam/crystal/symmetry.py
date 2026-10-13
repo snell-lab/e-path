@@ -1,126 +1,42 @@
-"""Expand prepared structures by crystallographic symmetry."""
+"""Expand prepared atoms into their space-group symmetry images.
 
-from __future__ import annotations
+This is the first step in rebuilding the crystal around a model. The images
+it returns fill one unit cell's worth of asymmetric units, which
+`rabdam.crystal.trim` then copies into the neighbouring cells. The cell, the
+operations, and the Cartesian frame all come from the `ValidatedCrystal` that
+`xtal.validate` builds.
+"""
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 
 import gemmi
 import numpy as np
 from numpy.typing import NDArray
 
-from rabdam.structure.models import PreparedAtom, PreparedStructure
-from xtal.cell import UnitCellParameters, UnitCellTranslationVectors
-from xtal.validate import ValidatedCrystal, validate_crystal
+from rabdam.structure.models import PreparedAtom
+from xtal.validate import ValidatedCrystal
 
 
-@dataclass(frozen=True, slots=True)
-class SymmetryExpandedAtom:
-    """Describe one Cartesian atom image produced by a symmetry operation."""
-
-    unit_cell_atom_index: int
-    source_atom_index: int
-    symmetry_operation_index: int
-    symmetry_operation: str
-    is_identity_symmetry_operation: bool
-    x: float
-    y: float
-    z: float
-
-
-@dataclass(frozen=True, slots=True)
-class SymmetryExpandedStructure:
-    """Store all symmetry images in one crystallographic unit cell."""
-
-    atoms: tuple[SymmetryExpandedAtom, ...]
-    unit_cell: UnitCellParameters
-    space_group_name: str
-    operation_count: int
-    # Lattice vectors in the same Cartesian frame as the expanded coordinates,
-    # so later unit-cell translations stay consistent with the images.
-    translation_vectors: UnitCellTranslationVectors
-
-
-def expand_prepared_structure_by_symmetry(
-    prepared_structure: PreparedStructure,
-    *,
-    crystal: ValidatedCrystal | None = None,
-) -> SymmetryExpandedStructure:
-    """Expand all cleaned atoms in a prepared structure by symmetry.
-
-    Args:
-        prepared_structure: Cleaned atoms and crystallographic metadata.
-        crystal: A crystal already validated by `xtal.validate`. When omitted,
-            the metadata is validated here, without asymmetric-unit content
-            checks.
-    """
-    if crystal is None:
-        crystal = validate_crystal(prepared_structure.metadata)
-
-    # Unselected atoms still contribute to the crystal environment around the
-    # atoms receiving BDamage scores.
-    return expand_atoms_by_symmetry(
-        atoms=prepared_structure.cleaned_atoms,
-        crystal=crystal,
-    )
-
-
-def expand_atoms_by_symmetry(
-    *,
+def symmetry_image_coordinates(
     atoms: Iterable[PreparedAtom],
+    *,
     crystal: ValidatedCrystal,
-) -> SymmetryExpandedStructure:
-    """Apply every space-group operation of a validated crystal to each atom.
+) -> NDArray[np.float64]:
+    """Return the position of every atom under every space-group operation.
 
-    Coordinates are transformed from Cartesian to fractional space, operated
-    on without unit-cell wrapping, and returned in Cartesian angstroms.
+    The result has one row per image and shape `(n, 3)`, in Cartesian angstroms
+    in the frame of `crystal.gemmi_cell`. Rows are ordered by input atom and
+    then by operation, in Gemmi's order, so each atom's images are contiguous.
 
-    Returns:
-        Expanded atoms ordered by input atom and then symmetry operation, plus
-        the unit cell and normalized space-group name of the validated crystal.
+    Together the images hold the contents of one unit cell, but they are left
+    where the operations put them and so need not lie inside a single cell. No
+    atoms give no rows.
     """
-    atom_tuple = tuple(atoms)
-
-    operations = crystal.operations
-    expanded_coordinates = _symmetry_expanded_coordinates(
-        atoms=atom_tuple,
+    return _symmetry_expanded_coordinates(
+        atoms=tuple(atoms),
         gemmi_cell=crystal.gemmi_cell,
-        operations=operations,
-    )
-    operation_triplets = tuple(operation.triplet() for operation in operations)
-    operation_identity_flags = tuple(
-        operation_triplet.replace(" ", "") == "x,y,z"
-        for operation_triplet in operation_triplets
-    )
-
-    expanded_atoms: list[SymmetryExpandedAtom] = []
-    for atom_index, atom in enumerate(atom_tuple):
-        for operation_index, coordinates in enumerate(
-            expanded_coordinates[atom_index],
-            start=1,
-        ):
-            expanded_atoms.append(
-                SymmetryExpandedAtom(
-                    unit_cell_atom_index=len(expanded_atoms) + 1,
-                    source_atom_index=atom.record.source_atom_index,
-                    symmetry_operation_index=operation_index,
-                    symmetry_operation=operation_triplets[operation_index - 1],
-                    is_identity_symmetry_operation=(
-                        operation_identity_flags[operation_index - 1]
-                    ),
-                    x=float(coordinates[0]),
-                    y=float(coordinates[1]),
-                    z=float(coordinates[2]),
-                )
-            )
-
-    return SymmetryExpandedStructure(
-        atoms=tuple(expanded_atoms),
-        unit_cell=crystal.unit_cell,
-        space_group_name=crystal.space_group_name,
-        operation_count=len(operations),
-        translation_vectors=crystal.translation_vectors,
-    )
+        operations=crystal.operations,
+    ).reshape(-1, 3)
 
 
 def _symmetry_expanded_coordinates(
@@ -130,67 +46,43 @@ def _symmetry_expanded_coordinates(
     operations: tuple[gemmi.Op, ...],
 ) -> NDArray[np.float64]:
     """Return unwrapped Cartesian symmetry images with shape `(atoms, ops, 3)`."""
-    cartesian_coordinates: NDArray[np.float64] = np.asarray(
+    # The reshape keeps an empty atom list as zero rows of three, which the
+    # matrix products below turn into zero images instead of rejecting.
+    cartesian_coordinates = np.asarray(
         [(atom.record.x, atom.record.y, atom.record.z) for atom in atoms],
         dtype=np.float64,
-    )
-    fractionalization_matrix = _gemmi_transform_matrix(gemmi_cell.frac)
-    fractionalization_vector = _gemmi_transform_vector(gemmi_cell.frac)
-    orthogonalization_matrix = _gemmi_transform_matrix(gemmi_cell.orth)
-    orthogonalization_vector = _gemmi_transform_vector(gemmi_cell.orth)
+    ).reshape(-1, 3)
+    fractional_coordinates = _apply_transform(gemmi_cell.frac, cartesian_coordinates)
 
-    fractional_coordinates: NDArray[np.float64] = np.add(
-        np.matmul(
-            cartesian_coordinates,
-            np.transpose(fractionalization_matrix),
-        ),
-        fractionalization_vector,
-    )
     # Gemmi stores operator rotations and translations as integers scaled by
     # Op.DEN, so divide by DEN to recover the fractional-space values.
-    operation_rotations: NDArray[np.float64] = np.asarray(
-        [
-            np.asarray(operation.rot, dtype=np.float64) / operation.DEN
-            for operation in operations
-        ],
-        dtype=np.float64,
+    rotations = (
+        np.asarray([operation.rot for operation in operations], dtype=np.float64)
+        / gemmi.Op.DEN
     )
-    operation_translations: NDArray[np.float64] = np.asarray(
-        [
-            np.asarray(operation.tran, dtype=np.float64) / operation.DEN
-            for operation in operations
-        ],
-        dtype=np.float64,
+    translations = (
+        np.asarray([operation.tran for operation in operations], dtype=np.float64)
+        / gemmi.Op.DEN
     )
 
-    # Wrapping here would move symmetry images needed by the later neighbour-box
-    # trimming step.
-    transformed_fractional_coordinates: NDArray[np.float64] = np.asarray(
+    # The images are not wrapped into the cell. The identity image has to stay
+    # on its source atom, where the trimming box and the packing-density count
+    # both expect to find it.
+    transformed_fractional_coordinates: NDArray[np.float64] = (
         np.einsum(  # pyright: ignore[reportUnknownMemberType]  # numpy stub gap
-            "ni,mji->nmj", fractional_coordinates, operation_rotations
+            "ni,mji->nmj", fractional_coordinates, rotations
         )
-        + operation_translations[np.newaxis, :, :],
-        dtype=np.float64,
+        + translations
     )
 
-    return np.asarray(
-        np.add(
-            np.matmul(
-                transformed_fractional_coordinates,
-                np.transpose(orthogonalization_matrix),
-            ),
-            orthogonalization_vector,
-        ),
-        dtype=np.float64,
-    )
+    return _apply_transform(gemmi_cell.orth, transformed_fractional_coordinates)
 
 
-def _gemmi_transform_matrix(transform: gemmi.Transform) -> NDArray[np.float64]:
-    return np.asarray(transform.mat.tolist(), dtype=np.float64)
-
-
-def _gemmi_transform_vector(transform: gemmi.Transform) -> NDArray[np.float64]:
-    return np.asarray(
-        (transform.vec.x, transform.vec.y, transform.vec.z),
-        dtype=np.float64,
-    )
+def _apply_transform(
+    transform: gemmi.Transform,
+    coordinates: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Apply a Gemmi affine transform to row vectors along the last axis."""
+    matrix = np.asarray(transform.mat.tolist(), dtype=np.float64)
+    vector = np.asarray(transform.vec.tolist(), dtype=np.float64)
+    return coordinates @ matrix.T + vector

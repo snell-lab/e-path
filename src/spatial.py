@@ -1,10 +1,11 @@
 """Radius neighbour searches backed by SciPy's KD-tree.
 
+A KD-tree finds the points near each query without measuring the distance to
+every point, which a crystal's worth of atoms is too many for.
+
 SciPy ships no type stubs, so this is the one module that talks to
 `scipy.spatial` directly. Callers get typed functions and never see the tree.
 """
-
-from __future__ import annotations
 
 from typing import Protocol, cast
 
@@ -57,7 +58,10 @@ def radius_neighbour_counts(
     query_points: NDArray[np.float64],
     radius: float,
 ) -> NDArray[np.int64]:
-    """Return how many `tree_points` lie within `radius` of each query point."""
+    """Return how many `tree_points` lie within `radius` of each query point.
+
+    A point at exactly `radius` is counted.
+    """
     tree = _build_tree(tree_points)
     raw_counts = tree.query_ball_point(
         query_points,

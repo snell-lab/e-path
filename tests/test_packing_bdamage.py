@@ -1,7 +1,5 @@
 """Packing-density counting and the BDamage sliding-window normalization."""
 
-from __future__ import annotations
-
 import math
 from collections.abc import Sequence
 
@@ -18,90 +16,54 @@ from rabdam.bdamage import (
     centered_window_average_b_factors,
     sort_atom_inputs_for_bdamage,
 )
-from rabdam.crystal.translate import TranslatedAtom
-from rabdam.packing import (
-    PackingDensityAtomResult,
-    PackingDensityError,
-    PackingDensityResult,
-    calculate_packing_density_from_arrays,
-    packing_density_counts_as_tuple,
+from rabdam.packing import calculate_packing_density
+from rabdam.pipeline import (
+    BDamagePipelineError,
+    BDamagePipelineOptions,
+    bdamage_window_size_from_fraction,
+    validate_pipeline_options,
 )
 from rabdam.structure.models import (
     PreparedAtom,
     PreparedStructure,
     RemovedAtomCounts,
 )
-from rabdam.workflow import (
-    BDamageWorkflowError,
-    BDamageWorkflowOptions,
-    bdamage_window_size_from_fraction,
-    validate_workflow_options,
-)
+
+type Position = tuple[float, float, float]
 
 
-def _neighbour(
-    index: int,
-    source: int,
-    x: float,
-    *,
-    identity: bool = True,
-    offset: tuple[int, int, int] = (0, 0, 0),
-) -> TranslatedAtom:
-    """Return a neighbour image on the x axis at distance `x` from the origin."""
-    return TranslatedAtom(
-        translated_atom_index=index,
-        unit_cell_atom_index=index,
-        source_atom_index=source,
-        symmetry_operation_index=1 if identity else 2,
-        is_identity_symmetry_operation=identity,
-        translation_a=offset[0],
-        translation_b=offset[1],
-        translation_c=offset[2],
-        x=x,
-        y=0.0,
-        z=0.0,
-    )
+def _on_x_axis(x: float) -> Position:
+    """Return the position of an atom image on the x axis."""
+    return (x, 0.0, 0.0)
 
 
 def _packing_density(
     selected: Sequence[PreparedAtom],
-    neighbours: Sequence[TranslatedAtom],
+    neighbours: Sequence[Position],
     threshold: float = 7.0,
-) -> PackingDensityResult:
-    """Run the production array path on neighbour images given as objects."""
-    return calculate_packing_density_from_arrays(
+) -> tuple[int, ...]:
+    """Run the production search on a hand-built set of surrounding atoms."""
+    return calculate_packing_density(
         selected_atoms=selected,
-        neighbour_coordinates=np.asarray(
-            [(n.x, n.y, n.z) for n in neighbours], dtype=np.float64
-        ).reshape(-1, 3),
-        source_atom_indices=np.asarray(
-            [n.source_atom_index for n in neighbours], dtype=np.int64
-        ),
-        is_identity_symmetry_operation=np.asarray(
-            [n.is_identity_symmetry_operation for n in neighbours], dtype=np.bool_
-        ),
-        translation_offsets=np.asarray(
-            [(n.translation_a, n.translation_b, n.translation_c) for n in neighbours],
-            dtype=np.int64,
-        ).reshape(-1, 3),
+        neighbour_coordinates=np.asarray(neighbours, dtype=np.float64).reshape(-1, 3),
         packing_density_threshold=threshold,
     )
 
 
 def _brute_force_counts(
     selected: Sequence[PreparedAtom],
-    neighbours: Sequence[TranslatedAtom],
+    neighbours: Sequence[Position],
     threshold: float,
 ) -> tuple[int, ...]:
     """Count neighbours strictly inside the threshold pair by pair.
 
     This is an independent reference for the KD-tree search. One is subtracted
-    for each atom's own central-cell copy, which every test cloud contains.
+    for the atom itself, which every test set of neighbours contains.
     """
     return tuple(
         sum(
-            math.dist((a.record.x, a.record.y, a.record.z), (n.x, n.y, n.z)) < threshold
-            for n in neighbours
+            math.dist((a.record.x, a.record.y, a.record.z), position) < threshold
+            for position in neighbours
         )
         - 1
         for a in selected
@@ -111,23 +73,17 @@ def _brute_force_counts(
 def test_neighbours_are_counted_strictly_inside_the_threshold() -> None:
     selected = (make_prepared_atom(source_atom_index=0, x=0.0),)
     neighbours = (
-        # The atom's own central-cell copy is returned by the search but never counted.
-        _neighbour(1, 0, 0.0),
-        _neighbour(2, 1, 1.0),  # inside
-        _neighbour(3, 2, 6.999),  # inside
-        _neighbour(4, 3, 7.0),  # exactly on the threshold: excluded
-        _neighbour(5, 4, 7.001),  # outside
-        # Symmetry and lattice images of the atom itself are ordinary neighbours.
-        _neighbour(6, 0, -3.0, identity=False),
-        _neighbour(7, 0, 5.0, offset=(1, 0, 0)),
+        # The atom itself is returned by the search but never counted.
+        _on_x_axis(0.0),
+        _on_x_axis(1.0),  # inside
+        _on_x_axis(6.999),  # inside
+        _on_x_axis(7.0),  # exactly on the threshold: excluded
+        _on_x_axis(7.001),  # outside
+        _on_x_axis(-3.0),  # inside, on the other side
+        _on_x_axis(5.0),  # inside
     )
 
-    result = _packing_density(selected, neighbours)
-
-    assert packing_density_counts_as_tuple(result) == (4,)
-    assert result.atom_results[0].source_atom_index == 0
-    assert result.atom_results[0].packing_density_atom_index == 1
-    assert result.selected_atom_count == 1 and result.neighbour_atom_count == 7
+    assert _packing_density(selected, neighbours) == (4,)
 
 
 def test_kd_tree_counts_match_a_brute_force_count() -> None:
@@ -136,37 +92,18 @@ def test_kd_tree_counts_match_a_brute_force_count() -> None:
         make_prepared_atom(source_atom_index=5, x=10.0, atom_serial=6),
     )
     neighbours = (
-        _neighbour(1, 0, 0.0),
-        _neighbour(2, 5, 10.0),
-        _neighbour(3, 9, 4.0),
-        _neighbour(4, 9, 15.0),
+        _on_x_axis(0.0),
+        _on_x_axis(10.0),
+        _on_x_axis(4.0),
+        _on_x_axis(15.0),
     )
 
-    result = _packing_density(selected, neighbours)
-
-    # Atom 0 sees only the image at 4.0; atom 5 sees both images of atom 9.
+    # Atom 0 sees only the image at 4.0; atom 5 sees the images at 4.0 and 15.0.
     assert (
-        packing_density_counts_as_tuple(result)
+        _packing_density(selected, neighbours)
         == _brute_force_counts(selected, neighbours, 7.0)
         == (1, 2)
     )
-
-
-def test_missing_self_copy_and_misaligned_arrays_are_rejected() -> None:
-    selected = (make_prepared_atom(source_atom_index=0, x=0.0),)
-    with pytest.raises(PackingDensityError, match="central-cell copy"):
-        _packing_density(selected, (_neighbour(1, 7, 1.0),))
-    with pytest.raises(PackingDensityError, match="central-cell copy"):
-        _packing_density(selected, (_neighbour(1, 0, 9.0),))
-    with pytest.raises(PackingDensityError, match="shape"):
-        calculate_packing_density_from_arrays(
-            selected_atoms=selected,
-            neighbour_coordinates=np.zeros((2, 3)),
-            source_atom_indices=np.zeros(3, dtype=np.int64),
-            is_identity_symmetry_operation=np.ones(2, dtype=bool),
-            translation_offsets=np.zeros((2, 3), dtype=np.int64),
-            packing_density_threshold=7.0,
-        )
 
 
 def _inputs(
@@ -196,15 +133,8 @@ def test_hand_computed_window_averages_reuse_the_edge_windows() -> None:
 
     result = calculate_bdamage_scores(atom_inputs=inputs, window_size=3)
     assert bdamage_scores_as_tuple(result) == approx((0.5, 1.0, 1.0, 1.0, 1.25))
-    assert result.window_size == 3 and result.selected_atom_count == 5
-    assert [r.sorted_packing_density_index for r in result.atom_results] == [
-        1,
-        2,
-        3,
-        4,
-        5,
-    ]
-    assert [r.average_b_factor for r in result.atom_results] == approx([2, 2, 3, 4, 4])
+    assert len(result) == 5
+    assert [r.average_b_factor for r in result] == approx([2, 2, 3, 4, 4])
     assert centered_window_average_b_factors(inputs, window_size=5) == approx(
         (3.0,) * 5
     )
@@ -216,14 +146,8 @@ def test_results_are_returned_in_input_order_after_sorting_by_density() -> None:
 
     result = calculate_bdamage_scores(atom_inputs=inputs, window_size=3)
 
-    assert [r.bdamage_atom_index for r in result.atom_results] == [1, 2, 3, 4, 5]
-    assert [r.sorted_packing_density_index for r in result.atom_results] == [
-        5,
-        4,
-        3,
-        2,
-        1,
-    ]
+    assert [r.bdamage_atom_index for r in result] == [1, 2, 3, 4, 5]
+    assert [r.packing_density for r in result] == [50, 40, 30, 20, 10]
     assert bdamage_scores_as_tuple(result) == approx((1.25, 1.0, 1.0, 1.0, 0.5))
 
 
@@ -255,6 +179,7 @@ def test_density_ties_are_broken_by_serial_then_source_index() -> None:
 
 def _prepared(*atoms: PreparedAtom) -> PreparedStructure:
     return PreparedStructure(
+        source_atoms=tuple(atom.record for atom in atoms),
         cleaned_atoms=atoms,
         selected_atoms=atoms,
         metadata=make_metadata(),
@@ -262,28 +187,17 @@ def _prepared(*atoms: PreparedAtom) -> PreparedStructure:
     )
 
 
-def test_structure_scores_pair_atoms_with_packing_rows() -> None:
+def test_structure_scores_pair_atoms_with_packing_densities() -> None:
     prepared = _prepared(
         make_prepared_atom(source_atom_index=0),
         make_prepared_atom(source_atom_index=1, atom_serial=2),
     )
 
-    def packing(*rows: PackingDensityAtomResult) -> PackingDensityResult:
-        return PackingDensityResult(
-            atom_results=rows,
-            packing_density_threshold=7.0,
-            selected_atom_count=len(rows),
-            neighbour_atom_count=1,
-        )
-
-    good = packing(
-        PackingDensityAtomResult(1, 0, 1, 5), PackingDensityAtomResult(2, 1, 2, 9)
-    )
     result = calculate_bdamage_scores_for_structure(
-        prepared_structure=prepared, packing_density_result=good, window_size=1
+        prepared_structure=prepared, packing_densities=(5, 9), window_size=1
     )
     assert bdamage_scores_as_tuple(result) == approx((1.0, 1.0))
-    assert [r.packing_density for r in result.atom_results] == [5, 9]
+    assert [r.packing_density for r in result] == [5, 9]
 
     # A B-factor that is not finite and positive is rejected where it enters
     # the score calculation, naming the source atom.
@@ -294,7 +208,7 @@ def test_structure_scores_pair_atoms_with_packing_rows() -> None:
         )
         with pytest.raises(BDamageScoreError, match="for source atom 1"):
             calculate_bdamage_scores_for_structure(
-                prepared_structure=bad, packing_density_result=good, window_size=1
+                prepared_structure=bad, packing_densities=(5, 9), window_size=1
             )
 
 
@@ -324,15 +238,15 @@ def test_window_size_from_fraction(
 @pytest.mark.parametrize(
     "options",
     [
-        BDamageWorkflowOptions(packing_density_threshold=0.0),
-        BDamageWorkflowOptions(window_size_fraction=0.0),
-        BDamageWorkflowOptions(window_size_fraction=1.0),
-        BDamageWorkflowOptions(window_size_fraction=1.5),
-        BDamageWorkflowOptions(minimum_window_size=0),
-        BDamageWorkflowOptions(translation_range=-1),
+        BDamagePipelineOptions(packing_density_threshold=0.0),
+        BDamagePipelineOptions(window_size_fraction=0.0),
+        BDamagePipelineOptions(window_size_fraction=1.0),
+        BDamagePipelineOptions(window_size_fraction=1.5),
+        BDamagePipelineOptions(minimum_window_size=0),
+        BDamagePipelineOptions(translation_range=-1),
     ],
 )
-def test_workflow_option_validation(options: BDamageWorkflowOptions) -> None:
-    with pytest.raises(BDamageWorkflowError):
-        validate_workflow_options(options)
-    validate_workflow_options(BDamageWorkflowOptions())
+def test_pipeline_option_validation(options: BDamagePipelineOptions) -> None:
+    with pytest.raises(BDamagePipelineError):
+        validate_pipeline_options(options)
+    validate_pipeline_options(BDamagePipelineOptions())

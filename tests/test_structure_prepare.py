@@ -1,7 +1,5 @@
 """Structure preparation: cleaning, conformer resolution, classification, selection."""
 
-from __future__ import annotations
-
 import math
 from pathlib import Path
 
