@@ -3,16 +3,15 @@
 import dataclasses
 import math
 
+import gemmi
+import numpy as np
 import pytest
+from numpy.typing import NDArray
 from support import approx, make_macromolecule_atoms, make_metadata
 
 from xtal.cell import (
-    CartesianVector,
     CrystalMetadataError,
     UnitCellParameters,
-    UnitCellTranslationVectors,
-    make_gemmi_unit_cell,
-    normalize_space_group_name,
     space_group_from_metadata,
     translation_vectors_from_gemmi_cell,
     unit_cell_from_metadata,
@@ -37,8 +36,23 @@ def test_unit_cell_from_metadata_round_trips() -> None:
 def test_invalid_unit_cells_are_rejected(
     cell: tuple[float, float, float, float, float, float] | None,
 ) -> None:
+    # Gemmi refuses to build some of these cells itself, so the parameters
+    # are set on metadata that already holds a valid Gemmi cell.
+    metadata = make_metadata(cell=None)
+    if cell is not None:
+        a, b, c, alpha, beta, gamma = cell
+        metadata = dataclasses.replace(
+            make_metadata(),
+            unit_cell_a=a,
+            unit_cell_b=b,
+            unit_cell_c=c,
+            unit_cell_alpha=alpha,
+            unit_cell_beta=beta,
+            unit_cell_gamma=gamma,
+        )
+
     with pytest.raises(CrystalMetadataError):
-        unit_cell_from_metadata(make_metadata(cell=cell))
+        unit_cell_from_metadata(metadata)
 
 
 def test_incomplete_unit_cells_are_rejected() -> None:
@@ -48,10 +62,9 @@ def test_incomplete_unit_cells_are_rejected() -> None:
     assert "biological-assembly downloads" in str(error.value)
 
 
-def test_space_group_names_are_normalized_and_resolved() -> None:
-    assert normalize_space_group_name("'P  21 21  21'") == "P 21 21 21"
+def test_space_group_names_are_resolved() -> None:
     assert (
-        space_group_from_metadata(make_metadata(space_group='"P 1 21 1"')).hm
+        space_group_from_metadata(make_metadata(space_group="P 1 21 1")).hm
         == "P 1 21 1"
     )
     with pytest.raises(CrystalMetadataError, match="missing a space-group"):
@@ -60,8 +73,8 @@ def test_space_group_names_are_normalized_and_resolved() -> None:
         space_group_from_metadata(make_metadata(space_group="Q 99"))
 
 
-def test_validate_crystal_without_content_check() -> None:
-    crystal = validate_crystal(make_metadata())
+def test_validate_crystal_without_macromolecule_atoms() -> None:
+    crystal = validate_crystal(make_metadata(), macromolecule_atoms=())
 
     assert crystal.space_group_name == "P 1 21 1"
     assert crystal.operation_count == 2
@@ -119,8 +132,8 @@ def test_unknown_elements_contribute_no_mass() -> None:
     assert crystal.content is None
 
 
-def _standard_orthogonalization(cell: UnitCellParameters) -> UnitCellTranslationVectors:
-    """Build cell vectors with a along x and b in the xy plane.
+def _standard_orthogonalization(cell: UnitCellParameters) -> NDArray[np.float64]:
+    """Build cell vectors, one per row, with a along x and b in the xy plane.
 
     This is an independent reference for the vectors read back from gemmi.
     """
@@ -135,14 +148,17 @@ def _standard_orthogonalization(cell: UnitCellParameters) -> UnitCellTranslation
         - cos_gamma**2
         + 2 * cos_alpha * cos_beta * cos_gamma
     )
-    return UnitCellTranslationVectors(
-        a=CartesianVector(cell.a, 0.0, 0.0),
-        b=CartesianVector(cell.b * cos_gamma, cell.b * sin_gamma, 0.0),
-        c=CartesianVector(
-            cell.c * cos_beta,
-            cell.c * (cos_alpha - cos_beta * cos_gamma) / sin_gamma,
-            cell.c * volume_factor / sin_gamma,
+    return np.asarray(
+        (
+            (cell.a, 0.0, 0.0),
+            (cell.b * cos_gamma, cell.b * sin_gamma, 0.0),
+            (
+                cell.c * cos_beta,
+                cell.c * (cos_alpha - cos_beta * cos_gamma) / sin_gamma,
+                cell.c * volume_factor / sin_gamma,
+            ),
         ),
+        dtype=np.float64,
     )
 
 
@@ -157,15 +173,12 @@ def _standard_orthogonalization(cell: UnitCellParameters) -> UnitCellTranslation
 def test_gemmi_frame_vectors_match_the_standard_orthogonalization(
     cell: tuple[float, float, float, float, float, float],
 ) -> None:
-    parameters = UnitCellParameters(*cell)
-    standard = _standard_orthogonalization(parameters)
-    from_gemmi = translation_vectors_from_gemmi_cell(make_gemmi_unit_cell(parameters))
+    standard = _standard_orthogonalization(UnitCellParameters(*cell))
+    from_gemmi = translation_vectors_from_gemmi_cell(gemmi.UnitCell(*cell))
 
-    for axis in "abc":
-        expected, actual = getattr(standard, axis), getattr(from_gemmi, axis)
-        assert (actual.x, actual.y, actual.z) == approx(
-            (expected.x, expected.y, expected.z), abs=1e-9
-        )
+    assert np.allclose(from_gemmi, standard, atol=1e-9)
 
-    crystal = validate_crystal(make_metadata(cell=cell, space_group="P 1"))
-    assert crystal.translation_vectors == from_gemmi
+    crystal = validate_crystal(
+        make_metadata(cell=cell, space_group="P 1"), macromolecule_atoms=()
+    )
+    assert np.array_equal(crystal.translation_vectors, from_gemmi)

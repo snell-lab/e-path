@@ -1,8 +1,8 @@
 """Unit cells, space groups, and lattice vectors from crystallographic metadata.
 
 These helpers turn the raw metadata read from a coordinate file into checked
-unit-cell parameters, Gemmi cell and space-group objects, and the Cartesian
-lattice vectors used to translate atoms between cells. They are generic
+unit-cell parameters, a Gemmi space group, and the Cartesian lattice vectors
+used to translate atoms between cells. They are generic
 crystallography rather than part of any damage calculation, so they live here,
 where `xtal.validate` and `rabdam.crystal` both use them.
 """
@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import cast
 
 import gemmi
+import numpy as np
+from numpy.typing import NDArray
 
 from xtal.reader import StructureMetadata
 
@@ -45,28 +47,6 @@ class UnitCellParameters:
     alpha: float
     beta: float
     gamma: float
-
-
-@dataclass(frozen=True, slots=True)
-class CartesianVector:
-    """Store a Cartesian displacement vector in angstroms."""
-
-    x: float
-    y: float
-    z: float
-
-
-@dataclass(frozen=True, slots=True)
-class UnitCellTranslationVectors:
-    """Store the three unit-cell axes as Cartesian displacements.
-
-    Each axis is the shift that moves an atom one cell along that lattice
-    direction, in the same Cartesian frame as the atom coordinates.
-    """
-
-    a: CartesianVector
-    b: CartesianVector
-    c: CartesianVector
 
 
 def unit_cell_from_metadata(metadata: StructureMetadata) -> UnitCellParameters:
@@ -146,38 +126,16 @@ def validate_unit_cell(unit_cell: UnitCellParameters) -> None:
         )
 
 
-def make_gemmi_unit_cell(unit_cell: UnitCellParameters) -> gemmi.UnitCell:
-    """Return a Gemmi cell for `unit_cell` in the standard Cartesian frame.
-
-    The standard frame puts a along x and b in the xy plane. It ignores any
-    `SCALE` or `fract_transf_matrix` frame a file carries, so prefer the cell
-    Gemmi read from the file, `StructureMetadata.gemmi_cell`, when there is one.
-    """
-    return gemmi.UnitCell(
-        unit_cell.a,
-        unit_cell.b,
-        unit_cell.c,
-        unit_cell.alpha,
-        unit_cell.beta,
-        unit_cell.gamma,
-    )
-
-
 def space_group_from_metadata(metadata: StructureMetadata) -> gemmi.SpaceGroup:
     """Return the Gemmi space group named in `metadata`.
 
-    The name is normalized with `normalize_space_group_name` before lookup,
-    and a name that is missing, empty after normalization, or unrecognized
-    raises `CrystalMetadataError`. Files write a bare symbol such as "R 3" for
-    both settings of an R-centred group, so the setting, and with it the
-    number of operations, is chosen from the cell angles. Without them the
-    hexagonal setting is assumed.
+    A name that is missing, empty, or unrecognized raises
+    `CrystalMetadataError`. Files write a bare symbol such as "R 3" for both
+    settings of an R-centred group, so the setting, and with it the number of
+    operations, is chosen from the cell angles. Without them the hexagonal
+    setting is assumed.
     """
-    space_group_name = (
-        ""
-        if metadata.space_group is None
-        else normalize_space_group_name(metadata.space_group)
-    )
+    space_group_name = metadata.space_group
     if not space_group_name:
         raise CrystalMetadataError("Structure metadata is missing a space-group name.")
 
@@ -203,25 +161,16 @@ def space_group_from_metadata(metadata: StructureMetadata) -> gemmi.SpaceGroup:
     return space_group
 
 
-def normalize_space_group_name(space_group_name: str) -> str:
-    """Remove every quote character and collapse whitespace in a space-group name."""
-    cleaned = space_group_name.replace("'", "").replace('"', "")
-    return " ".join(cleaned.split())
-
-
-def translation_vectors_from_gemmi_cell(
-    cell: gemmi.UnitCell,
-) -> UnitCellTranslationVectors:
+def translation_vectors_from_gemmi_cell(cell: gemmi.UnitCell) -> NDArray[np.float64]:
     """Return the unit-cell axes in the Cartesian frame of a Gemmi cell.
+
+    The result has shape `(3, 3)`, with the a, b and c axes as its rows, in
+    angstroms. Each axis is the shift that moves an atom one cell along that
+    lattice direction.
 
     The axes are the columns of the cell's orthogonalization matrix. When a
     file carries a non-standard `SCALE` or `fract_transf_matrix`, Gemmi keeps
     that frame for the atoms, so taking the axes from the same matrix keeps
     symmetry images and lattice translations in one consistent frame.
     """
-    matrix = cell.orth.mat.tolist()
-    return UnitCellTranslationVectors(
-        a=CartesianVector(matrix[0][0], matrix[1][0], matrix[2][0]),
-        b=CartesianVector(matrix[0][1], matrix[1][1], matrix[2][1]),
-        c=CartesianVector(matrix[0][2], matrix[1][2], matrix[2][2]),
-    )
+    return np.asarray(cell.orth.mat.tolist(), dtype=np.float64).T

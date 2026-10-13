@@ -377,6 +377,7 @@ def make_metadata(
         unit_cell_beta=beta,
         unit_cell_gamma=gamma,
         resolution_angstrom=resolution,
+        gemmi_cell=gemmi.UnitCell(*cell) if cell is not None else None,
     )
 
 

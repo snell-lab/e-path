@@ -39,7 +39,7 @@ def test_r_centred_setting_follows_the_cell(
     path = write_synthetic_pdb(tmp_path / "r.pdb", cell=cell, space_group=space_group)
     metadata = read_structure(resolve_structure_input(str(path))).metadata
 
-    crystal = validate_crystal(metadata)
+    crystal = validate_crystal(metadata, macromolecule_atoms=())
 
     assert crystal.space_group.xhm() == expected_setting
     assert crystal.operation_count == expected_operations
@@ -48,12 +48,6 @@ def test_r_centred_setting_follows_the_cell(
 def test_space_group_without_a_cell_defaults_to_hexagonal() -> None:
     space_group = space_group_from_metadata(make_metadata(cell=None, space_group="R 3"))
     assert space_group.xhm() == "R 3:H"
-
-
-@pytest.mark.parametrize("name", ["''", ' " " ', "   "])
-def test_quote_only_space_group_names_are_missing(name: str) -> None:
-    with pytest.raises(CrystalMetadataError, match="missing a space-group"):
-        space_group_from_metadata(make_metadata(space_group=name))
 
 
 @pytest.mark.parametrize(

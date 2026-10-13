@@ -10,19 +10,10 @@ from numpy.typing import NDArray
 from support import approx, make_metadata, make_prepared_atom, write_synthetic_pdb
 
 from rabdam.crystal.symmetry import symmetry_image_coordinates
-from rabdam.crystal.trim import (
-    bounds_from_prepared_atoms,
-    expand_bounds,
-    trim_crystal_to_reference_atoms,
-)
+from rabdam.crystal.trim import trim_crystal_to_reference_atoms
 from rabdam.structure.models import PreparedAtom
 from rabdam.structure.prepare import prepare_structure
-from xtal.cell import (
-    UnitCellParameters,
-    UnitCellTranslationVectors,
-    make_gemmi_unit_cell,
-    translation_vectors_from_gemmi_cell,
-)
+from xtal.cell import translation_vectors_from_gemmi_cell
 from xtal.reader import read_structure
 from xtal.resolver import resolve_structure_input
 from xtal.validate import ValidatedCrystal, validate_crystal
@@ -75,7 +66,7 @@ def _rows_in_canonical_order(rows: object) -> NDArray[np.float64]:
 
 
 def test_p1_expansion_is_the_identity() -> None:
-    crystal = validate_crystal(make_metadata(space_group="P 1"))
+    crystal = validate_crystal(make_metadata(space_group="P 1"), macromolecule_atoms=())
 
     images = symmetry_image_coordinates(ATOMS, crystal=crystal)
 
@@ -96,7 +87,9 @@ def test_images_match_gemmi_operations_without_wrapping(space_group: str) -> Non
         if space_group == "P 41 3 2"
         else (15.0, 16.0, 17.0, 90.0, 95.0, 90.0)
     )
-    crystal = validate_crystal(make_metadata(cell=cell, space_group=space_group))
+    crystal = validate_crystal(
+        make_metadata(cell=cell, space_group=space_group), macromolecule_atoms=()
+    )
 
     images = symmetry_image_coordinates(ATOMS, crystal=crystal)
 
@@ -107,33 +100,29 @@ def test_images_match_gemmi_operations_without_wrapping(space_group: str) -> Non
 
 
 def test_no_atoms_give_no_images() -> None:
-    crystal = validate_crystal(make_metadata(space_group="P 1 21 1"))
+    crystal = validate_crystal(
+        make_metadata(space_group="P 1 21 1"), macromolecule_atoms=()
+    )
 
     assert symmetry_image_coordinates((), crystal=crystal).shape == (0, 3)
 
 
-def _standard_frame_vectors(
-    *cell: float,
-) -> UnitCellTranslationVectors:
-    return translation_vectors_from_gemmi_cell(
-        make_gemmi_unit_cell(UnitCellParameters(*cell))
-    )
+def _standard_frame_vectors(*cell: float) -> NDArray[np.float64]:
+    return translation_vectors_from_gemmi_cell(gemmi.UnitCell(*cell))
 
 
 def test_standard_translation_vectors() -> None:
     ortho = _standard_frame_vectors(10, 20, 30, 90, 90, 90)
-    assert (ortho.a.x, ortho.a.y, ortho.a.z) == approx((10, 0, 0), abs=1e-9)
-    assert (ortho.b.x, ortho.b.y, ortho.b.z) == approx((0, 20, 0), abs=1e-9)
-    assert (ortho.c.x, ortho.c.y, ortho.c.z) == approx((0, 0, 30), abs=1e-9)
+    assert np.allclose(ortho, [[10, 0, 0], [0, 20, 0], [0, 0, 30]], atol=1e-9)
 
     mono = _standard_frame_vectors(10, 20, 30, 90, 120, 90)
-    assert (mono.c.x, mono.c.y, mono.c.z) == approx(
-        (-15, 0, 30 * np.sin(np.radians(120))), abs=1e-9
-    )
+    assert mono[2].tolist() == approx([-15, 0, 30 * np.sin(np.radians(120))], abs=1e-9)
 
 
 def test_an_untrimmed_block_holds_every_neighbouring_cell() -> None:
-    crystal = validate_crystal(make_metadata(space_group="P 1 21 1"))
+    crystal = validate_crystal(
+        make_metadata(space_group="P 1 21 1"), macromolecule_atoms=()
+    )
     images = symmetry_image_coordinates(ATOMS, crystal=crystal)
 
     # A padding far larger than the block keeps every image of every cell.
@@ -157,11 +146,7 @@ def test_an_untrimmed_block_holds_every_neighbouring_cell() -> None:
     # Rows are ordered by cell, with a slowest and c fastest, and the images
     # of one cell keep their order.
     vectors = crystal.translation_vectors
-    first_cell_shift = (
-        -vectors.a.x - vectors.b.x - vectors.c.x,
-        -vectors.a.y - vectors.b.y - vectors.c.y,
-        -vectors.a.z - vectors.b.z - vectors.c.z,
-    )
+    first_cell_shift = -vectors.sum(axis=0)
     block = trim_crystal_to_reference_atoms(
         image_coordinates=images,
         translation_vectors=vectors,
@@ -172,22 +157,10 @@ def test_an_untrimmed_block_holds_every_neighbouring_cell() -> None:
     assert np.allclose(block[13 * len(images) : 14 * len(images)], images, atol=1e-9)
 
 
-def test_bounds_and_padding() -> None:
-    bounds = bounds_from_prepared_atoms(ATOMS)
-    assert (
-        bounds.x_min,
-        bounds.x_max,
-        bounds.y_min,
-        bounds.y_max,
-        bounds.z_min,
-        bounds.z_max,
-    ) == (-4.5, 20.0, -1.0, 7.25, 3.0, 12.0)
-    padded = expand_bounds(bounds, 7.0)
-    assert (padded.x_min, padded.x_max, padded.z_max) == (-11.5, 27.0, 19.0)
-
-
 def test_trimmed_block_matches_brute_force_translation() -> None:
-    crystal = validate_crystal(make_metadata(space_group="P 1 21 1"))
+    crystal = validate_crystal(
+        make_metadata(space_group="P 1 21 1"), macromolecule_atoms=()
+    )
     images = symmetry_image_coordinates(ATOMS, crystal=crystal)
     reference = ATOMS[:2]
     padding = 7.0
@@ -200,13 +173,16 @@ def test_trimmed_block_matches_brute_force_translation() -> None:
     )
 
     full = _gemmi_images(crystal, ATOMS, translation_range=1)
-    bounds = expand_bounds(bounds_from_prepared_atoms(reference), padding)
+    positions = [(atom.record.x, atom.record.y, atom.record.z) for atom in reference]
+    lower = [min(axis) - padding for axis in zip(*positions, strict=True)]
+    upper = [max(axis) + padding for axis in zip(*positions, strict=True)]
     expected = [
-        (x, y, z)
-        for x, y, z in full
-        if bounds.x_min <= x <= bounds.x_max
-        and bounds.y_min <= y <= bounds.y_max
-        and bounds.z_min <= z <= bounds.z_max
+        image
+        for image in full
+        if all(
+            low <= value <= high
+            for value, low, high in zip(image, lower, upper, strict=True)
+        )
     ]
 
     # The trimmed block must hold exactly the images of the full block that
@@ -225,7 +201,7 @@ def test_every_cleaned_atom_of_a_structure_is_in_the_block(
     prepared = prepare_structure(
         read_structure(resolve_structure_input(str(synthetic_pdb)))
     )
-    crystal = validate_crystal(prepared.metadata)
+    crystal = validate_crystal(prepared.metadata, macromolecule_atoms=())
 
     images = symmetry_image_coordinates(prepared.cleaned_atoms, crystal=crystal)
 
@@ -248,18 +224,16 @@ def test_file_specific_orthogonalization_frame_is_kept(tmp_path: Path) -> None:
     )
     metadata = read_structure(resolve_structure_input(str(path))).metadata
 
-    crystal = validate_crystal(metadata)
+    crystal = validate_crystal(metadata, macromolecule_atoms=())
 
     assert metadata.gemmi_cell is not None
     vectors = crystal.translation_vectors
     # The SCALE records carry six decimals, so the axes match to about 1e-4.
-    assert (vectors.a.x, vectors.a.y, vectors.a.z) == approx((0, 15, 0), abs=1e-3)
-    assert (vectors.b.x, vectors.b.y, vectors.b.z) == approx((0, 0, 16), abs=1e-3)
-    assert (vectors.c.x, vectors.c.y, vectors.c.z) == approx((17, 0, 0), abs=1e-3)
-    assert crystal.translation_vectors == translation_vectors_from_gemmi_cell(
-        metadata.gemmi_cell
+    assert np.allclose(vectors, [[0, 15, 0], [0, 0, 16], [17, 0, 0]], atol=1e-3)
+    assert np.array_equal(
+        vectors, translation_vectors_from_gemmi_cell(metadata.gemmi_cell)
     )
     standard = translation_vectors_from_gemmi_cell(
-        make_gemmi_unit_cell(crystal.unit_cell)
+        gemmi.UnitCell(15.0, 16.0, 17.0, 90.0, 90.0, 90.0)
     )
-    assert (standard.a.x, standard.a.y, standard.a.z) == approx((15, 0, 0))
+    assert standard[0].tolist() == approx([15, 0, 0])

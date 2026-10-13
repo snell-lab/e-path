@@ -30,12 +30,11 @@ from enum import StrEnum
 from functools import cache
 
 import gemmi
+import numpy as np
+from numpy.typing import NDArray
 
 from xtal.cell import (
     CrystalMetadataError,
-    UnitCellParameters,
-    UnitCellTranslationVectors,
-    make_gemmi_unit_cell,
     space_group_from_metadata,
     translation_vectors_from_gemmi_cell,
     unit_cell_from_metadata,
@@ -182,7 +181,6 @@ class ValidatedCrystal:
     recognized.
     """
 
-    unit_cell: UnitCellParameters
     gemmi_cell: gemmi.UnitCell
     space_group: gemmi.SpaceGroup
     content: AsymmetricUnitContent | None = None
@@ -217,8 +215,8 @@ class ValidatedCrystal:
         return float(self.gemmi_cell.volume)
 
     @property
-    def translation_vectors(self) -> UnitCellTranslationVectors:
-        """Return the unit-cell axes in the Cartesian frame of `gemmi_cell`."""
+    def translation_vectors(self) -> NDArray[np.float64]:
+        """Return the unit-cell axes, one per row, in the frame of `gemmi_cell`."""
         return translation_vectors_from_gemmi_cell(self.gemmi_cell)
 
 
@@ -243,20 +241,19 @@ class _ResidueSites:
 def validate_crystal(
     metadata: StructureMetadata,
     *,
-    macromolecule_atoms: Sequence[MacromoleculeAtom] = (),
+    macromolecule_atoms: Sequence[MacromoleculeAtom],
 ) -> ValidatedCrystal:
-    """Validate crystal metadata and, optionally, the asymmetric-unit content.
+    """Validate crystal metadata and the asymmetric-unit content.
 
-    When `metadata` carries the Gemmi cell read from the file, that cell is
-    used unchanged, so a file-specific orthogonalization frame from `SCALE` or
-    `_atom_sites.fract_transf_matrix` is preserved. Otherwise a cell in the
-    standard frame is built from the parameters.
+    The Gemmi cell read from the file is used unchanged, so a file-specific
+    orthogonalization frame from `SCALE` or `_atom_sites.fract_transf_matrix`
+    is preserved.
 
     `macromolecule_atoms` holds the modelled protein and nucleic-acid atoms
     only. Solvent, ions, and ligands are left out, as in a conventional
-    Matthews calculation. With no atoms, only the cell and space group are
-    validated. Atoms with unrecognized elements or out-of-range occupancies
-    are handled as `macromolecule_mass` describes and reported as warnings.
+    Matthews calculation. Atoms with unrecognized elements or out-of-range
+    occupancies are handled as `macromolecule_mass` describes and reported as
+    warnings.
 
     A missing or invalid cell or space group raises `CrystalMetadataError`. A
     cell with a non-physical volume, or a model whose protein and nucleic acid
@@ -264,12 +261,11 @@ def validate_crystal(
     `CrystalValidationError`. An implausible Matthews coefficient only adds a
     warning.
     """
-    unit_cell = unit_cell_from_metadata(metadata)
-    gemmi_cell = (
-        metadata.gemmi_cell
-        if metadata.gemmi_cell is not None
-        else make_gemmi_unit_cell(unit_cell)
-    )
+    # Called for its checks: the parameters are present and describe a cell.
+    unit_cell_from_metadata(metadata)
+    gemmi_cell = metadata.gemmi_cell
+    # The reader records the Gemmi cell whenever it records the parameters.
+    assert gemmi_cell is not None
     space_group = space_group_from_metadata(metadata)
 
     # The cell read from the file is used as it is, without passing through the
@@ -288,7 +284,6 @@ def validate_crystal(
     )
 
     return ValidatedCrystal(
-        unit_cell=unit_cell,
         gemmi_cell=gemmi_cell,
         space_group=space_group,
         content=content,
@@ -302,9 +297,6 @@ def _asymmetric_unit_content(
     asymmetric_unit_volume_angstrom3: float,
 ) -> tuple[AsymmetricUnitContent | None, tuple[str, ...]]:
     """Return the asymmetric-unit content, if any is measurable, and warnings."""
-    if not macromolecule_atoms:
-        return None, ()
-
     mass = macromolecule_mass(macromolecule_atoms)
     warnings = list(_input_warnings(mass))
     if mass.total_dalton <= 0.0:
