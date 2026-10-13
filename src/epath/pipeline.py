@@ -1,10 +1,15 @@
-"""End-to-end E-path analysis pipeline."""
+"""Run the E-path analysis from per-atom BDamage scores to written outputs.
 
-from collections.abc import Callable, Iterable
+`rabdam.pipeline` supplies the BDamage result this starts from. The stages
+then run in order, each from its own module. `epath.analysis` selects the
+lowest-BDamage atoms, clusters them and describes each cluster as a pathway,
+`rabdam.bnet` adds Bnet and its percentile, and `epath.outputs` writes the
+files. `epath.cli` calls `run_epath_pipeline` once per structure.
+"""
+
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 
-from epath.analysis.atoms import EpathAtom, atoms_from_bdamage_pipeline
 from epath.analysis.clustering import (
     DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
     ComponentStatistics,
@@ -26,24 +31,32 @@ from epath.outputs.runs import EpathRunRecord, build_run_record
 from epath.outputs.write import write_epath_outputs
 from rabdam.bnet.pipeline import BnetPipelineResult, run_bnet_pipeline
 from rabdam.pipeline import BDamagePipelineResult, PipelineStageRunner
-from rabdam.structure.models import PreparedAtom
-from xtal.validate import ValidatedCrystal
 
 
 class EpathPipelineError(ValueError):
-    """Raised when E-path cannot run the analysis pipeline."""
+    """Report invalid input to the E-path analysis pipeline."""
 
 
 @dataclass(frozen=True, slots=True)
 class EpathSelectionPipelineOptions:
-    """Options controlling E-path atom selection."""
+    """Set how many atoms are selected as pathway candidates.
+
+    `percentile` is the percentage of the scored atoms to select, taken from
+    the low end of BDamage. It must lie between 0 and 100, which the selection
+    stage checks.
+    """
 
     percentile: float = 2.0
 
 
 @dataclass(frozen=True, slots=True)
 class EpathClusterPipelineOptions:
-    """Options controlling E-path cluster construction."""
+    """Set how selected atoms are joined into clusters and which are reported.
+
+    Two selected atoms are connected when they lie within `distance_cutoff`
+    angstroms of each other. A connected component is reported as a cluster
+    only when it holds at least `minimum_cluster_size` atoms.
+    """
 
     distance_cutoff: float = DEFAULT_CLUSTER_DISTANCE_ANGSTROM
     minimum_cluster_size: int = 8
@@ -51,7 +64,10 @@ class EpathClusterPipelineOptions:
 
 @dataclass(frozen=True, slots=True)
 class EpathPipelineOptions:
-    """Options for the complete E-path analysis pipeline."""
+    """Group the options of every stage of the E-path pipeline.
+
+    Constructing one checks nothing; `run_epath_pipeline` and its stages do.
+    """
 
     selection: EpathSelectionPipelineOptions = field(
         default_factory=EpathSelectionPipelineOptions
@@ -67,111 +83,100 @@ class EpathPipelineOptions:
 
 @dataclass(frozen=True, slots=True)
 class EpathPipelineResult:
-    """Complete result of an E-path analysis pipeline."""
+    """Store the results of an E-path analysis.
 
-    atoms: tuple[EpathAtom, ...]
+    `selection_result` holds every scored atom and the ones selected from
+    them. `clusters` holds the connected components that reached the
+    minimum cluster size, and `path_reports` describes each of them as a
+    pathway, in the same order. `component_statistics` covers every component,
+    reported or not. `cofactor_sites` holds the redox cofactors of the model,
+    which the pathways were labelled against. `run_record` is the row written
+    to `*_run.csv`.
+
+    `bdamage_pipeline_result` is the BDamage result the analysis started from,
+    with the cleaned model and the validated crystal, and
+    `bnet_pipeline_result` the Bnet calculated from it.
+    """
+
     selection_result: EpathSelectionResult
     clusters: tuple[EpathCluster, ...]
     component_statistics: ComponentStatistics
     path_reports: tuple[PathReport, ...]
     cofactor_sites: tuple[CofactorSite, ...]
     run_record: EpathRunRecord
-    bdamage_pipeline_result: BDamagePipelineResult | None = None
-    bnet_pipeline_result: BnetPipelineResult | None = None
+    bdamage_pipeline_result: BDamagePipelineResult
+    bnet_pipeline_result: BnetPipelineResult
 
     @property
     def analyzed_chains(self) -> tuple[str, ...]:
         """Chain identifiers of the scored atoms, in first-seen order."""
-        return tuple(dict.fromkeys(atom.chain_id for atom in self.atoms))
-
-    @property
-    def structure_path(self) -> Path | None:
-        """Path of the analysed structure, when one was recorded."""
-        return Path(self.run_record.input_path) if self.run_record.input_path else None
-
-    @property
-    def crystal(self) -> ValidatedCrystal | None:
-        """Validated crystal from the BDamage pipeline, when available."""
-        if self.bdamage_pipeline_result is None:
-            return None
-        return self.bdamage_pipeline_result.crystal
-
-    @property
-    def cleaned_atoms(self) -> tuple[PreparedAtom, ...] | None:
-        """Cleaned model atoms from the BDamage pipeline, when available."""
-        if self.bdamage_pipeline_result is None:
-            return None
-        return self.bdamage_pipeline_result.prepared_structure.cleaned_atoms
+        return tuple(
+            dict.fromkeys(
+                atom.record.chain_id for atom in self.selection_result.scored_atoms
+            )
+        )
 
 
 def run_epath_pipeline(
     bdamage_pipeline_result: BDamagePipelineResult,
     *,
-    structure_path: str | Path | None = None,
     options: EpathPipelineOptions | None = None,
     stage_runner: PipelineStageRunner | None = None,
 ) -> tuple[EpathPipelineResult, EpathPipelineOutputFiles]:
-    """Run E-path analysis from a completed RABDAM BDamage pipeline.
+    """Run the E-path analysis on a BDamage result and write its outputs.
 
-    This is the single entry point for callers that hold a BDamage pipeline
-    result; the command-line interface uses it too, passing a `stage_runner`
-    that reports each named stage as it runs.
-    """
-    atoms = atoms_from_bdamage_pipeline(bdamage_pipeline_result)
-    if structure_path is None:
-        structure_path = bdamage_pipeline_result.prepared_structure.metadata.source_path
+    The atoms that received a BDamage score are selected, clustered and
+    described as pathways. The rest of the cleaned model supplies what the
+    scored atoms cannot. It holds the cofactor sites and the chains that the
+    pathway endpoints are labelled against, and it is the model written with
+    BDamage in its B-factor column. Bnet and its percentile are calculated
+    from the same result. The analysis result is returned with, separately,
+    the files written from it.
 
-    return analyze_epath_atoms(
-        atoms,
-        structure_path=structure_path,
-        options=options,
-        bdamage_pipeline_result=bdamage_pipeline_result,
-        stage_runner=stage_runner,
-    )
+    Without `options` the defaults of `EpathPipelineOptions` apply. A
+    `stage_runner` is handed each stage as a label and a callback, so a caller
+    can time or report the stages, as the command line does.
 
-
-def analyze_epath_atoms(
-    atoms: Iterable[EpathAtom],
-    *,
-    structure_path: str | Path | None = None,
-    options: EpathPipelineOptions | None = None,
-    bdamage_pipeline_result: BDamagePipelineResult | None = None,
-    stage_runner: PipelineStageRunner | None = None,
-) -> tuple[EpathPipelineResult, EpathPipelineOutputFiles]:
-    """Run E-path selection, clustering, MST analysis, and outputs.
-
-    Returns the analysis result and, separately, the files written from it.
-
-    Selection, clustering, and pathway geometry need only the scored `atoms`.
-    Everything that must see the rest of the model depends on
-    `bdamage_pipeline_result`, whose cleaned `PreparedAtom`s carry the
-    cofactor, solvent, and chain information that E-path atoms do not:
-
-    - endpoint classification (cofactor sites, chain interfaces, surface)
-    - the cleaned model PDB with BDamage in the B-factor column
-    - Bnet and the Bnet percentile
-
-    Without it those degrade quietly: paths are still reported, but with no
-    cofactor or interface detection, and no model PDB or Bnet.
-
-    Bnet is calculated here whenever a BDamage pipeline result is available,
-    so every caller sees the same sequence of stages. `stage_runner` wraps
-    each named stage for timing or progress reporting; without it the stages
-    run silently.
-
-    Raises:
-        EpathPipelineError: If `atoms` is empty.
+    An `EpathPipelineError` is raised before any stage runs when
+    `minimum_cluster_size` is below 1 or a display chain is not in the cleaned
+    model. The percentile and the distance cutoff are checked by the selection
+    and clustering stages, which raise their own errors.
     """
     if options is None:
         options = EpathPipelineOptions()
 
-    atom_tuple = tuple(atoms)
-    if not atom_tuple:
-        raise EpathPipelineError("E-path analysis requires at least one atom.")
+    prepared_structure = bdamage_pipeline_result.prepared_structure
+    cleaned_atoms = prepared_structure.cleaned_atoms
+    minimum_cluster_size = options.clustering.minimum_cluster_size
+    if minimum_cluster_size <= 0:
+        raise EpathPipelineError(
+            "minimum_cluster_size must be a positive integer, "
+            f"got {minimum_cluster_size!r}."
+        )
+
+    # A chain that holds only solvent or ligands is still a chain of the
+    # model, so the display chains are checked against the cleaned model, not
+    # the scored atoms.
+    model_chains = dict.fromkeys(atom.record.chain_id for atom in cleaned_atoms)
+    unknown_chains = [
+        chain
+        for chain in options.output.display_chains or ()
+        if chain not in model_chains
+    ]
+    if unknown_chains:
+        raise EpathPipelineError(
+            "The coordinate files cannot be limited to chains that are not in "
+            f"the model: {', '.join(unknown_chains)}. "
+            f"The model has chains {', '.join(model_chains)}."
+        )
 
     selection_result = _run_stage(
         "Selecting E-path atoms",
-        lambda: _select_atoms(atom_tuple, options.selection),
+        lambda: select_atoms_by_percentile(
+            prepared_structure.selected_atoms,
+            bdamage_pipeline_result.bdamage_results,
+            percentile=options.selection.percentile,
+        ),
         stage_runner=stage_runner,
     )
     components = _run_stage(
@@ -182,10 +187,6 @@ def analyze_epath_atoms(
         ),
         stage_runner=stage_runner,
     )
-    minimum_cluster_size = _positive_int(
-        options.clustering.minimum_cluster_size,
-        name="minimum_cluster_size",
-    )
     # Components below the reporting threshold are not pathways, but the
     # connectivity analysis still found them, so their count and the geometry
     # of the largest one are recorded before they are dropped.
@@ -193,33 +194,27 @@ def analyze_epath_atoms(
     clusters = tuple(
         cluster for cluster in components if cluster.atom_count >= minimum_cluster_size
     )
-    cleaned_atoms = (
-        bdamage_pipeline_result.prepared_structure.cleaned_atoms
-        if bdamage_pipeline_result is not None
-        else None
-    )
     path_analysis = _run_stage(
         "Analyzing pathways",
         lambda: analyze_paths(
             clusters,
-            scored_atoms=atom_tuple,
+            scored_atoms=selection_result.scored_atoms,
             cleaned_atoms=cleaned_atoms,
             distance_cutoff=options.clustering.distance_cutoff,
             options=options.paths,
         ),
         stage_runner=stage_runner,
     )
-    bnet_pipeline_result = (
-        _run_stage(
-            "Calculating Bnet and Bnet percentile",
-            lambda: _calculate_bnet(bdamage_pipeline_result),
-            stage_runner=stage_runner,
-        )
-        if bdamage_pipeline_result is not None
-        else None
+    bnet_pipeline_result = _run_stage(
+        "Calculating Bnet and Bnet percentile",
+        lambda: run_bnet_pipeline(
+            prepared_structure=prepared_structure,
+            bdamage_results=bdamage_pipeline_result.bdamage_results,
+        ),
+        stage_runner=stage_runner,
     )
     run_record = build_run_record(
-        structure_path=structure_path,
+        structure_path=prepared_structure.metadata.source_path,
         selection_result=selection_result,
         clusters=clusters,
         statistics=statistics,
@@ -228,7 +223,6 @@ def analyze_epath_atoms(
         bnet_pipeline_result=bnet_pipeline_result,
     )
     result = EpathPipelineResult(
-        atoms=atom_tuple,
         selection_result=selection_result,
         clusters=clusters,
         component_statistics=statistics,
@@ -247,15 +241,6 @@ def analyze_epath_atoms(
     return result, output_files
 
 
-def _calculate_bnet(
-    bdamage_pipeline_result: BDamagePipelineResult,
-) -> BnetPipelineResult:
-    return run_bnet_pipeline(
-        prepared_structure=bdamage_pipeline_result.prepared_structure,
-        bdamage_results=bdamage_pipeline_result.bdamage_results,
-    )
-
-
 def _run_stage[T](
     label: str,
     callback: Callable[[], T],
@@ -266,16 +251,3 @@ def _run_stage[T](
         return callback()
 
     return stage_runner(label, callback)
-
-
-def _select_atoms(
-    atoms: tuple[EpathAtom, ...],
-    options: EpathSelectionPipelineOptions,
-) -> EpathSelectionResult:
-    return select_atoms_by_percentile(atoms, percentile=options.percentile)
-
-
-def _positive_int(value: int, *, name: str) -> int:
-    if value <= 0:
-        raise EpathPipelineError(f"{name} must be a positive integer, got {value!r}.")
-    return value

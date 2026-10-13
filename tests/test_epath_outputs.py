@@ -10,7 +10,6 @@ from support import approx, make_scored_atom
 from epath.outputs.files import EpathOutputPipelineOptions, EpathPipelineOutputFiles
 from epath.outputs.plots import write_z_score_falloff
 from epath.outputs.structures import (
-    EpathStructureOutputError,
     write_atom_subset_cif,
     write_model_cif,
     write_path_subset_cifs,
@@ -77,10 +76,12 @@ def test_combined_atom_csv(tmp_path: Path, result: EpathPipelineResult) -> None:
     assert list(rows[0]) == COMBINED_ATOM_FIELDNAMES
     assert len(rows) == len(result.selection_result.scored_atoms) == 77
     selected = {
-        a.atom.source_atom_index for a in result.selection_result.selected_atoms
+        a.record.source_atom_index for a in result.selection_result.selected_atoms
     }
     clustered = {
-        a.atom.source_atom_index: c.cluster_id for c in result.clusters for a in c.atoms
+        a.record.source_atom_index: c.cluster_id
+        for c in result.clusters
+        for a in c.atoms
     }
     for row in rows:
         index = int(row["source_atom_index"])
@@ -164,7 +165,7 @@ def test_atom_subset_cif_round_trips_through_gemmi(tmp_path: Path) -> None:
         make_scored_atom(
             source_atom_index=1,
             atom_serial=9,
-            record_type="HETATM",
+            is_hetatm=True,
             chain_id="B",
             residue_name="MSE",
             residue_number=3,
@@ -206,11 +207,6 @@ def test_atom_subset_cif_round_trips_through_gemmi(tmp_path: Path) -> None:
     )
     assert residue_b[0].serial == 2
 
-    with pytest.raises(EpathStructureOutputError, match="finite"):
-        write_atom_subset_cif(
-            tmp_path / "bad.cif", (make_scored_atom(bdamage=float("nan")),)
-        )
-
 
 def test_atom_subset_cif_keeps_fields_that_do_not_fit_pdb_columns(
     tmp_path: Path,
@@ -234,10 +230,9 @@ def test_atom_subset_cif_keeps_fields_that_do_not_fit_pdb_columns(
 def test_model_cif_marks_unscored_atoms_with_zero_bdamage(
     tmp_path: Path, result: EpathPipelineResult
 ) -> None:
-    cleaned = result.cleaned_atoms
-    assert cleaned is not None
+    cleaned = result.bdamage_pipeline_result.prepared_structure.cleaned_atoms
     scores = {
-        a.atom.source_atom_index: a.atom.bdamage
+        a.record.source_atom_index: a.bdamage_result.bdamage
         for a in result.selection_result.scored_atoms
     }
 
@@ -255,7 +250,10 @@ def test_model_cif_marks_unscored_atoms_with_zero_bdamage(
         gemmi.cif.as_string(r[1]) for r in block.find("_epath_remark.", ["id", "text"])
     ]
     assert f"{len(scores)} of {len(cleaned)} atoms were scored." in remarks
-    assert "Selected atoms satisfy 0.00 < B_iso_or_equiv <= 0.7734." in remarks
+    assert (
+        "Selected atoms are among those with 0.00 < B_iso_or_equiv <= 0.7734."
+        in remarks
+    )
 
     atom_sites = block.find(
         "_atom_site.", ["group_PDB", "id", "label_comp_id", "B_iso_or_equiv"]
@@ -274,10 +272,10 @@ def test_path_subset_cifs_are_zero_padded(
 ) -> None:
     paths = write_path_subset_cifs(tmp_path / "run", result.path_reports)
 
-    assert [p.name for p in paths] == [
-        f"run_path{r.path_id:02d}.cif" for r in result.path_reports
-    ]
-    block = gemmi.cif.read_file(str(paths[0])).sole_block()
+    assert {path_id: path.name for path_id, path in paths.items()} == {
+        r.path_id: f"run_path{r.path_id:02d}.cif" for r in result.path_reports
+    }
+    block = gemmi.cif.read_file(str(paths[1])).sole_block()
     assert block.find_value("_epath.path_id") == "1"
     remarks = [
         gemmi.cif.as_string(r[1]) for r in block.find("_epath_remark.", ["id", "text"])
@@ -289,7 +287,7 @@ def test_path_subset_cifs_are_zero_padded(
         first.anchor.label if first.anchor is not None else "none"
     )
     assert len(block.find("_atom_site.", ["id"])) == result.path_reports[0].node_count
-    assert write_path_subset_cifs(tmp_path / "run", ()) == ()
+    assert write_path_subset_cifs(tmp_path / "run", ()) == {}
 
 
 def test_z_score_plot_is_written_as_png(
@@ -300,21 +298,14 @@ def test_z_score_plot_is_written_as_png(
     )
     assert path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
-    from epath.analysis.selection import select_atoms_by_percentile
-
-    # No threshold: nothing to put in a legend, but still a plot.
-    unthresholded = select_atoms_by_percentile(
-        [a.atom for a in result.selection_result.scored_atoms], percentile=100.0
-    )
-    full = write_z_score_falloff(tmp_path / "full.png", unthresholded, dpi=50)
-    assert full.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
-
 
 def test_summary_report_lists_results_and_files(
     tmp_path: Path, result: EpathPipelineResult
 ) -> None:
+    # Pathway 1 has no file, as when a chain filter leaves it without atoms.
     files = EpathPipelineOutputFiles(
-        combined_csv=tmp_path / "x_epath.csv", path_cifs=(tmp_path / "x_path01.cif",)
+        combined_csv=tmp_path / "x_epath.csv",
+        path_cifs={2: tmp_path / "x_path02.cif"},
     )
     path = write_summary_txt(tmp_path / "summary.txt", result, output_files=files)
     text = path.read_text()
@@ -331,11 +322,14 @@ def test_summary_report_lists_results_and_files(
     assert f"Path count: {len(result.path_reports)}" in text
     assert "Path 1 " in text and result.path_reports[0].residue_path in text
     assert "  Nearest cofactor: " in text
-    assert "Combined atom CSV: " in text and "Pathway mmCIF 1: " in text
-    assert "Cluster CSV" not in text
+    assert "Combined atom CSV: " in text and "Pathway mmCIF 2: " in text
+    assert "Cluster CSV" not in text and "Pathway mmCIF 1" not in text
+    # No coordinate file of the whole selection is listed, so no chains are.
+    assert "Chains in coordinate files" not in text
+    assert "RABDAM Bnet results\n-------------------\n" in text
     assert output_file_entries(files) == (
         ("Combined atom CSV", files.combined_csv),
-        ("Pathway mmCIF 1", files.path_cifs[0]),
+        ("Pathway mmCIF 2", files.path_cifs[2]),
     )
 
 
@@ -392,8 +386,6 @@ def test_write_epath_outputs_honours_every_toggle(
 def test_display_chains_only_trim_the_coordinate_files(
     tmp_path: Path, result: EpathPipelineResult
 ) -> None:
-    from epath.outputs.structures import EpathStructureOutputError
-
     assert result.analyzed_chains == ("A", "B")
     everything = write_epath_outputs(
         result, EpathOutputPipelineOptions(output_prefix=tmp_path / "all" / "run")
@@ -418,12 +410,14 @@ def test_display_chains_only_trim_the_coordinate_files(
     assert chains_in(filtered.selected_cif) == {"B"}
     assert chains_in(filtered.model_cif) == {"B"}
     assert "Coordinates limited to chains B." in filtered.selected_cif.read_text()
-    for path_cif in filtered.path_cifs:
+    for path_cif in filtered.path_cifs.values():
         assert chains_in(path_cif) == {"B"}
-    assert len(filtered.path_cifs) == sum(
-        any(atom.chain_id == "B" for atom in report.cluster.atoms)
+    # A pathway keeps its number when an earlier one has no atoms in chain B.
+    assert list(filtered.path_cifs) == [
+        report.path_id
         for report in result.path_reports
-    )
+        if any(atom.record.chain_id == "B" for atom in report.cluster.atoms)
+    ]
 
     # Analysis outputs are untouched by the display filter.
     assert everything.combined_csv is not None and filtered.combined_csv is not None
@@ -432,11 +426,5 @@ def test_display_chains_only_trim_the_coordinate_files(
     summary = filtered.summary_report.read_text()
     assert "Chains analyzed: A, B" in summary
     assert "Chains in coordinate files: B (display filter only)" in summary
-
-    with pytest.raises(EpathStructureOutputError, match="not in the model: Z"):
-        write_epath_outputs(
-            result,
-            EpathOutputPipelineOptions(
-                output_prefix=tmp_path / "z" / "run", display_chains=("Z",)
-            ),
-        )
+    assert everything.summary_report is not None
+    assert "Chains in coordinate files: all" in everything.summary_report.read_text()

@@ -25,7 +25,21 @@ from xtal.resolver import split_structure_file_name
 
 @dataclass(frozen=True, slots=True)
 class EpathRunRecord:
-    """Run-level results for one structure."""
+    """Run-level results for one structure, one field per column of the run CSV.
+
+    `structure` is the input file's name without its format extension and
+    `input_path` the file's full path. `cutoff_percent` is the percentile
+    asked for and `selected_percent` the share of the scored atoms that was
+    selected. `equivalent_z_score` is `bdamage_threshold` as a
+    Z-score among the scored atoms.
+
+    `clusters_reported` counts the components of at least
+    `minimum_cluster_size` atoms, out of `total_components`. The
+    `largest_component_*` fields describe the largest component whether or not
+    it was reported. Its lengths are in angstroms, and are `None` when no atom
+    was selected and so there is no component. `bnet` and `bnet_percentile`
+    are `None` when they could not be calculated.
+    """
 
     structure: str
     input_path: str
@@ -35,7 +49,7 @@ class EpathRunRecord:
     atoms_selected: int
     selected_percent: float
     equivalent_z_score: float
-    bdamage_threshold: float | None
+    bdamage_threshold: float
     bnet: float | None
     bnet_percentile: float | None
     total_components: int
@@ -51,27 +65,32 @@ class EpathRunRecord:
 
 def build_run_record(
     *,
-    structure_path: str | Path | None,
+    structure_path: Path,
     selection_result: EpathSelectionResult,
     clusters: Sequence[EpathCluster],
     statistics: ComponentStatistics,
     minimum_cluster_size: int,
     cutoff_percent: float,
-    bnet_pipeline_result: BnetPipelineResult | None = None,
+    bnet_pipeline_result: BnetPipelineResult,
 ) -> EpathRunRecord:
     """Collect one structure's run-level results into a single record.
 
-    The largest component is reported whether or not it reached the reporting
-    threshold, so a model that produced no pathways still records what its
-    connectivity analysis found.
+    `clusters` holds the components that reached `minimum_cluster_size` atoms,
+    and `statistics` describes every component. The largest component is
+    therefore recorded whether or not it reached the reporting threshold, so a
+    model that produced no pathways still records what its connectivity
+    analysis found.
+
+    `structure_path` is the file the structure was read from. A Bnet or a
+    percentile that could not be calculated is recorded as `None`.
     """
-    path = Path(structure_path) if structure_path is not None else None
     metrics = statistics.largest_metrics
-    bnet, bnet_percentile = _bnet_values(bnet_pipeline_result)
+    bnet = bnet_pipeline_result.bnet_result
+    percentile = bnet_pipeline_result.percentile_result
 
     return EpathRunRecord(
-        structure=split_structure_file_name(path.name)[0] if path is not None else "",
-        input_path=str(path) if path is not None else "",
+        structure=split_structure_file_name(structure_path.name)[0],
+        input_path=str(structure_path),
         selection_method=selection_result.method,
         cutoff_percent=cutoff_percent,
         total_atoms=len(selection_result.scored_atoms),
@@ -79,8 +98,8 @@ def build_run_record(
         selected_percent=selection_result.selected_percent,
         equivalent_z_score=selection_result.z_threshold,
         bdamage_threshold=selection_result.bdamage_threshold,
-        bnet=bnet,
-        bnet_percentile=bnet_percentile,
+        bnet=bnet.bnet if bnet else None,
+        bnet_percentile=percentile.percentile_percent if percentile else None,
         total_components=statistics.total_count,
         minimum_cluster_size=minimum_cluster_size,
         clusters_reported=len(clusters),
@@ -92,18 +111,4 @@ def build_run_record(
         largest_component_mean_step=metrics.mean_step if metrics else None,
         largest_component_largest_edge=metrics.mst_largest_edge if metrics else None,
         largest_component_span=metrics.span if metrics else None,
-    )
-
-
-def _bnet_values(
-    pipeline_result: BnetPipelineResult | None,
-) -> tuple[float | None, float | None]:
-    if pipeline_result is None or pipeline_result.bnet_result is None:
-        return None, None
-
-    percentile = pipeline_result.percentile_result
-
-    return (
-        pipeline_result.bnet_result.bnet,
-        percentile.percentile_percent if percentile is not None else None,
     )

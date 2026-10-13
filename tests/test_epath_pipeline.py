@@ -1,20 +1,20 @@
-"""The E-path analysis pipeline, with and without a BDamage result behind it."""
+"""The E-path analysis pipeline, from a BDamage result to its run record."""
 
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
-from support import approx, make_epath_atom
+from support import approx, bdamage_result_from_atoms, make_scored_atom
 
-from epath.analysis.atoms import EpathAtom
 from epath.analysis.pathways import PathAnalysisOptions
+from epath.analysis.selection import EpathScoredAtom
+from epath.outputs.files import EpathOutputPipelineOptions
 from epath.pipeline import (
     EpathClusterPipelineOptions,
     EpathPipelineError,
     EpathPipelineOptions,
     EpathSelectionPipelineOptions,
-    analyze_epath_atoms,
     run_epath_pipeline,
 )
 from rabdam.pipeline import run_bdamage_pipeline
@@ -30,7 +30,7 @@ EPATH_STAGES = [
 ]
 
 
-def _grid_atoms() -> tuple[EpathAtom, ...]:
+def _grid_atoms() -> tuple[EpathScoredAtom, ...]:
     """Ten atoms: a compact group of six, a pair, and two isolated atoms.
 
     BDamage rises with index, so a percentile cutoff selects a prefix.
@@ -48,7 +48,7 @@ def _grid_atoms() -> tuple[EpathAtom, ...]:
         (90, 0, 0),
     ]
     return tuple(
-        make_epath_atom(
+        make_scored_atom(
             source_atom_index=i,
             bdamage_atom_index=i + 1,
             atom_serial=i + 1,
@@ -63,7 +63,7 @@ def _grid_atoms() -> tuple[EpathAtom, ...]:
     )
 
 
-def test_analysis_without_a_bdamage_result_degrades_gracefully() -> None:
+def test_components_are_found_filtered_and_recorded() -> None:
     options = EpathPipelineOptions(
         selection=EpathSelectionPipelineOptions(percentile=90.0),
         clustering=EpathClusterPipelineOptions(
@@ -71,8 +71,8 @@ def test_analysis_without_a_bdamage_result_degrades_gracefully() -> None:
         ),
     )
 
-    result, files = analyze_epath_atoms(
-        _grid_atoms(), structure_path="models/demo.cif", options=options
+    result, files = run_epath_pipeline(
+        bdamage_result_from_atoms(_grid_atoms()), options=options
     )
 
     # The 90% cutoff drops the highest-BDamage atom, the isolated one at x=90.
@@ -85,19 +85,11 @@ def test_analysis_without_a_bdamage_result_degrades_gracefully() -> None:
     assert report.start_endpoint.kind in {"surface", "buried"}
     assert report.end_endpoint.kind in {"surface", "buried"}
     assert result.cofactor_sites == ()
-    assert (
-        result.bnet_pipeline_result is None
-        and result.crystal is None
-        and result.cleaned_atoms is None
-    )
+    # Bnet needs Asp/Glu carboxyl oxygens, and this model has none.
+    assert result.bnet_pipeline_result.bnet_result is None
     assert result.analyzed_chains == ("A",)
-    assert result.structure_path == Path("models/demo.cif")
     record = result.run_record
-    # input_path is stored in the platform's native form (backslashes on Windows).
-    assert (record.structure, record.input_path) == (
-        "demo",
-        str(Path("models/demo.cif")),
-    )
+    assert (record.structure, record.input_path) == ("synthetic", "synthetic.pdb")
     assert (
         record.total_atoms,
         record.atoms_selected,
@@ -120,7 +112,9 @@ def test_largest_component_is_recorded_even_when_nothing_is_reported() -> None:
             distance_cutoff=3.0, minimum_cluster_size=8
         ),
     )
-    result, _ = analyze_epath_atoms(_grid_atoms(), options=options)
+    result, _ = run_epath_pipeline(
+        bdamage_result_from_atoms(_grid_atoms()), options=options
+    )
 
     assert result.clusters == () and result.path_reports == ()
     assert result.run_record.largest_component_atoms == 6
@@ -128,19 +122,56 @@ def test_largest_component_is_recorded_even_when_nothing_is_reported() -> None:
     largest = result.component_statistics.largest_metrics
     assert largest is not None
     assert result.run_record.largest_component_span == approx(largest.span)
-    assert result.structure_path is None and result.run_record.structure == ""
 
 
-def test_pipeline_validation() -> None:
-    with pytest.raises(EpathPipelineError, match="at least one atom"):
-        analyze_epath_atoms(())
+def test_an_empty_selection_still_writes_every_output(tmp_path: Path) -> None:
+    options = EpathPipelineOptions(
+        selection=EpathSelectionPipelineOptions(percentile=0.0),
+        output=EpathOutputPipelineOptions(output_prefix=tmp_path / "run"),
+    )
+    result, files = run_epath_pipeline(
+        bdamage_result_from_atoms(_grid_atoms()), options=options
+    )
+
+    assert result.selection_result.selected_atoms == ()
+    assert result.component_statistics.total_count == 0
+    assert files.z_score_falloff is not None and files.z_score_falloff.is_file()
+    assert files.path_cifs == {}
+    # Nothing is reported as a missing number: what has no value is left out.
+    assert files.summary_report is not None and files.run_csv is not None
+    summary = files.summary_report.read_text()
+    assert "No atoms selected." in summary and "BDamage threshold: 0.5" in summary
+    assert "nan" not in summary and "nan" not in files.run_csv.read_text()
+
+
+def test_options_are_checked_before_any_stage_runs() -> None:
+    bdamage = bdamage_result_from_atoms(_grid_atoms())
+    stages: list[str] = []
+
+    def stage_runner(label: str, callback: Callable[[], Any]) -> Any:
+        stages.append(label)
+        return callback()
+
     with pytest.raises(EpathPipelineError, match="minimum_cluster_size"):
-        analyze_epath_atoms(
-            _grid_atoms(),
+        run_epath_pipeline(
+            bdamage,
             options=EpathPipelineOptions(
                 clustering=EpathClusterPipelineOptions(minimum_cluster_size=0)
             ),
+            stage_runner=stage_runner,
         )
+    # Chain A is in the model and chain Z is not.
+    with pytest.raises(
+        EpathPipelineError, match=r"not in the model: Z\. The model has chains A\."
+    ):
+        run_epath_pipeline(
+            bdamage,
+            options=EpathPipelineOptions(
+                output=EpathOutputPipelineOptions(display_chains=("A", "Z"))
+            ),
+            stage_runner=stage_runner,
+        )
+    assert stages == []
 
 
 def test_pipeline_from_a_bdamage_result(synthetic_pdb: Path) -> None:
@@ -167,13 +198,8 @@ def test_pipeline_from_a_bdamage_result(synthetic_pdb: Path) -> None:
     assert result.analyzed_chains == ("A", "B")
     assert result.selection_result.method == "percentile"
     assert result.bdamage_pipeline_result is bdamage
-    assert result.crystal is bdamage.crystal
-    assert result.cleaned_atoms is not None and len(result.cleaned_atoms) == 84
     assert [site.label for site in result.cofactor_sites] == ["FMN"]
-    assert (
-        result.bnet_pipeline_result is not None
-        and result.bnet_pipeline_result.bnet_result is not None
-    )
+    assert result.bnet_pipeline_result.bnet_result is not None
     assert result.run_record.bnet == approx(
         result.bnet_pipeline_result.bnet_result.bnet
     )

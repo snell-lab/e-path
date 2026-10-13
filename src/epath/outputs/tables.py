@@ -1,15 +1,30 @@
-"""CSV table outputs for E-path analysis results."""
+"""Write the CSV tables of an E-path run.
+
+There are four: one row per scored atom, one per reported pathway, one per
+step of each pathway, and one per run. `epath.outputs.write` calls the writers
+for a single run, and the batch command calls `write_run_csv` with the record
+of every structure to make the cohort table. The run records are built in
+`epath.outputs.runs`.
+
+Each `*_FIELDNAMES` list holds the columns of one table, in the order they are
+written. Every writer creates the directory of its file when it is missing,
+replaces a file that is already there, and returns the path it wrote.
+"""
 
 import csv
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import asdict
 from pathlib import Path
-from typing import Any
 
-from epath.analysis.atoms import EpathAtom, atom_token
 from epath.analysis.clustering import EpathCluster
+from epath.analysis.labels import atom_token
 from epath.analysis.pathways import PathReport
-from epath.analysis.selection import EpathScoredAtom, EpathSelectionResult
+from epath.analysis.selection import EpathSelectionResult
 from epath.outputs.runs import EpathRunRecord
+
+# Twelve significant figures is more than any input carries, and it hides
+# binary rounding noise such as 0.30000000000000004.
+_FLOAT_FORMAT = ".12g"
 
 COMBINED_ATOM_FIELDNAMES = [
     "source_atom_index",
@@ -37,10 +52,7 @@ COMBINED_ATOM_FIELDNAMES = [
     "cluster_member_index",
 ]
 
-# The leading columns are the E-path pathway table: the path, where it
-# starts and ends, the cofactor it comes nearest to, and what it is made of.
-# The columns after them are the geometry and the measurements behind the
-# descriptor.
+# These are the fields of `EpathRunRecord`, which `write_run_csv` reads by name.
 RUN_FIELDNAMES = [
     "structure",
     "input_path",
@@ -75,6 +87,10 @@ STEP_FIELDNAMES = [
     "second_residue",
 ]
 
+# The leading columns, up to `structural_descriptor`, are the E-path pathway
+# table: the path, where it starts and ends, the cofactor it comes nearest to,
+# and what it is made of. The columns after them are the geometry and the
+# measurements behind the descriptor.
 CLUSTER_FIELDNAMES = [
     "cluster_id",
     "endpoint_start",
@@ -112,74 +128,44 @@ CLUSTER_FIELDNAMES = [
 
 
 def write_combined_atom_csv(
-    output_path: str | Path,
+    output_path: Path,
     selection_result: EpathSelectionResult,
     *,
-    clusters: Iterable[EpathCluster] = (),
+    clusters: Iterable[EpathCluster],
 ) -> Path:
-    """Write a combined per-atom E-path CSV table."""
-    output_file = Path(output_path)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    """Write one CSV row per scored atom, in scored-atom order.
 
-    rows = combined_atom_rows(selection_result, clusters=clusters)
-    with output_file.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=COMBINED_ATOM_FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(_format_row(row) for row in rows)
-
-    return output_file
+    `selected` is `true` for the atoms of the selection. `cluster_id` and
+    `cluster_member_index` are filled for the atoms of `clusters` and left
+    blank for every other atom. The member index counts from 1 in the order
+    the cluster holds its atoms.
+    """
+    return _write_csv(
+        output_path,
+        COMBINED_ATOM_FIELDNAMES,
+        _atom_rows(selection_result, clusters),
+    )
 
 
 def write_run_csv(
-    output_path: str | Path,
+    output_path: Path,
     records: Iterable[EpathRunRecord],
 ) -> Path:
-    """Write one CSV row per run.
+    """Write one CSV row per run, in the order of `records`.
 
     A single run writes one row. Passing the records of a batch writes the
-    cohort table for those structures.
+    cohort table for those structures. The columns are the fields of the
+    record, and a value that is None is left blank.
     """
-    output_file = Path(output_path)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with output_file.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=RUN_FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(
-            _format_row_for_fields(_run_row(record), RUN_FIELDNAMES)
-            for record in records
-        )
-
-    return output_file
-
-
-def _run_row(record: EpathRunRecord) -> dict[str, Any]:
-    return {
-        "structure": record.structure,
-        "input_path": record.input_path,
-        "selection_method": record.selection_method,
-        "cutoff_percent": record.cutoff_percent,
-        "total_atoms": record.total_atoms,
-        "atoms_selected": record.atoms_selected,
-        "selected_percent": record.selected_percent,
-        "equivalent_z_score": record.equivalent_z_score,
-        "bdamage_threshold": record.bdamage_threshold,
-        "bnet": record.bnet,
-        "bnet_percentile": record.bnet_percentile,
-        "total_components": record.total_components,
-        "minimum_cluster_size": record.minimum_cluster_size,
-        "clusters_reported": record.clusters_reported,
-        "largest_component_atoms": record.largest_component_atoms,
-        "largest_component_reported": record.largest_component_reported,
-        "largest_component_length": record.largest_component_length,
-        "largest_component_mean_step": record.largest_component_mean_step,
-        "largest_component_largest_edge": record.largest_component_largest_edge,
-        "largest_component_span": record.largest_component_span,
-    }
+    return _write_csv(
+        output_path,
+        RUN_FIELDNAMES,
+        (asdict(record) for record in records),
+    )
 
 
 def write_step_csv(
-    output_path: str | Path,
+    output_path: Path,
     path_reports: Iterable[PathReport],
 ) -> Path:
     """Write one CSV row per step of every reported pathway.
@@ -187,61 +173,47 @@ def write_step_csv(
     The summary reports the total, mean, and largest step of a path. This
     records each step individually, because electron tunnelling falls away
     sharply with distance and a single long step can limit a whole path.
-    """
-    output_file = Path(output_path)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    with output_file.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=STEP_FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(
-            _format_row_for_fields(
-                {
-                    "cluster_id": report.path_id,
-                    "step_index": step.step_index,
-                    "length": step.length,
-                    "kind": step.kind,
-                    "first_atom": step.first_atom,
-                    "first_residue": step.first_residue,
-                    "second_atom": step.second_atom,
-                    "second_residue": step.second_residue,
-                },
-                STEP_FIELDNAMES,
-            )
+    The pathways come in the order of `path_reports` and the steps of each in
+    the order the report holds them. `cluster_id` is the pathway's identifier,
+    the one the pathway table uses.
+    """
+    return _write_csv(
+        output_path,
+        STEP_FIELDNAMES,
+        (
+            {
+                "cluster_id": report.path_id,
+                "step_index": step.step_index,
+                "length": step.length,
+                "kind": step.kind,
+                "first_atom": step.first_atom,
+                "first_residue": step.first_residue,
+                "second_atom": step.second_atom,
+                "second_residue": step.second_residue,
+            }
             for report in path_reports
             for step in report.steps
-        )
-
-    return output_file
+        ),
+    )
 
 
 def write_cluster_csv(
-    output_path: str | Path,
+    output_path: Path,
     path_reports: Iterable[PathReport],
 ) -> Path:
-    """Write one CSV row per reported E-path pathway."""
-    output_file = Path(output_path)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    """Write one CSV row per reported pathway, in the order of `path_reports`.
 
-    rows = cluster_rows(path_reports)
-    with output_file.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=CLUSTER_FIELDNAMES)
-        writer.writeheader()
-        writer.writerows(
-            _format_row_for_fields(row, CLUSTER_FIELDNAMES) for row in rows
-        )
-
-    return output_file
+    The three anchor columns are blank for a pathway with no cofactor in range.
+    """
+    return _write_csv(
+        output_path,
+        CLUSTER_FIELDNAMES,
+        (_cluster_row(report) for report in path_reports),
+    )
 
 
-def cluster_rows(
-    path_reports: Iterable[PathReport],
-) -> tuple[dict[str, Any], ...]:
-    """Return one standalone CSV row for each reported E-path pathway."""
-    return tuple(_cluster_row(report) for report in path_reports)
-
-
-def _cluster_row(report: PathReport) -> dict[str, Any]:
+def _cluster_row(report: PathReport) -> dict[str, object]:
     metrics = report.cluster.metrics
     fractions = report.composition.fractions
     anchor = report.anchor
@@ -254,9 +226,9 @@ def _cluster_row(report: PathReport) -> dict[str, Any]:
         "residue_count": report.residue_count,
         "atom_count": report.node_count,
         "mst_total_length": metrics.mst_total_length,
-        "anchor_cofactor": anchor.label if anchor is not None else "",
-        "anchor_distance": anchor.distance if anchor is not None else "",
-        "anchor_atom": anchor.atom_token if anchor is not None else "",
+        "anchor_cofactor": anchor.label if anchor is not None else None,
+        "anchor_distance": anchor.distance if anchor is not None else None,
+        "anchor_atom": anchor.atom_token if anchor is not None else None,
         "structural_descriptor": report.structural_descriptor,
         "chains": "/".join(report.chains),
         "mean_step": metrics.mean_step,
@@ -282,90 +254,84 @@ def _cluster_row(report: PathReport) -> dict[str, Any]:
     }
 
 
-def combined_atom_rows(
+def _atom_rows(
     selection_result: EpathSelectionResult,
-    *,
-    clusters: Iterable[EpathCluster] = (),
-) -> tuple[dict[str, Any], ...]:
-    """Return combined per-atom rows for E-path CSV output."""
-    selected_keys = {
-        _scored_atom_identity(scored_atom)
+    clusters: Iterable[EpathCluster],
+) -> Iterator[dict[str, object]]:
+    # `source_atom_index` is an atom's position in the input file, so it
+    # identifies the atom on its own.
+    selected_indices = {
+        scored_atom.record.source_atom_index
         for scored_atom in selection_result.selected_atoms
     }
-    cluster_by_atom = _cluster_membership_by_atom(clusters)
-
-    rows: list[dict[str, Any]] = []
-    for scored_atom in selection_result.scored_atoms:
-        atom = scored_atom.atom
-        atom_id = _atom_identity(atom)
-        row: dict[str, Any] = {
-            "source_atom_index": atom.source_atom_index,
-            "bdamage_atom_index": atom.bdamage_atom_index,
-            "atom_serial": atom.atom_serial,
-            "record_type": atom.record_type,
-            "atom_token": atom_token(atom),
-            "chain_id": atom.chain_id,
-            "residue_name": atom.residue_name,
-            "residue_number": atom.residue_number,
-            "insertion_code": atom.insertion_code,
-            "atom_name": atom.atom_name,
-            "element": atom.element,
-            "x": atom.x,
-            "y": atom.y,
-            "z": atom.z,
-            "occupancy": atom.occupancy,
-            "b_factor": atom.b_factor,
-            "packing_density": atom.packing_density,
-            "average_b_factor": atom.average_b_factor,
-            "bdamage": scored_atom.bdamage,
-            "bdamage_z_score": scored_atom.bdamage_z_score,
-            "selected": atom_id in selected_keys,
-        }
-        row.update(_cluster_columns(cluster_by_atom.get(atom_id)))
-        rows.append(row)
-
-    return tuple(rows)
-
-
-def _cluster_membership_by_atom(
-    clusters: Iterable[EpathCluster],
-) -> dict[tuple[int, int | None], tuple[EpathCluster, int]]:
-    memberships: dict[tuple[int, int | None], tuple[EpathCluster, int]] = {}
-    for cluster in clusters:
-        for member_index, scored_atom in enumerate(cluster.atoms, start=1):
-            memberships[_scored_atom_identity(scored_atom)] = (
-                cluster,
-                member_index,
-            )
-
-    return memberships
-
-
-def _cluster_columns(
-    cluster_membership: tuple[EpathCluster, int] | None,
-) -> dict[str, Any]:
-    if cluster_membership is None:
-        return {"cluster_id": None, "cluster_member_index": None}
-
-    cluster, member_index = cluster_membership
-    return {
-        "cluster_id": cluster.cluster_id,
-        "cluster_member_index": member_index,
+    membership_by_index = {
+        scored_atom.record.source_atom_index: (cluster.cluster_id, member_index)
+        for cluster in clusters
+        for member_index, scored_atom in enumerate(cluster.atoms, start=1)
     }
 
+    for scored_atom in selection_result.scored_atoms:
+        record = scored_atom.record
+        bdamage_result = scored_atom.bdamage_result
+        cluster_id, cluster_member_index = membership_by_index.get(
+            record.source_atom_index,
+            (None, None),
+        )
+        yield {
+            "source_atom_index": record.source_atom_index,
+            "bdamage_atom_index": bdamage_result.bdamage_atom_index,
+            "atom_serial": record.atom_serial,
+            "record_type": "HETATM" if record.is_hetatm else "ATOM",
+            "atom_token": atom_token(record),
+            "chain_id": record.chain_id,
+            "residue_name": record.residue_name,
+            "residue_number": record.residue_number,
+            "insertion_code": record.insertion_code,
+            "atom_name": record.atom_name,
+            "element": record.element,
+            "x": record.x,
+            "y": record.y,
+            "z": record.z,
+            "occupancy": record.occupancy,
+            "b_factor": record.b_factor,
+            "packing_density": bdamage_result.packing_density,
+            "average_b_factor": bdamage_result.average_b_factor,
+            "bdamage": bdamage_result.bdamage,
+            "bdamage_z_score": scored_atom.bdamage_z_score,
+            "selected": record.source_atom_index in selected_indices,
+            "cluster_id": cluster_id,
+            "cluster_member_index": cluster_member_index,
+        }
 
-def _format_row(row: Mapping[str, Any]) -> dict[str, str]:
-    return _format_row_for_fields(row, COMBINED_ATOM_FIELDNAMES)
+
+def _write_csv(
+    output_path: Path,
+    fieldnames: list[str],
+    rows: Iterable[Mapping[str, object]],
+) -> Path:
+    """Write a header and the named value of every row, and return the path.
+
+    A row must hold a value for every field name. Values it holds under other
+    names are not written.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(fieldnames)
+        writer.writerows(
+            [_format_cell(row[fieldname]) for fieldname in fieldnames] for row in rows
+        )
+
+    return output_path
 
 
-def _format_row_for_fields(
-    row: Mapping[str, Any],
-    fieldnames: Iterable[str],
-) -> dict[str, str]:
-    return {fieldname: _format_cell(row[fieldname]) for fieldname in fieldnames}
+def _format_cell(value: object) -> str:
+    """Return a value as the text of a CSV cell.
 
-
-def _format_cell(value: Any) -> str:
+    None gives an empty cell and a boolean gives `true` or `false`. A float is
+    written to twelve significant figures, with NaN as `nan`. Anything else is
+    written as `str` gives it.
+    """
     if value is None:
         return ""
 
@@ -373,14 +339,6 @@ def _format_cell(value: Any) -> str:
         return "true" if value else "false"
 
     if isinstance(value, float):
-        return f"{value:.12g}"
+        return format(value, _FLOAT_FORMAT)
 
     return str(value)
-
-
-def _scored_atom_identity(scored_atom: EpathScoredAtom) -> tuple[int, int | None]:
-    return _atom_identity(scored_atom.atom)
-
-
-def _atom_identity(atom: EpathAtom) -> tuple[int, int | None]:
-    return atom.source_atom_index, atom.atom_serial

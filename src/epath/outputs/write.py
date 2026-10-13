@@ -1,4 +1,10 @@
-"""Coordinate the output files written for an E-path run."""
+"""Write the output files of an E-path run.
+
+`write_epath_outputs` decides which files are enabled and hands each one to
+the module that writes it: `tables` for the CSVs, `structures` for the mmCIF
+coordinate files, `plots` for the Z-score plot and `summary` for the text
+report. `epath.pipeline` calls it as its last stage.
+"""
 
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -7,7 +13,7 @@ from epath.outputs.files import (
     EpathOutputPipelineOptions,
     EpathPipelineOutputFiles,
 )
-from epath.outputs.plots import plot_z_falloff
+from epath.outputs.plots import write_z_score_falloff
 from epath.outputs.structures import write_structure_outputs
 from epath.outputs.summary import write_summary_txt
 from epath.outputs.tables import (
@@ -25,11 +31,20 @@ def write_epath_outputs(
     result: EpathPipelineResult,
     options: EpathOutputPipelineOptions,
 ) -> EpathPipelineOutputFiles:
-    """Write enabled E-path artifacts for a result and return their paths."""
+    """Write the enabled output files for a result and return their paths.
+
+    Every file is named after the output prefix, as `<prefix>_<suffix>`, and
+    the writers create its directory when it is missing. A file that is
+    switched off is left out of the returned record. Without an output prefix
+    nothing is written and the record is empty.
+
+    Nothing is checked here. `epath.pipeline` has already rejected a
+    `display_chains` entry that is not in the model.
+    """
     if options.output_prefix is None:
         return EpathPipelineOutputFiles()
 
-    prefix = Path(options.output_prefix)
+    prefix = options.output_prefix
     selection_result = result.selection_result
     path_reports = result.path_reports
     combined_csv = (
@@ -59,16 +74,17 @@ def write_epath_outputs(
 
     selected_cif: Path | None = None
     model_cif: Path | None = None
-    path_cifs: tuple[Path, ...] = ()
+    path_cifs: dict[int, Path] = {}
     if options.write_structure_files:
+        bdamage_pipeline_result = result.bdamage_pipeline_result
         structure_files = write_structure_outputs(
             prefix,
             selection_result.selected_atoms,
             path_reports=path_reports,
-            cleaned_atoms=result.cleaned_atoms,
+            cleaned_atoms=bdamage_pipeline_result.prepared_structure.cleaned_atoms,
             bdamage_by_source_index={
-                scored_atom.atom.source_atom_index: scored_atom.atom.bdamage
-                for scored_atom in selection_result.scored_atoms
+                atom_result.source_atom_index: atom_result.bdamage
+                for atom_result in bdamage_pipeline_result.bdamage_results
             },
             bdamage_threshold=selection_result.bdamage_threshold,
             display_chains=options.display_chains,
@@ -78,8 +94,12 @@ def write_epath_outputs(
         path_cifs = structure_files.path_cifs
 
     z_score_falloff = (
-        plot_z_falloff(prefix, selection_result) if options.write_z_score_plot else None
+        write_z_score_falloff(_output_path(prefix, "zfalloff.png"), selection_result)
+        if options.write_z_score_plot
+        else None
     )
+    # The report lists every file of the run, itself included, so its path is
+    # set before the record is built and it is written last.
     summary_report = (
         _output_path(prefix, "summary.txt") if options.write_summary_report else None
     )

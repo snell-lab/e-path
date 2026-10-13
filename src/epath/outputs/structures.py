@@ -1,13 +1,23 @@
-"""Structure-coordinate outputs for E-path atom selections.
+"""Write the mmCIF coordinate files of an E-path run.
+
+`epath.outputs.write` calls `write_structure_outputs`, which writes the
+selected atoms, each reported pathway, and the cleaned model. Every file
+carries BDamage in the B-factor column, so colouring by B-factor in a viewer
+shows the BDamage landscape.
 
 Every coordinate file is written as mmCIF through Gemmi, so the outputs keep
 multi-character chain identifiers, large atom counts, and residue numbers
 outside the fixed-width PDB columns exactly as they were read.
+
+The values are written as given. Structure preparation in `rabdam` has already
+removed every atom whose coordinates, occupancy, or B-factor is unusable, so
+the coordinates, occupancies, and BDamage values are finite and are not
+checked again here.
 """
 
-import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from itertools import groupby
 from pathlib import Path
 
 import gemmi
@@ -15,11 +25,7 @@ import gemmi
 from epath.analysis.pathways import PathReport
 from epath.analysis.selection import EpathScoredAtom
 from rabdam.structure.models import PreparedAtom
-
-
-class EpathStructureOutputError(ValueError):
-    """Raised when E-path structure output cannot be written."""
-
+from xtal.reader import AtomRecord
 
 # BDamage is a ratio of B-factors and is always greater than zero, so zero is
 # an unambiguous marker for an atom that was not scored.
@@ -28,29 +34,15 @@ UNSCORED_BDAMAGE_PLACEHOLDER = 0.0
 
 @dataclass(frozen=True, slots=True)
 class EpathStructureOutputFiles:
-    """Coordinate outputs for an E-path run."""
+    """Paths of the coordinate files written for an E-path run.
+
+    `path_cifs` holds the file of each pathway that was written, by path
+    number and in pathway order.
+    """
 
     selected_cif: Path
-    model_cif: Path | None = None
-    path_cifs: tuple[Path, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class _CoordinateAtom:
-    """The fields of one atom that reach the coordinate file."""
-
-    is_hetatm: bool
-    atom_name: str
-    residue_name: str
-    chain_id: str
-    residue_number: int | None
-    insertion_code: str
-    element: str
-    x: float
-    y: float
-    z: float
-    occupancy: float
-    b_factor: float
+    model_cif: Path
+    path_cifs: dict[int, Path]
 
 
 def write_structure_outputs(
@@ -58,86 +50,58 @@ def write_structure_outputs(
     selected_atoms: Iterable[EpathScoredAtom],
     *,
     bdamage_by_source_index: Mapping[int, float],
-    path_reports: Sequence[PathReport] = (),
-    cleaned_atoms: Sequence[PreparedAtom] | None = None,
-    bdamage_threshold: float | None = None,
-    display_chains: Sequence[str] | None = None,
+    path_reports: Sequence[PathReport],
+    cleaned_atoms: Sequence[PreparedAtom],
+    bdamage_threshold: float,
+    display_chains: Sequence[str] | None,
 ) -> EpathStructureOutputFiles:
-    """Write the E-path coordinate outputs.
+    """Write the E-path coordinate outputs and return their paths.
 
-    Always writes the selected-atom subset, and one subset per reported
-    pathway. When the cleaned model is supplied, also writes the complete
-    cleaned model annotated with BDamage, so that solvent, ions, and cofactors
-    can be inspected alongside the E-path results even though they were not
-    scored.
+    Three kinds of file are written: the selected-atom subset, one subset per
+    reported pathway, and the complete cleaned model annotated with BDamage,
+    so that solvent, ions, and cofactors can be inspected alongside the E-path
+    results even though they were not scored. The file names are
+    `output_prefix` followed by `_selected.cif`, `_pathNN.cif`, and
+    `_model.cif`.
 
-    `display_chains` restricts every coordinate file to those chains. It is a
-    display filter only: the atoms and pathways were selected over the whole
-    model, and a pathway that has no atoms in the kept chains is skipped.
-
-    Raises:
-        EpathStructureOutputError: If `display_chains` names a chain that is
-            not in the selected atoms or the cleaned model.
+    `display_chains` restricts every coordinate file to those chains, and None
+    keeps them all. It is a display filter only: the atoms and pathways were
+    selected over the whole model, and a pathway that has no atoms in the kept
+    chains is skipped. `epath.pipeline` has checked that the chains are in the
+    model, and one that is not simply matches no atoms here.
     """
     prefix = Path(output_prefix)
     selected_atom_tuple = tuple(selected_atoms)
     chain_remarks: tuple[str, ...] = ()
     if display_chains is not None:
-        kept_chains = tuple(dict.fromkeys(display_chains))
-        _check_display_chains(kept_chains, selected_atom_tuple, cleaned_atoms)
-        chain_remarks = (f"Coordinates limited to chains {', '.join(kept_chains)}.",)
+        chain_remarks = (f"Coordinates limited to chains {', '.join(display_chains)}.",)
         selected_atom_tuple = tuple(
-            atom for atom in selected_atom_tuple if atom.chain_id in kept_chains
+            atom
+            for atom in selected_atom_tuple
+            if atom.record.chain_id in display_chains
         )
-        if cleaned_atoms is not None:
-            cleaned_atoms = tuple(
-                atom for atom in cleaned_atoms if atom.record.chain_id in kept_chains
-            )
-    else:
-        kept_chains = None
+        cleaned_atoms = tuple(
+            atom for atom in cleaned_atoms if atom.record.chain_id in display_chains
+        )
 
-    selected_cif = prefix.with_name(f"{prefix.name}_selected.cif")
-    write_atom_subset_cif(
-        selected_cif,
-        selected_atom_tuple,
-        title="E-path selected atoms",
-        remarks=chain_remarks,
-    )
-
-    model_cif: Path | None = None
-    if cleaned_atoms is not None:
-        model_cif = prefix.with_name(f"{prefix.name}_model.cif")
-        write_model_cif(
-            model_cif,
+    return EpathStructureOutputFiles(
+        selected_cif=write_atom_subset_cif(
+            prefix.with_name(f"{prefix.name}_selected.cif"),
+            selected_atom_tuple,
+            title="E-path selected atoms",
+            remarks=chain_remarks,
+        ),
+        model_cif=write_model_cif(
+            prefix.with_name(f"{prefix.name}_model.cif"),
             cleaned_atoms,
             bdamage_by_source_index=bdamage_by_source_index,
             bdamage_threshold=bdamage_threshold,
             remarks=chain_remarks,
-        )
-
-    return EpathStructureOutputFiles(
-        selected_cif=selected_cif,
-        model_cif=model_cif,
+        ),
         path_cifs=write_path_subset_cifs(
-            prefix, path_reports, display_chains=kept_chains
+            prefix, path_reports, display_chains=display_chains
         ),
     )
-
-
-def _check_display_chains(
-    display_chains: Sequence[str],
-    selected_atoms: Sequence[EpathScoredAtom],
-    cleaned_atoms: Sequence[PreparedAtom] | None,
-) -> None:
-    present = {atom.chain_id for atom in selected_atoms}
-    if cleaned_atoms is not None:
-        present.update(atom.record.chain_id for atom in cleaned_atoms)
-    unknown = [chain for chain in display_chains if chain not in present]
-    if unknown:
-        raise EpathStructureOutputError(
-            f"--chains names chains not in the model: {', '.join(unknown)}. "
-            f"Available chains: {', '.join(sorted(present)) or 'none'}."
-        )
 
 
 def write_model_cif(
@@ -145,8 +109,7 @@ def write_model_cif(
     cleaned_atoms: Sequence[PreparedAtom],
     *,
     bdamage_by_source_index: Mapping[int, float],
-    bdamage_threshold: float | None = None,
-    title: str = "E-path cleaned model with BDamage",
+    bdamage_threshold: float,
     remarks: Iterable[str] = (),
 ) -> Path:
     """Write the complete cleaned model with BDamage in the B-factor column.
@@ -154,58 +117,53 @@ def write_model_cif(
     Every atom that survived structure preparation is written, including the
     solvent, ions, ligands, and cofactors that are excluded from the BDamage
     calculation but still contribute to the packing density of nearby atoms.
-    Excluded atoms carry a B-factor of zero.
+    An atom whose source index is not in `bdamage_by_source_index` was not
+    scored and carries a B-factor of zero.
 
-    Raises:
-        EpathStructureOutputError: If a coordinate, occupancy, or BDamage value
-            is not a finite number.
+    `bdamage_threshold` is the threshold of the selection and is recorded
+    with the run metadata. Every selected atom is at or below it, but so can a
+    few unselected atoms be, because the selection is cut to a whole number of
+    atoms. The remark written here says only the first.
     """
-    atom_tuple = tuple(cleaned_atoms)
     scored_count = sum(
         1
-        for atom in atom_tuple
+        for atom in cleaned_atoms
         if atom.record.source_atom_index in bdamage_by_source_index
     )
     remark_lines = [
         "E-path cleaned model.",
         "Hydrogens removed, alternate sites resolved by occupancy.",
         "B_iso_or_equiv stores BDamage.",
-        f"{scored_count} of {len(atom_tuple)} atoms were scored.",
+        f"{scored_count} of {len(cleaned_atoms)} atoms were scored.",
         "Unscored atoms have B_iso_or_equiv 0.00.",
         "Unscored atoms still add to the packing density of scored atoms.",
+        (
+            "Selected atoms are among those with "
+            f"0.00 < B_iso_or_equiv <= {bdamage_threshold:.4f}."
+        ),
+        *remarks,
     ]
-    values: dict[str, str] = {
-        "atom_count": str(len(atom_tuple)),
+    values = {
+        "atom_count": str(len(cleaned_atoms)),
         "scored_atom_count": str(scored_count),
+        "bdamage_threshold": f"{bdamage_threshold:.4f}",
     }
-    if bdamage_threshold is not None and math.isfinite(bdamage_threshold):
-        remark_lines.append(
-            f"Selected atoms satisfy 0.00 < B_iso_or_equiv <= {bdamage_threshold:.4f}."
-        )
-        values["bdamage_threshold"] = f"{bdamage_threshold:.4f}"
-    remark_lines.extend(remarks)
 
-    coordinate_atoms = tuple(
-        _CoordinateAtom(
-            is_hetatm=prepared.record.is_hetatm,
-            atom_name=prepared.record.atom_name,
-            residue_name=prepared.record.residue_name,
-            chain_id=prepared.record.chain_id,
-            residue_number=prepared.record.residue_number,
-            insertion_code=prepared.record.insertion_code,
-            element=prepared.record.element,
-            x=prepared.record.x,
-            y=prepared.record.y,
-            z=prepared.record.z,
-            occupancy=prepared.record.occupancy,
-            b_factor=bdamage_by_source_index.get(
-                prepared.record.source_atom_index, UNSCORED_BDAMAGE_PLACEHOLDER
+    atoms = [
+        (
+            atom.record,
+            bdamage_by_source_index.get(
+                atom.record.source_atom_index, UNSCORED_BDAMAGE_PLACEHOLDER
             ),
         )
-        for prepared in atom_tuple
-    )
+        for atom in cleaned_atoms
+    ]
     return _write_mmcif(
-        output_path, coordinate_atoms, title=title, remarks=remark_lines, values=values
+        output_path,
+        atoms,
+        title="E-path cleaned model with BDamage",
+        remarks=remark_lines,
+        values=values,
     )
 
 
@@ -214,8 +172,8 @@ def write_path_subset_cifs(
     path_reports: Sequence[PathReport],
     *,
     display_chains: Sequence[str] | None = None,
-) -> tuple[Path, ...]:
-    """Write one mmCIF subset per reported pathway.
+) -> dict[int, Path]:
+    """Write one mmCIF subset per reported pathway and return them by path number.
 
     The combined selected-atom file holds every selected atom, including those
     in components too small to report. These files hold one pathway each, so a
@@ -223,16 +181,17 @@ def write_path_subset_cifs(
     encoded into the occupancy or B-factor column, which both carry real
     values.
 
-    Path numbers are zero padded so the files sort in path order, and keep
-    their numbering when `display_chains` drops a pathway with no atoms in the
-    kept chains.
+    Path numbers are zero padded to at least two digits so the files sort in
+    path order, and keep their numbering when `display_chains` drops a pathway
+    with no atoms in the kept chains. The files written are returned in the
+    order of `path_reports`.
     """
     if not path_reports:
-        return ()
+        return {}
 
     prefix = Path(output_prefix)
     width = max(2, len(str(max(report.path_id for report in path_reports))))
-    written: list[Path] = []
+    written: dict[int, Path] = {}
     for report in path_reports:
         atoms = report.cluster.atoms
         remarks = [
@@ -247,28 +206,28 @@ def write_path_subset_cifs(
             f"Nearest cofactor: {report.anchor_summary}.",
         ]
         if display_chains is not None:
-            atoms = tuple(atom for atom in atoms if atom.chain_id in display_chains)
+            atoms = tuple(
+                atom for atom in atoms if atom.record.chain_id in display_chains
+            )
             if not atoms:
                 continue
             remarks.append(
                 f"Coordinates limited to chains {', '.join(display_chains)}."
             )
-        written.append(
-            write_atom_subset_cif(
-                prefix.with_name(f"{prefix.name}_path{report.path_id:0{width}d}.cif"),
-                atoms,
-                title=f"E-path pathway {report.path_id}",
-                remarks=remarks,
-                values={
-                    "path_id": str(report.path_id),
-                    "anchor_cofactor": (
-                        report.anchor.label if report.anchor is not None else "none"
-                    ),
-                },
-            )
+        written[report.path_id] = write_atom_subset_cif(
+            prefix.with_name(f"{prefix.name}_path{report.path_id:0{width}d}.cif"),
+            atoms,
+            title=f"E-path pathway {report.path_id}",
+            remarks=remarks,
+            values={
+                "path_id": str(report.path_id),
+                "anchor_cofactor": (
+                    report.anchor.label if report.anchor is not None else "none"
+                ),
+            },
         )
 
-    return tuple(written)
+    return written
 
 
 def write_atom_subset_cif(
@@ -282,13 +241,9 @@ def write_atom_subset_cif(
     """Write E-path atoms to an mmCIF coordinate subset.
 
     BDamage is stored in `_atom_site.B_iso_or_equiv`, so colouring by
-    B-factor in a viewer shows the BDamage landscape.
-
-    Raises:
-        EpathStructureOutputError: If a coordinate, occupancy, or BDamage value
-            is not a finite number.
+    B-factor in a viewer shows the BDamage landscape. The atoms are written in
+    the order given, and no atoms gives a file with no atom sites.
     """
-    coordinate_atoms = tuple(_coordinate_atom(atom) for atom in atoms)
     remark_lines = [
         "E-path coordinate subset.",
         "B_iso_or_equiv stores BDamage.",
@@ -296,34 +251,16 @@ def write_atom_subset_cif(
     ]
     return _write_mmcif(
         output_path,
-        coordinate_atoms,
+        [(atom.record, atom.bdamage_result.bdamage) for atom in atoms],
         title=title,
         remarks=remark_lines,
         values=values or {},
     )
 
 
-def _coordinate_atom(scored_atom: EpathScoredAtom) -> _CoordinateAtom:
-    atom = scored_atom.atom
-    return _CoordinateAtom(
-        is_hetatm=atom.record_type == "HETATM",
-        atom_name=atom.atom_name,
-        residue_name=atom.residue_name,
-        chain_id=atom.chain_id,
-        residue_number=atom.residue_number,
-        insertion_code=atom.insertion_code,
-        element=atom.element,
-        x=atom.x,
-        y=atom.y,
-        z=atom.z,
-        occupancy=atom.occupancy,
-        b_factor=atom.bdamage,
-    )
-
-
 def _write_mmcif(
     output_path: str | Path,
-    atoms: Sequence[_CoordinateAtom],
+    atoms: Sequence[tuple[AtomRecord, float]],
     *,
     title: str,
     remarks: Sequence[str],
@@ -331,44 +268,45 @@ def _write_mmcif(
 ) -> Path:
     """Build a Gemmi structure from the atoms and write it as mmCIF.
 
-    Atoms are renumbered from one in output order. Consecutive atoms that
+    Each atom is its record and the value to write in its B-factor column.
+    Everything else about it is written as the record gives it. Atoms are
+    renumbered from one in output order. Consecutive atoms that
     share a chain, residue number, insertion code, and residue name are
     grouped into one residue; a repeated residue elsewhere in the sequence
     becomes a second residue block, mirroring the input order.
 
     The run metadata goes into `_struct.title`, an `_epath` category of
     machine-readable values, and an `_epath_remark` loop of human-readable
-    notes, all of which viewers ignore.
+    notes, all of which viewers ignore. The data block is named after the file
+    stem. The output directory is created if it is missing.
     """
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    structure = gemmi.Structure()
-    structure.name = _block_name(output_file)
     model = gemmi.Model(1)
-    chain: gemmi.Chain | None = None
-    residue: gemmi.Residue | None = None
-    residue_key: tuple[str, int | None, str, str] | None = None
-    for serial, atom in enumerate(atoms, start=1):
-        chain_id = atom.chain_id.strip()
-        key = (chain_id, atom.residue_number, atom.insertion_code, atom.residue_name)
-        if residue is not None and chain is not None and key != residue_key:
+    for chain_id, chain_atoms in groupby(atoms, key=lambda atom: atom[0].chain_id):
+        chain = gemmi.Chain(chain_id)
+        for _, group in groupby(
+            chain_atoms,
+            key=lambda atom: (
+                atom[0].residue_number,
+                atom[0].insertion_code,
+                atom[0].residue_name,
+            ),
+        ):
+            residue_atoms = tuple(group)
+            residue = _make_residue(residue_atoms[0][0])
+            for record, b_factor in residue_atoms:
+                residue.add_atom(_make_atom(record, b_factor))
             # Gemmi copies on add, so a residue is only added once complete.
             chain.add_residue(residue)
-            residue = None
-        if chain is not None and chain.name != chain_id:
-            model.add_chain(chain)
-            chain = None
-        if chain is None:
-            chain = gemmi.Chain(chain_id)
-        if residue is None:
-            residue = _make_residue(atom)
-            residue_key = key
-        residue.add_atom(_make_atom(atom, serial=serial))
-    if residue is not None and chain is not None:
-        chain.add_residue(residue)
         model.add_chain(chain)
+
+    structure = gemmi.Structure()
+    # A CIF data-block name cannot hold whitespace.
+    structure.name = "".join(output_file.stem.split())
     structure.add_model(model)
+    structure.assign_serial_numbers()
     structure.setup_entities()
 
     document = structure.make_mmcif_document()
@@ -385,41 +323,22 @@ def _write_mmcif(
     return output_file
 
 
-def _make_residue(atom: _CoordinateAtom) -> gemmi.Residue:
+def _make_residue(record: AtomRecord) -> gemmi.Residue:
     residue = gemmi.Residue()
-    residue.name = atom.residue_name.strip() or "UNK"
-    number = 0 if atom.residue_number is None else atom.residue_number
-    insertion = atom.insertion_code.strip()[:1] or " "
-    residue.seqid = gemmi.SeqId(number, insertion)
-    residue.het_flag = "H" if atom.is_hetatm else "A"
+    residue.name = record.residue_name or "UNK"
+    # Gemmi needs a number, and takes a space as the absent insertion code.
+    residue.seqid = gemmi.SeqId(
+        record.residue_number or 0, record.insertion_code or " "
+    )
+    residue.het_flag = "H" if record.is_hetatm else "A"
     return residue
 
 
-def _make_atom(atom: _CoordinateAtom, *, serial: int) -> gemmi.Atom:
-    element = atom.element.strip()
-    name = atom.atom_name.strip() or element or "X"
-    output = gemmi.Atom()
-    output.name = name
-    output.element = gemmi.Element(element) if element else gemmi.Element("X")
-    output.serial = serial
-    output.pos = gemmi.Position(
-        _finite_float(atom.x, name="x"),
-        _finite_float(atom.y, name="y"),
-        _finite_float(atom.z, name="z"),
-    )
-    output.occ = _finite_float(atom.occupancy, name="occupancy")
-    output.b_iso = _finite_float(atom.b_factor, name="b_factor")
-    return output
-
-
-def _block_name(output_file: Path) -> str:
-    """Return a CIF data-block name: the file stem without whitespace."""
-    stem = "".join(output_file.stem.split())
-    return stem or "epath"
-
-
-def _finite_float(value: float, *, name: str) -> float:
-    if not math.isfinite(value):
-        raise EpathStructureOutputError(f"{name} must be finite, got {value!r}.")
-
-    return value
+def _make_atom(record: AtomRecord, b_factor: float) -> gemmi.Atom:
+    atom = gemmi.Atom()
+    atom.name = record.atom_name or record.element
+    atom.element = gemmi.Element(record.element)
+    atom.pos = gemmi.Position(record.x, record.y, record.z)
+    atom.occ = record.occupancy
+    atom.b_iso = b_factor
+    return atom

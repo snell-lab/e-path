@@ -1,8 +1,9 @@
 """Render the human-readable E-path analysis summary.
 
-`write_summary_txt` builds the persistent summary report. The
-`*_summary_lines` helpers are also used by the CLI to print the same values
-to the terminal, so both reports stay in step.
+`write_summary_txt` writes the summary report, the last file that
+`epath.outputs.write` produces for a run. `epath.cli.report` prints the lines
+of the `*_summary_lines` functions and the entries of `output_file_entries`
+to the terminal, so the terminal and the file show the same values.
 """
 
 from collections import Counter
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from epath.analysis.clustering import ComponentStatistics
-from epath.analysis.endpoints import CofactorSite, cofactor_site_summary
+from epath.analysis.endpoints import cofactor_site_summary
 from epath.analysis.pathways import PathReport
 from epath.analysis.residues import RESIDUE_CLASS_ORDER
 from epath.outputs.files import EpathPipelineOutputFiles
@@ -21,6 +22,7 @@ from rabdam.structure.models import RemovedAtomCounts
 from xtal.validate import ValidatedCrystal
 
 if TYPE_CHECKING:
+    # `epath.pipeline` imports `epath.outputs.write`, which imports this module.
     from epath.pipeline import EpathPipelineResult
 
 
@@ -31,66 +33,77 @@ def write_summary_txt(
     output_files: EpathPipelineOutputFiles,
     display_chains: Sequence[str] | None = None,
 ) -> Path:
-    """Write a persistent human-readable E-path analysis summary."""
+    """Write the summary report of an E-path run and return its path.
+
+    The report gives the selection statistics, the selected atoms in each
+    chain, the BDamage parameters, the crystal, Bnet, every reported pathway,
+    and the files in `output_files`.
+
+    `display_chains` and `output_files` are only reported. Nothing here is
+    limited to the display chains, which are named only when `output_files`
+    holds coordinate files for them to apply to. The files are listed as
+    given, whether or not they exist yet. Missing parent directories of
+    `output_path` are created, and an existing file is replaced.
+    """
     selection_result = result.selection_result
-    structure_path = result.structure_path
+    bdamage_result = result.bdamage_pipeline_result
     lines = [
         "E-path Analysis Summary",
         "=======================",
         "",
-        (
-            "Input structure: "
-            f"{structure_path if structure_path is not None else 'not provided'}"
-        ),
+        f"Input structure: {result.run_record.input_path}",
         f"Chains analyzed: {_chain_text(result.analyzed_chains)}",
-        (
+    ]
+    if output_files.selected_cif is not None:
+        lines.append(
             "Chains in coordinate files: "
             + (
                 "all"
                 if display_chains is None
                 else f"{_chain_text(display_chains)} (display filter only)"
             )
-        ),
-        "",
-        "Selection",
-        "---------",
-        f"Method: {selection_result.description}",
-        (
-            f"Selected atoms: {len(selection_result.selected_atoms)} / "
-            f"{len(selection_result.scored_atoms)} "
-            f"({_number(selection_result.selected_percent)}%)"
-        ),
-        f"BDamage mean: {_number(selection_result.bdamage_mean)}",
-        (
-            "BDamage standard deviation: "
-            f"{_number(selection_result.bdamage_standard_deviation)}"
-        ),
-        f"Z threshold: {_number(selection_result.z_threshold)}",
-    ]
-    if selection_result.bdamage_threshold is not None:
-        lines.append(
-            f"BDamage threshold: {_number(selection_result.bdamage_threshold)}"
         )
-    if selection_result.boundary_z_score is not None:
-        lines.append(
-            "Boundary Z-score among selected atoms: "
-            f"{_number(selection_result.boundary_z_score)}"
-        )
-
     lines.extend(
         (
+            "",
+            "Selection",
+            "---------",
+            f"Method: {selection_result.description}",
             (
-                "Selected BDamage mean: "
-                f"{_number(selection_result.selected_bdamage_mean)}"
+                f"Selected atoms: {len(selection_result.selected_atoms)} / "
+                f"{len(selection_result.scored_atoms)} "
+                f"({_number(selection_result.selected_percent)}%)"
             ),
+            f"BDamage mean: {_number(selection_result.bdamage_mean)}",
             (
-                "Selected BDamage standard deviation: "
-                f"{_number(selection_result.selected_bdamage_standard_deviation)}"
+                "BDamage standard deviation: "
+                f"{_number(selection_result.bdamage_standard_deviation)}"
             ),
+            f"Z threshold: {_number(selection_result.z_threshold)}",
+            f"BDamage threshold: {_number(selection_result.bdamage_threshold)}",
         )
     )
+    # These three describe the selected atoms, so there is nothing to report
+    # when the selection is empty.
+    if selection_result.selected_atoms:
+        lines.extend(
+            (
+                (
+                    "Boundary Z-score among selected atoms: "
+                    f"{_number(selection_result.boundary_z_score)}"
+                ),
+                (
+                    "Selected BDamage mean: "
+                    f"{_number(selection_result.selected_bdamage_mean)}"
+                ),
+                (
+                    "Selected BDamage standard deviation: "
+                    f"{_number(selection_result.selected_bdamage_standard_deviation)}"
+                ),
+            )
+        )
     selected_chain_counts = Counter(
-        atom.atom.chain_id for atom in selection_result.selected_atoms
+        atom.record.chain_id for atom in selection_result.selected_atoms
     )
     lines.extend(("", "Selected atoms by chain", "-----------------------"))
     if selected_chain_counts:
@@ -102,22 +115,16 @@ def write_summary_txt(
         lines.append("No atoms selected.")
 
     lines.extend(("", "BDamage calculation", "-------------------"))
-    lines.extend(bdamage_summary_lines(result.bdamage_pipeline_result))
+    lines.extend(bdamage_summary_lines(bdamage_result))
 
     lines.extend(("", "Crystal", "-------"))
-    lines.extend(crystal_summary_lines(result.crystal))
+    lines.extend(crystal_summary_lines(bdamage_result.crystal))
 
-    lines.extend(("", "RABDAM Bnet results", "--------------------"))
+    lines.extend(("", "RABDAM Bnet results", "-------------------"))
     lines.extend(bnet_summary_lines(result.bnet_pipeline_result))
 
-    lines.extend(
-        _pathway_summary_lines(
-            result.path_reports,
-            cofactor_sites=result.cofactor_sites,
-            statistics=result.component_statistics,
-            minimum_cluster_size=result.run_record.minimum_cluster_size,
-        )
-    )
+    lines.extend(("", "Pathways", "--------"))
+    lines.extend(_pathway_summary_lines(result))
 
     lines.extend(("", "Files written", "-------------"))
     file_entries = output_file_entries(output_files)
@@ -126,40 +133,42 @@ def write_summary_txt(
     else:
         lines.append("None.")
 
-    return _write_text(output_path, lines)
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return output_file
 
 
-def _pathway_summary_lines(
-    path_reports: Sequence[PathReport],
-    *,
-    cofactor_sites: Sequence[CofactorSite],
-    statistics: ComponentStatistics,
-    minimum_cluster_size: int,
-) -> tuple[str, ...]:
-    """Render the reported pathways, one block per path."""
+def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
+    """Return the pathway totals, then one block of lines per reported path.
+
+    The paths come in the order of `result.path_reports`. When there are none,
+    the largest component that was found is described instead.
+    """
+    path_reports = result.path_reports
+    statistics = result.component_statistics
     lines = [
-        "",
-        "Pathways",
-        "--------",
-        f"Minimum reported cluster size: {minimum_cluster_size} atoms",
+        "Minimum reported cluster size: "
+        f"{result.run_record.minimum_cluster_size} atoms",
         f"Connected components found: {statistics.total_count}",
-        f"Cofactor sites: {cofactor_site_summary(cofactor_sites)}",
-        f"Path count: {len(path_reports)}{_anchored_count(path_reports)}",
+        f"Cofactor sites: {cofactor_site_summary(result.cofactor_sites)}",
     ]
     if not path_reports:
+        lines.append("Path count: 0")
         lines.extend(_unreported_component_lines(statistics))
         return tuple(lines)
 
+    anchored = sum(report.is_cofactor_anchored for report in path_reports)
+    lines.append(
+        f"Path count: {len(path_reports)} ({anchored} within range of a cofactor)"
+    )
     for report in path_reports:
         metrics = report.cluster.metrics
         topology = report.topology
         lines.extend(
             (
                 "",
-                (
-                    f"Path {report.path_id} "
-                    f"{report.start_endpoint.label} -> {report.end_endpoint.label}"
-                ),
+                f"Path {report.path_id} {report.endpoint_summary}",
                 (
                     f"  Endpoint atoms: {report.start_endpoint.atom_token} "
                     f"({report.start_endpoint.residue}) to "
@@ -221,14 +230,6 @@ def _unreported_component_lines(
     )
 
 
-def _anchored_count(path_reports: Sequence[PathReport]) -> str:
-    if not path_reports:
-        return ""
-
-    anchored = sum(report.is_cofactor_anchored for report in path_reports)
-    return f" ({anchored} within range of a cofactor)"
-
-
 def _anchor_text(report: PathReport) -> str:
     anchor = report.anchor
     if anchor is None:
@@ -252,12 +253,9 @@ def _composition_text(report: PathReport) -> str:
 
 
 def bdamage_summary_lines(
-    pipeline_result: BDamagePipelineResult | None,
+    pipeline_result: BDamagePipelineResult,
 ) -> tuple[str, ...]:
     """Return the atoms removed before scoring and the BDamage parameters."""
-    if pipeline_result is None:
-        return ("BDamage parameters: not recorded",)
-
     options = pipeline_result.options
     return (
         removed_atoms_line(pipeline_result.prepared_structure.removed),
@@ -271,6 +269,7 @@ def bdamage_summary_lines(
 
 def removed_atoms_line(removed: RemovedAtomCounts) -> str:
     """Return the non-zero removal counts from structure preparation as one line."""
+    # The labels that start with "with" describe the atoms and take no plural.
     counts = (
         (removed.hydrogens, "hydrogen"),
         (removed.non_finite_coordinates, "with non-finite coordinates"),
@@ -286,13 +285,11 @@ def removed_atoms_line(removed: RemovedAtomCounts) -> str:
     return f"Atoms removed before scoring: {reported or 'none'}"
 
 
-def crystal_summary_lines(
-    crystal: ValidatedCrystal | None,
-) -> tuple[str, ...]:
-    """Return the validated crystal and asymmetric-unit content as report lines."""
-    if crystal is None:
-        return ("Crystal: not validated",)
+def crystal_summary_lines(crystal: ValidatedCrystal) -> tuple[str, ...]:
+    """Return the validated crystal and asymmetric-unit content as report lines.
 
+    The crystal's warnings come last, each prefixed with "WARNING: ".
+    """
     lines = [
         f"Space group: {crystal.space_group_name}",
         f"Asymmetric units per unit cell: {crystal.operation_count}",
@@ -340,18 +337,17 @@ def _content_lines(crystal: ValidatedCrystal) -> tuple[str, ...]:
     return tuple(lines)
 
 
-def bnet_summary_lines(
-    pipeline_result: BnetPipelineResult | None,
-) -> tuple[str, ...]:
-    """Return the RABDAM Bnet results as report lines."""
-    if pipeline_result is None:
-        return ("Bnet: not calculated", "Bnet percentile: not calculated")
+def bnet_summary_lines(pipeline_result: BnetPipelineResult) -> tuple[str, ...]:
+    """Return the RABDAM Bnet results as report lines.
 
+    A result that lacks Bnet or its percentile is reported with the reason
+    that `run_bnet_pipeline` always gives for it.
+    """
     bnet_result = pipeline_result.bnet_result
     if bnet_result is None:
-        reason = pipeline_result.bnet_unavailable_reason or "not calculated"
         return (
-            f"Bnet: unavailable ({reason})",
+            f"Bnet: unavailable ({pipeline_result.bnet_unavailable_reason})",
+            # The percentile's own reason would only repeat the one above.
             "Bnet percentile: unavailable (Bnet is unavailable)",
         )
 
@@ -361,8 +357,10 @@ def bnet_summary_lines(
     ]
     percentile = pipeline_result.percentile_result
     if percentile is None:
-        reason = pipeline_result.percentile_unavailable_reason or "not calculated"
-        lines.append(f"Bnet percentile: unavailable ({reason})")
+        lines.append(
+            "Bnet percentile: unavailable "
+            f"({pipeline_result.percentile_unavailable_reason})"
+        )
         return tuple(lines)
 
     lines.extend(
@@ -386,7 +384,11 @@ def bnet_summary_lines(
 def output_file_entries(
     output_files: EpathPipelineOutputFiles,
 ) -> tuple[tuple[str, Path], ...]:
-    """Return (label, path) pairs for every output file that was written."""
+    """Return a (label, path) pair for every file recorded in `output_files`.
+
+    The order is fixed, with the pathway files last, each labelled with its
+    path number.
+    """
     entries: tuple[tuple[str, Path | None], ...] = (
         ("Combined atom CSV", output_files.combined_csv),
         ("Cluster CSV", output_files.cluster_csv),
@@ -397,8 +399,8 @@ def output_file_entries(
         ("Z-score falloff plot", output_files.z_score_falloff),
         ("Summary report", output_files.summary_report),
         *(
-            (f"Pathway mmCIF {index}", path)
-            for index, path in enumerate(output_files.path_cifs, start=1)
+            (f"Pathway mmCIF {path_id}", path)
+            for path_id, path in output_files.path_cifs.items()
         ),
     )
     return tuple((label, path) for label, path in entries if path is not None)
@@ -409,11 +411,5 @@ def _chain_text(chains: Sequence[str]) -> str:
 
 
 def _number(value: float) -> str:
+    """Format a value to six significant figures, without trailing zeros."""
     return f"{value:.6g}"
-
-
-def _write_text(output_path: str | Path, lines: Sequence[str]) -> Path:
-    output_file = Path(output_path)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    output_file.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-    return output_file
