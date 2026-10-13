@@ -40,7 +40,6 @@ def test_pdb_atoms_are_read_completely_in_file_order(synthetic_pdb: Path) -> Non
     ):
         assert record.source_atom_index == index
         assert record.atom_serial == source.serial
-        assert record.model_number == 1
         assert (record.chain_id, record.residue_name, record.residue_number) == (
             source.chain_id,
             source.residue_name,
@@ -71,7 +70,6 @@ def test_pdb_metadata(synthetic_pdb: Path) -> None:
 
     assert metadata.source_path == synthetic_pdb.resolve()
     assert metadata.structure_id is None
-    assert metadata.file_format is StructureFileFormat.PDB
     assert metadata.space_group == SYNTHETIC_SPACE_GROUP
     cell = (
         metadata.unit_cell_a,
@@ -100,7 +98,6 @@ def test_mmcif_reads_the_same_model(synthetic_pdb: Path, tmp_path: Path) -> None
     pdb = _read(synthetic_pdb)
     cif = _read(_write_file_order_mmcif(tmp_path / "model.cif", synthetic_pdb))
 
-    assert cif.metadata.file_format is StructureFileFormat.MMCIF
     assert len(cif.atoms) == len(pdb.atoms)
     assert cif.metadata.space_group == pdb.metadata.space_group
     assert cif.metadata.unit_cell_beta == approx(95.0)
@@ -230,7 +227,7 @@ def test_unreadable_inputs_are_rejected(tmp_path: Path) -> None:
         StructureFileFormat.PDB,
         local_path=tmp_path / "m.pdb",
     )
-    with pytest.raises(StructureReadError, match="does not exist"):
+    with pytest.raises(StructureReadError, match="could not read"):
         read_structure(missing)
 
     garbage = tmp_path / "garbage.cif"

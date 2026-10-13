@@ -36,7 +36,6 @@ from rabdam.structure.models import (
 )
 from rabdam.structure.prepare import classify_atom
 from xtal.reader import AtomRecord, StructureMetadata
-from xtal.resolver import StructureFileFormat
 from xtal.validate import MacromoleculeAtom, MacromoleculeKind
 
 # A monoclinic cell so that symmetry expansion and lattice translation are
@@ -336,7 +335,6 @@ def make_atom_record(**overrides: object) -> AtomRecord:
     """Return an AtomRecord with sensible defaults, overridden by keyword."""
     fields: dict[str, object] = {
         "source_atom_index": 0,
-        "model_number": 1,
         "chain_id": "A",
         "residue_name": "ALA",
         "residue_number": 1,
@@ -371,7 +369,6 @@ def make_metadata(
     return StructureMetadata(
         source_path=Path("synthetic.pdb"),
         structure_id=None,
-        file_format=StructureFileFormat.PDB,
         space_group=space_group,
         unit_cell_a=a,
         unit_cell_b=b,

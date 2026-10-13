@@ -14,6 +14,7 @@ from xtal.resolver import (
     ResolvedStructureInput,
     StructureFileFormat,
     StructureSourceType,
+    resolve_structure_input,
 )
 
 VALID_CIF = b"data_1ABC\n_entry.id 1ABC\n"
@@ -68,12 +69,14 @@ def _leftover_temp_files(directory: Path) -> list[Path]:
     return sorted(directory.glob(".*.part"))
 
 
-def test_download_normalises_id_and_uses_timeout_constant(
+def test_download_keeps_the_id_and_uses_timeout_constant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls = _serve(monkeypatch, lambda: _FakeResponse(VALID_CIF))
 
-    local = rcsb.download_rcsb_mmcif(_rcsb_input(" 1abc "), download_dir=tmp_path)
+    local = rcsb.download_rcsb_mmcif(
+        resolve_structure_input(" 1abc "), download_dir=tmp_path
+    )
 
     assert calls == [
         (
@@ -117,9 +120,8 @@ def test_failed_overwrite_download_keeps_cached_file(
     assert cached.read_bytes() == b"data_OLD\n"
 
 
-@pytest.mark.parametrize("failing_call", ["fsync", "replace"])
 def test_failed_write_keeps_cached_file_and_removes_temp_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing_call: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cached = tmp_path / "1ABC.cif"
     cached.write_bytes(b"data_OLD\n")
@@ -128,7 +130,7 @@ def test_failed_write_keeps_cached_file_and_removes_temp_file(
     def disk_full(*args: object) -> None:
         raise OSError(errno.ENOSPC, "No space left on device")
 
-    monkeypatch.setattr(f"os.{failing_call}", disk_full)
+    monkeypatch.setattr("os.replace", disk_full)
 
     with pytest.raises(OSError, match="No space left"):
         rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path, overwrite=True)
@@ -142,10 +144,10 @@ def test_failed_first_write_leaves_no_cache_file(
 ) -> None:
     _serve(monkeypatch, lambda: _FakeResponse(VALID_CIF))
 
-    def disk_full(fd: int) -> None:
+    def disk_full(*args: object) -> None:
         raise OSError(errno.ENOSPC, "No space left on device")
 
-    monkeypatch.setattr("os.fsync", disk_full)
+    monkeypatch.setattr("os.replace", disk_full)
 
     with pytest.raises(OSError):
         rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path)
@@ -242,20 +244,3 @@ def test_mmcif_header_after_whitespace_or_comments_is_accepted(
 
     assert local.local_path is not None
     assert local.local_path.read_bytes() == body
-
-
-@pytest.mark.parametrize(
-    "structure_id",
-    ["ABCD", "1AB", "1ABCD", "../1A", "1A/C", "1ABC/../../x"],
-)
-def test_bad_structure_id_is_rejected_before_any_io(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, structure_id: str
-) -> None:
-    calls = _serve(monkeypatch, lambda: _FakeResponse(VALID_CIF))
-    download_dir = tmp_path / "cache"
-
-    with pytest.raises(rcsb.RcsbDownloadError, match="invalid classic PDB ID"):
-        rcsb.download_rcsb_mmcif(_rcsb_input(structure_id), download_dir=download_dir)
-
-    assert calls == []
-    assert not download_dir.exists()

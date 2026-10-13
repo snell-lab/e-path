@@ -74,7 +74,7 @@ class ResolvedStructureInput:
         if self.source_type == StructureSourceType.LOCAL_FILE:
             if self.local_path is None:
                 raise ValueError("A local-file structure input needs a local_path.")
-        elif self.source_type == StructureSourceType.RCSB_ID:
+        else:
             if not self.structure_id:
                 raise ValueError("An RCSB structure input needs a structure_id.")
             if self.local_path is not None:
@@ -82,21 +82,11 @@ class ResolvedStructureInput:
                     "An RCSB structure input cannot have a local_path; "
                     "a downloaded entry is a local-file input."
                 )
-        else:
-            raise ValueError(f"Unknown structure source type: {self.source_type!r}")
 
     @property
     def needs_download(self) -> bool:
         """Return whether the structure must be downloaded before reading."""
         return self.source_type == StructureSourceType.RCSB_ID
-
-    @property
-    def is_local_file(self) -> bool:
-        """Return whether the input is a local file.
-
-        The path is not rechecked, so the file may have gone since it was found.
-        """
-        return self.source_type == StructureSourceType.LOCAL_FILE
 
 
 def resolve_structure_input(raw_input: str) -> ResolvedStructureInput:
@@ -109,14 +99,12 @@ def resolve_structure_input(raw_input: str) -> ResolvedStructureInput:
     Anything else is a path, with surrounding whitespace stripped and a leading
     `~` expanded. Environment variables are not expanded, because the shell
     has already done that and a `$` left in the text belongs to the filename.
-    An existing path wins. Failing that, an entry in the same directory whose
-    name differs only in case is accepted, so `model.pdb` finds `Model.PDB` on
-    a case-sensitive filesystem. The file must end in one of
-    `SUPPORTED_STRUCTURE_SUFFIXES`, optionally followed by `.gz`.
+    The path must exist and end in one of `SUPPORTED_STRUCTURE_SUFFIXES`,
+    optionally followed by `.gz`.
 
     Every failure raises `StructureInputError`, including a directory, an
-    unsupported extension, two names that match ignoring case, an unknown
-    `~user`, and a filesystem error while looking for the file.
+    unsupported extension, an unknown `~user`, and a filesystem error while
+    looking for the file.
     """
     cleaned_input = raw_input.strip()
     if not cleaned_input:
@@ -131,8 +119,8 @@ def resolve_structure_input(raw_input: str) -> ResolvedStructureInput:
         )
 
     try:
-        local_path = _find_local_path(Path(cleaned_input).expanduser())
-        if local_path is not None:
+        local_path = Path(cleaned_input).expanduser()
+        if local_path.exists():
             return _resolve_local_file(local_path, original_input=raw_input)
     except (OSError, RuntimeError) as error:
         # RuntimeError is what `expanduser` raises for an unknown `~user`.
@@ -156,37 +144,6 @@ def is_valid_classic_pdb_id(value: str) -> bool:
     accepted.
     """
     return bool(re.fullmatch(r"[0-9][A-Za-z0-9]{3}", value.strip()))
-
-
-def _find_local_path(path: Path) -> Path | None:
-    """Return `path` or the one entry beside it whose name matches ignoring case.
-
-    The match may be a directory or a broken link, which the caller then
-    rejects. Several matches raise rather than letting directory order pick
-    one. Filesystem errors propagate for the caller to wrap.
-    """
-    if path.exists():
-        return path
-
-    parent = path.parent
-    if not parent.is_dir():
-        return None
-
-    requested_name = path.name.lower()
-    matches = [
-        candidate
-        for candidate in parent.iterdir()
-        if candidate.name.lower() == requested_name
-    ]
-
-    if len(matches) > 1:
-        matching_names = ", ".join(sorted(candidate.name for candidate in matches))
-        raise StructureInputError(
-            f"Local structure input {path!s} is ambiguous because multiple files "
-            f"match case-insensitively: {matching_names}."
-        )
-
-    return matches[0] if matches else None
 
 
 def _resolve_local_file(
@@ -245,10 +202,8 @@ def split_structure_file_name(name: str) -> tuple[str, str]:
     """Split a file name into its stem and its lower-case format extension.
 
     A trailing `.gz` in any case is looked past and dropped, so `1ABC.cif.GZ`
-    gives `("1ABC", ".cif")`. The split works on the text alone, so it does not
-    depend on how a particular Python version's pathlib treats names such as
-    `....pdb`, whose stem here is `...`. A name without a supported format
-    extension comes back whole, with an empty extension.
+    gives `("1ABC", ".cif")`. A name without a supported format extension
+    comes back whole, with an empty extension.
     """
     uncompressed, _ = _strip_compression(name)
     lowered = uncompressed.lower()

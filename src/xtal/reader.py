@@ -15,11 +15,7 @@ from pathlib import Path
 
 import gemmi
 
-from xtal.resolver import (
-    ResolvedStructureInput,
-    StructureFileFormat,
-    StructureInputError,
-)
+from xtal.resolver import ResolvedStructureInput, StructureInputError
 
 
 class StructureReadError(StructureInputError):
@@ -51,15 +47,13 @@ class AtomRecord:
     Absent alternate-location and insertion codes are empty strings.
     `residue_number` is None when the file gives no number, and `atom_serial`
     is None when the serial is missing or unparseable. Gemmi
-    reports an unrecognised element as "X". `model_number` counts models from
-    1 rather than repeating the file's own MODEL serial.
+    reports an unrecognised element as "X".
 
     `b_factor` is NaN when an mmCIF file gives the atom none, and 0 when the
     PDB field is blank. Neither is a usable value, so consumers must check it.
     """
 
     source_atom_index: int
-    model_number: int
     chain_id: str
     residue_name: str
     residue_number: int | None
@@ -89,7 +83,6 @@ class StructureMetadata:
 
     source_path: Path
     structure_id: str | None
-    file_format: StructureFileFormat
     space_group: str | None
     unit_cell_a: float | None
     unit_cell_b: float | None
@@ -118,26 +111,16 @@ def read_structure(resolved_input: ResolvedStructureInput) -> StructureData:
 
     Gemmi chooses the parser from the file extension. Every atom is kept,
     including hydrogens, waters, and all alternate conformers, so filtering is
-    left to the caller. Raise StructureReadError if the input is not an
-    existing local file, Gemmi cannot parse it, or it does not hold exactly
-    one model with at least one atom.
+    left to the caller. Raise StructureReadError if the input is an RCSB entry
+    that has not been downloaded, Gemmi cannot read the file, or it does not
+    hold exactly one model with at least one atom.
     """
-    if not resolved_input.is_local_file:
-        raise StructureReadError(
-            "read_structure expected a local file input, "
-            f"but got {resolved_input.source_type.value!r}."
-        )
-
-    if resolved_input.local_path is None:
-        raise StructureReadError("Local structure input is missing local_path.")
-
     path = resolved_input.local_path
-
-    if not path.exists():
-        raise StructureReadError(f"Structure file does not exist: {path!s}")
-
-    if not path.is_file():
-        raise StructureReadError(f"Expected a structure file, but got: {path!s}")
+    if path is None:
+        raise StructureReadError(
+            "read_structure expected a local file input, but got an RCSB entry "
+            "that has not been downloaded."
+        )
 
     # Gemmi fills the document only for mmCIF input. Keeping it lets the
     # resolution fallback reuse the parsed file instead of reading it again.
@@ -237,7 +220,7 @@ def _extract_atom_records(
 ) -> list[AtomRecord]:
     atom_records: list[AtomRecord] = []
 
-    for model_index, model in enumerate(structure, start=1):
+    for model in structure:
         for chain in model:
             chain_id = chain.name
 
@@ -254,7 +237,6 @@ def _extract_atom_records(
                     atom_records.append(
                         AtomRecord(
                             source_atom_index=len(atom_records),
-                            model_number=model_index,
                             chain_id=chain_id,
                             residue_name=residue_name,
                             residue_number=residue_number,
@@ -298,7 +280,6 @@ def _extract_metadata(
     return StructureMetadata(
         source_path=path.resolve(),
         structure_id=resolved_input.structure_id,
-        file_format=resolved_input.file_format,
         space_group=structure.spacegroup_hm or None,
         unit_cell_a=cell.a if cell is not None else None,
         unit_cell_b=cell.b if cell is not None else None,

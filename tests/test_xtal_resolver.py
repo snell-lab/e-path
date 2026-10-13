@@ -48,38 +48,8 @@ def test_local_file_resolves_with_its_format(
     assert resolved.source_type is StructureSourceType.LOCAL_FILE
     assert resolved.file_format is expected
     assert resolved.local_path == path.resolve()
-    assert resolved.is_local_file and not resolved.needs_download
+    assert not resolved.needs_download
     assert resolved.structure_id is None
-
-
-def _skip_unless_case_sensitive(tmp_path: Path) -> None:
-    """Skip a test that relies on a case-sensitive filesystem.
-
-    macOS and Windows normally use case-insensitive filesystems, where a
-    differently-cased name already resolves to the file directly and the
-    fallback matching in the resolver never runs.
-    """
-    (tmp_path / "CaseProbe").write_text("x")
-    if (tmp_path / "caseprobe").exists():
-        pytest.skip("requires a case-sensitive filesystem")
-
-
-def test_local_file_name_matches_case_insensitively(tmp_path: Path) -> None:
-    _skip_unless_case_sensitive(tmp_path)
-    (tmp_path / "Model.PDB").write_text("x")
-
-    resolved = resolve_structure_input(str(tmp_path / "model.pdb"))
-
-    assert resolved.local_path == (tmp_path / "Model.PDB").resolve()
-
-
-def test_ambiguous_case_insensitive_match_is_rejected(tmp_path: Path) -> None:
-    _skip_unless_case_sensitive(tmp_path)
-    (tmp_path / "a.pdb").write_text("x")
-    (tmp_path / "A.pdb").write_text("x")
-
-    with pytest.raises(StructureInputError, match="ambiguous"):
-        resolve_structure_input(str(tmp_path / "a.PDB"))
 
 
 @pytest.mark.parametrize(
@@ -188,7 +158,6 @@ def test_gzipped_and_ent_files_read_like_plain_ones(
 
     assert actual.atoms == expected.atoms
     assert actual.metadata.resolution_angstrom == approx(resolution)
-    assert actual.metadata.file_format is expected.metadata.file_format
     assert actual.metadata.structure_id is None
 
 
@@ -207,7 +176,7 @@ def test_pdb_id_resolves_to_rcsb_download(
     assert resolved.source_type is StructureSourceType.RCSB_ID
     assert resolved.structure_id == "1LYZ"
     assert resolved.file_format is StructureFileFormat.MMCIF
-    assert resolved.needs_download and not resolved.is_local_file
+    assert resolved.needs_download
     assert resolved.original_input == "  1lyz "
 
 
@@ -255,23 +224,13 @@ def test_pdb_id_is_not_shadowed_by_a_local_entry(
     assert resolved.structure_id == "1LYZ"
 
 
-def test_case_insensitive_match_that_is_a_directory_is_rejected(
-    tmp_path: Path,
-) -> None:
-    _skip_unless_case_sensitive(tmp_path)
-    (tmp_path / "Model.PDB").mkdir()
-
-    with pytest.raises(StructureInputError, match="directory"):
-        resolve_structure_input(str(tmp_path / "model.pdb"))
-
-
-def test_unlistable_parent_is_a_resolution_error(
+def test_filesystem_error_is_a_resolution_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def denied(self: Path) -> NoReturn:
         raise PermissionError(13, "Permission denied", str(self))
 
-    monkeypatch.setattr(Path, "iterdir", denied)
+    monkeypatch.setattr(Path, "exists", denied)
 
     with pytest.raises(StructureInputError, match="Permission denied") as info:
         resolve_structure_input(str(tmp_path / "model.pdb"))
@@ -351,7 +310,7 @@ def test_downloaded_input_may_keep_its_structure_id(tmp_path: Path) -> None:
         structure_id="1ABC",
     )
 
-    assert resolved.is_local_file and resolved.structure_id == "1ABC"
+    assert not resolved.needs_download and resolved.structure_id == "1ABC"
 
 
 class _FakeResponse(io.BytesIO):
@@ -445,5 +404,5 @@ def test_a_local_input_is_not_downloaded(tmp_path: Path) -> None:
     local = resolve_structure_input(str(path))
 
     assert not local.needs_download
-    with pytest.raises(rcsb.RcsbDownloadError, match="expected an RCSB_ID input"):
+    with pytest.raises(rcsb.RcsbDownloadError, match="expected an RCSB ID input"):
         rcsb.download_rcsb_mmcif(local)

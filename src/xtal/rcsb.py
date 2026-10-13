@@ -7,7 +7,6 @@ renamed into place.
 """
 
 import os
-import uuid
 from http.client import HTTPException
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -18,7 +17,6 @@ from xtal.resolver import (
     StructureFileFormat,
     StructureInputError,
     StructureSourceType,
-    is_valid_classic_pdb_id,
 )
 
 
@@ -50,17 +48,20 @@ def download_rcsb_mmcif(
     reused without checking its contents unless `overwrite` is true, and an
     empty one is downloaded again. A failed download or overwrite leaves any
     existing cache file as it was. The returned input names the cached file
-    and keeps the original input text, with the PDB ID normalised to upper
-    case.
+    and keeps the original input text and the PDB ID.
 
     Every failure to obtain a usable file from RCSB raises `RcsbDownloadError`.
-    That covers an input that is not a valid classic PDB ID, a missing entry,
-    any other HTTP error, a connection that fails or stalls, a truncated
-    response, and a body that is empty or does not start with an mmCIF
-    `data_` block. Failing to create the directory or write the cache file
-    raises `OSError`.
+    That covers an input that is not an RCSB entry, a missing entry, any other
+    HTTP error, a connection that fails or stalls, a truncated response, and a
+    body that is empty or does not start with an mmCIF `data_` block. Failing
+    to create the directory or write the cache file raises `OSError`.
     """
-    structure_id = _normalised_structure_id(resolved_input)
+    structure_id = resolved_input.structure_id
+    if structure_id is None:
+        raise RcsbDownloadError(
+            "download_rcsb_mmcif expected an RCSB ID input, but got a local file."
+        )
+
     output_dir = Path(download_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -83,31 +84,6 @@ def download_rcsb_mmcif(
     )
 
 
-def _normalised_structure_id(resolved_input: ResolvedStructureInput) -> str:
-    """Return the input's PDB ID in upper case, rejecting anything else.
-
-    The resolver already validates IDs, but this check keeps a hand-built input
-    from naming a cache file outside the download directory or an arbitrary
-    URL path.
-    """
-    if resolved_input.source_type != StructureSourceType.RCSB_ID:
-        raise RcsbDownloadError(
-            "download_rcsb_mmcif expected an RCSB_ID input, "
-            f"but got {resolved_input.source_type.value!r}."
-        )
-
-    if resolved_input.structure_id is None:
-        raise RcsbDownloadError("RCSB input is missing a structure ID.")
-
-    structure_id = resolved_input.structure_id.strip().upper()
-    if not is_valid_classic_pdb_id(structure_id):
-        raise RcsbDownloadError(
-            f"RCSB input has an invalid classic PDB ID {resolved_input.structure_id!r}."
-        )
-
-    return structure_id
-
-
 def _as_downloaded_local_input(
     *,
     resolved_input: ResolvedStructureInput,
@@ -127,7 +103,7 @@ def _as_downloaded_local_input(
 
 
 def _fetch_rcsb_mmcif(structure_id: str) -> bytes:
-    """Return the mmCIF body RCSB serves for a normalised PDB ID."""
+    """Return the mmCIF body RCSB serves for a PDB ID."""
     url = RCSB_MMCIF_DOWNLOAD_URL.format(structure_id=structure_id.lower())
 
     # The order matters, since HTTPError is a URLError and both are OSErrors.
@@ -199,18 +175,11 @@ def _write_atomically(path: Path, data: bytes) -> None:
     """Replace `path` with `data` so readers see the old file or the new one.
 
     The temporary file sits in the same directory, because `os.replace` is only
-    atomic within one filesystem. Its name is unique per call so concurrent
-    runs fetching the same entry do not write into each other's files.
+    atomic within one filesystem.
     """
-    temp_path = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.part")
+    temp_path = path.with_name(f".{path.name}.part")
     try:
-        # Opening with "xb" rather than through tempfile.mkstemp keeps the
-        # usual umask permissions instead of forcing 0600 on the cache file.
-        with temp_path.open("xb") as temp_file:
-            temp_file.write(data)
-            temp_file.flush()
-            os.fsync(temp_file.fileno())
+        temp_path.write_bytes(data)
         os.replace(temp_path, path)
-    except BaseException:
+    finally:
         temp_path.unlink(missing_ok=True)
-        raise

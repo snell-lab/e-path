@@ -111,7 +111,6 @@ def _highest_occupancy_conformers(
     best_by_site: dict[tuple[object, ...], tuple[int, AtomRecord]] = {}
     for index, atom in enumerate(atoms):
         site = (
-            atom.model_number,
             atom.chain_id,
             atom.residue_name.strip().upper(),
             atom.residue_number,
