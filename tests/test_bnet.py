@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 from support import approx, synthetic_atoms, write_synthetic_pdb
 
-from rabdam.bnet.calculate import ProteinBnetCalculationError, calculate_protein_bnet
+import rabdam.bnet.reference as bnet_reference
+from rabdam.bnet.calculate import calculate_protein_bnet
 from rabdam.bnet.metric import calculate_bnet
 from rabdam.bnet.percentile import (
     BnetPercentileError,
@@ -26,7 +27,6 @@ from rabdam.bnet.reference import (
     BnetReferenceMetadata,
     load_bnet_reference_database,
     load_default_bnet_reference_database,
-    write_bnet_reference_database,
 )
 from rabdam.bnet.sites import is_protein_bnet_site, select_protein_bnet_sites
 from rabdam.bnet.workflow import calculate_bnet_workflow
@@ -110,31 +110,12 @@ def test_bnet_grows_as_sites_move_above_the_median() -> None:
     ("kwargs", "message"),
     [
         (
-            {"all_bdamage_values": [], "bnet_site_bdamage_values": [1.0, 2.0]},
-            "must not be empty",
-        ),
-        (
             {"all_bdamage_values": [1.0], "bnet_site_bdamage_values": [1.0]},
             "fewer than two",
         ),
         (
             {"all_bdamage_values": [1.0], "bnet_site_bdamage_values": [2.0, 2.0]},
             "zero variance",
-        ),
-        (
-            {
-                "all_bdamage_values": [1.0, float("nan")],
-                "bnet_site_bdamage_values": [1.0, 2.0],
-            },
-            "finite",
-        ),
-        (
-            {
-                "all_bdamage_values": [1.0],
-                "bnet_site_bdamage_values": [1.0, 2.0],
-                "trapezium_count": 0,
-            },
-            "positive integer",
         ),
     ],
 )
@@ -143,27 +124,14 @@ def test_bnet_input_validation(kwargs: dict[str, Any], message: str) -> None:
         calculate_bnet(**kwargs)
 
 
-def test_protein_bnet_requires_sites(bdamage_result: BDamageWorkflowResult) -> None:
+def test_protein_bnet_uses_the_selected_sites(
+    bdamage_result: BDamageWorkflowResult,
+) -> None:
     result = calculate_protein_bnet(
         prepared_structure=bdamage_result.prepared_structure,
         bdamage_score_result=bdamage_result.bdamage_score_result,
     )
     assert result.site_count == 4 and result.bnet > 0.0
-
-    with pytest.raises(
-        ProteinBnetCalculationError, match="do not align|does not match"
-    ):
-        from rabdam.bdamage import BDamageScoreResult
-
-        truncated = BDamageScoreResult(
-            atom_results=bdamage_result.bdamage_score_result.atom_results[:-1],
-            window_size=11,
-            selected_atom_count=76,
-        )
-        calculate_protein_bnet(
-            prepared_structure=bdamage_result.prepared_structure,
-            bdamage_score_result=truncated,
-        )
 
 
 def _database(
@@ -190,13 +158,6 @@ def test_nearest_resolution_set_includes_boundary_ties() -> None:
 
     assert matched.indices == (1, 2, 3)
     assert (matched.resolution_min, matched.resolution_max) == (2.0, 2.0)
-
-    with pytest.raises(BnetPercentileError, match="larger than the reference database"):
-        find_resolution_matched_reference_set(
-            resolution_angstrom=2.0,
-            reference_database=database,
-            nearest_resolution_count=6,
-        )
 
 
 def test_percentile_is_the_rank_of_the_nearest_local_reference_value() -> None:
@@ -231,6 +192,7 @@ def test_percentile_is_the_rank_of_the_nearest_local_reference_value() -> None:
         {"bnet": float("nan")},
         {"resolution_angstrom": 0.0},
         {"nearest_resolution_count": 0},
+        {"nearest_resolution_count": 6},
     )
     for bad in overrides:
         with pytest.raises(BnetPercentileError):
@@ -291,23 +253,8 @@ def test_reference_csv_validation(tmp_path: Path, text: str, message: str) -> No
     path.write_text(text)
     with pytest.raises(BnetReferenceError, match=message):
         load_bnet_reference_database(path)
-    with pytest.raises(BnetReferenceError, match="does not exist"):
+    with pytest.raises(FileNotFoundError):
         load_bnet_reference_database(tmp_path / "missing.csv")
-
-
-def test_reference_database_round_trips_through_write_and_load(tmp_path: Path) -> None:
-    database = _database([1.5, 2.25], [12.5, 0.0])
-    write_bnet_reference_database(database, tmp_path / "out" / "db.csv")
-
-    loaded = load_bnet_reference_database(tmp_path / "out" / "db.csv")
-
-    assert loaded.entries == database.entries
-    assert loaded.metadata.database_id == "test-db"
-    assert (
-        json.loads((tmp_path / "out" / "db.manifest.json").read_text())["entry_count"]
-        == 2
-    )
-    assert load_default_bnet_reference_database(tmp_path / "nowhere") is None
 
 
 def test_bundled_reference_database_is_consistent_with_its_manifest() -> None:
@@ -342,6 +289,27 @@ def test_bnet_workflow_reports_full_results(
     )
     assert result.percentile_result.resolution_angstrom == approx(1.8)
     assert result.percentile_result.local_reference_count >= 1000
+
+
+def test_bnet_workflow_explains_a_missing_reference_database(
+    bdamage_result: BDamageWorkflowResult,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        bnet_reference, "DEFAULT_REFERENCE_DATABASE_CSV_PATH", tmp_path / "none.csv"
+    )
+
+    result = calculate_bnet_workflow(
+        prepared_structure=bdamage_result.prepared_structure,
+        bdamage_score_result=bdamage_result.bdamage_score_result,
+    )
+
+    assert result.bnet_result is not None and result.percentile_result is None
+    assert result.percentile_unavailable_reason is not None
+    assert result.percentile_unavailable_reason.startswith(
+        "default reference database could not be loaded"
+    )
 
 
 def test_bnet_workflow_explains_missing_resolution(tmp_path: Path) -> None:

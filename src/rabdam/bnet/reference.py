@@ -1,4 +1,4 @@
-"""Load, validate, and write Bnet reference databases."""
+"""Load and validate Bnet reference databases."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import csv
 import json
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, SupportsFloat, SupportsIndex, cast
+from typing import Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -62,11 +62,7 @@ class BnetReferenceEntry:
     bnet: float
 
     def __post_init__(self) -> None:
-        """Normalize identifiers and validate numeric reference values."""
-        pdb_id = str(self.pdb_id).strip()
-        if not pdb_id:
-            raise BnetReferenceError("pdb_id must not be empty.")
-
+        """Validate numeric reference values."""
         resolution_angstrom = _finite_float(
             self.resolution_angstrom,
             name="resolution_angstrom",
@@ -83,7 +79,6 @@ class BnetReferenceEntry:
                 f"bnet must be greater than or equal to zero, got {bnet!r}."
             )
 
-        object.__setattr__(self, "pdb_id", pdb_id)
         object.__setattr__(self, "resolution_angstrom", resolution_angstrom)
         object.__setattr__(self, "bnet", bnet)
 
@@ -103,15 +98,15 @@ class BnetReferenceMetadata:
 
     def __post_init__(self) -> None:
         """Normalize and validate required metadata strings."""
-        database_id = str(self.database_id).strip()
+        database_id = self.database_id.strip()
         if not database_id:
             raise BnetReferenceError("metadata.database_id must not be empty.")
 
-        schema_version = str(self.schema_version).strip()
+        schema_version = self.schema_version.strip()
         if not schema_version:
             raise BnetReferenceError("metadata.schema_version must not be empty.")
 
-        metric_kind = str(self.metric_kind).strip()
+        metric_kind = self.metric_kind.strip()
         if not metric_kind:
             raise BnetReferenceError("metadata.metric_kind must not be empty.")
 
@@ -145,13 +140,7 @@ class BnetReferenceDatabase:
             raise BnetReferenceError("Bnet reference database must contain entries.")
 
         seen_pdb_ids: set[str] = set()
-        for raw_entry in cast(tuple[object, ...], entries):
-            if not isinstance(raw_entry, BnetReferenceEntry):
-                raise BnetReferenceError(
-                    "entries must contain only BnetReferenceEntry objects."
-                )
-            entry = raw_entry
-
+        for entry in entries:
             duplicate_key = entry.pdb_id.casefold()
             if duplicate_key in seen_pdb_ids:
                 raise BnetReferenceError(
@@ -199,100 +188,35 @@ class BnetReferenceDatabase:
         return self._bnet_values
 
 
-def load_bnet_reference_database(
-    path: str | Path,
-    *,
-    manifest_path: str | Path | None = None,
-    database_id: str | None = None,
-) -> BnetReferenceDatabase:
-    """Load a Bnet reference CSV and optional JSON manifest.
+def load_bnet_reference_database(path: str | Path) -> BnetReferenceDatabase:
+    """Load a Bnet reference CSV and its optional JSON manifest.
 
-    Args:
-        path: CSV containing structure ID, resolution, and Bnet columns.
-        manifest_path: Explicit manifest path. By default, use a sibling file
-            ending in `.manifest.json` when present.
-        database_id: Fallback identifier when the manifest omits one.
+    The CSV holds structure ID, resolution, and Bnet columns. The manifest is
+    the sibling file ending in `.manifest.json`, when present.
 
     Raises:
-        BnetReferenceError: If files cannot be found or parsed, required columns
-            are absent or ambiguous, or reference values are invalid.
+        OSError: If a file cannot be read.
+        BnetReferenceError: If files cannot be parsed, required columns are
+            absent or ambiguous, or reference values are invalid.
     """
     csv_path = Path(path).expanduser()
-    if not csv_path.is_file():
-        raise BnetReferenceError(f"Bnet reference CSV does not exist: {csv_path}.")
-
     entries = _read_reference_entries_csv(csv_path)
-    resolved_manifest_path = _resolve_manifest_path(csv_path, manifest_path)
-    manifest = _read_manifest_json(resolved_manifest_path)
+    candidate = csv_path.with_suffix(".manifest.json")
+    manifest_path = candidate if candidate.is_file() else None
+    manifest = _read_manifest_json(manifest_path)
 
     metadata = _metadata_from_manifest(
         manifest,
-        database_id=database_id,
         source_path=csv_path,
-        manifest_path=resolved_manifest_path,
+        manifest_path=manifest_path,
     )
 
     return BnetReferenceDatabase(entries=entries, metadata=metadata)
 
 
-def default_bnet_reference_database_path(
-    reference_dir: str | Path = DEFAULT_REFERENCE_DATABASE_DIR,
-) -> Path:
-    """Return the conventional reference CSV path within a directory."""
-    return Path(reference_dir).expanduser() / DEFAULT_REFERENCE_DATABASE_FILENAME
-
-
-def load_default_bnet_reference_database(
-    reference_dir: str | Path = DEFAULT_REFERENCE_DATABASE_DIR,
-) -> BnetReferenceDatabase | None:
-    """Load the conventional reference database when its CSV exists."""
-    csv_path = default_bnet_reference_database_path(reference_dir)
-    if not csv_path.is_file():
-        return None
-
-    return load_bnet_reference_database(csv_path)
-
-
-def write_bnet_reference_database(
-    database: BnetReferenceDatabase,
-    path: str | Path,
-    *,
-    manifest_path: str | Path | None = None,
-) -> None:
-    """Write a reference CSV and JSON metadata manifest.
-
-    Parent directories are created as needed. If `manifest_path` is omitted,
-    the manifest is written beside the CSV with a `.manifest.json` suffix.
-    """
-    csv_path = Path(path).expanduser()
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with csv_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=("pdb_id", "resolution_angstrom", "bnet"),
-        )
-        writer.writeheader()
-        for entry in database.entries:
-            writer.writerow(
-                {
-                    "pdb_id": entry.pdb_id,
-                    "resolution_angstrom": f"{entry.resolution_angstrom:.10g}",
-                    "bnet": f"{entry.bnet:.12g}",
-                }
-            )
-
-    if manifest_path is None:
-        manifest_path = csv_path.with_suffix(".manifest.json")
-
-    manifest_output_path = Path(manifest_path).expanduser()
-    manifest_output_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest = asdict(database.metadata)
-    manifest["entry_count"] = database.entry_count
-
-    with manifest_output_path.open("w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+def load_default_bnet_reference_database() -> BnetReferenceDatabase:
+    """Load the reference database bundled with the package."""
+    return load_bnet_reference_database(DEFAULT_REFERENCE_DATABASE_CSV_PATH)
 
 
 def _read_reference_entries_csv(path: Path) -> tuple[BnetReferenceEntry, ...]:
@@ -350,25 +274,6 @@ def _read_reference_entries_csv(path: Path) -> tuple[BnetReferenceEntry, ...]:
     return tuple(entries)
 
 
-def _resolve_manifest_path(
-    csv_path: Path,
-    manifest_path: str | Path | None,
-) -> Path | None:
-    if manifest_path is not None:
-        resolved = Path(manifest_path).expanduser()
-        if not resolved.is_file():
-            raise BnetReferenceError(
-                f"Bnet reference manifest does not exist: {resolved}."
-            )
-        return resolved
-
-    candidate = csv_path.with_suffix(".manifest.json")
-    if candidate.is_file():
-        return candidate
-
-    return None
-
-
 def _read_manifest_json(path: Path | None) -> Mapping[str, Any]:
     if path is None:
         return {}
@@ -390,12 +295,11 @@ def _read_manifest_json(path: Path | None) -> Mapping[str, Any]:
 def _metadata_from_manifest(
     manifest: Mapping[str, Any],
     *,
-    database_id: str | None,
     source_path: Path,
     manifest_path: Path | None,
 ) -> BnetReferenceMetadata:
     return BnetReferenceMetadata(
-        database_id=str(manifest.get("database_id") or database_id or source_path.stem),
+        database_id=str(manifest.get("database_id") or source_path.stem),
         schema_version=str(
             manifest.get("schema_version") or DEFAULT_REFERENCE_SCHEMA_VERSION
         ),
@@ -409,15 +313,13 @@ def _metadata_from_manifest(
 
 
 def _find_column(
-    fieldnames: Sequence[str | None],
+    fieldnames: Sequence[str],
     *,
     aliases: frozenset[str],
     required_name: str,
 ) -> str:
     matching_columns: list[str] = []
     for fieldname in fieldnames:
-        if fieldname is None:
-            continue
         normalized = _normalize_column_name(fieldname)
         if normalized in aliases:
             matching_columns.append(fieldname)
@@ -432,7 +334,7 @@ def _find_column(
             f"{matches}. Use exactly one."
         )
 
-    available = ", ".join(repr(name) for name in fieldnames if name is not None)
+    available = ", ".join(repr(name) for name in fieldnames)
     raise BnetReferenceError(
         f"Bnet reference CSV is missing required {required_name!r} column. "
         f"Available columns: {available}."
@@ -444,15 +346,15 @@ def _normalize_column_name(value: str) -> str:
     return "".join(character for character in normalized if character.isalnum())
 
 
-def _required_text(value: object, *, column: str, row_number: int) -> str:
-    text = "" if value is None else str(value).strip()
+def _required_text(value: str | None, *, column: str, row_number: int) -> str:
+    text = "" if value is None else value.strip()
     if not text:
         raise BnetReferenceError(f"column {column!r} is empty at row {row_number}.")
     return text
 
 
-def _required_float(value: object, *, column: str, row_number: int) -> float:
-    text = "" if value is None else str(value).strip()
+def _required_float(value: str | None, *, column: str, row_number: int) -> float:
+    text = "" if value is None else value.strip()
     if not text:
         raise BnetReferenceError(f"column {column!r} is empty at row {row_number}.")
 
@@ -469,18 +371,8 @@ def _row_is_empty(row: Mapping[str, Any]) -> bool:
     return all(value is None or str(value).strip() == "" for value in row.values())
 
 
-def _finite_float(value: object, *, name: str) -> float:
-    if isinstance(value, bool):
-        raise BnetReferenceError(f"{name} must be numeric, got {value!r}.")
-
-    if not isinstance(value, (str, bytes, bytearray, SupportsFloat, SupportsIndex)):
-        raise BnetReferenceError(f"{name} must be numeric, got {value!r}.")
-
-    try:
-        number = float(value)
-    except (TypeError, ValueError) as error:
-        raise BnetReferenceError(f"{name} must be numeric, got {value!r}.") from error
-
+def _finite_float(value: float, *, name: str) -> float:
+    number = float(value)
     if not math.isfinite(number):
         raise BnetReferenceError(f"{name} must be finite, got {number!r}.")
 
@@ -505,8 +397,6 @@ __all__ = [
     "BnetReferenceEntry",
     "BnetReferenceError",
     "BnetReferenceMetadata",
-    "default_bnet_reference_database_path",
     "load_bnet_reference_database",
     "load_default_bnet_reference_database",
-    "write_bnet_reference_database",
 ]

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from numbers import Integral
 from typing import Protocol, cast
 
 import numpy as np
@@ -15,8 +14,8 @@ from numpy.typing import NDArray
 from scipy.stats import gaussian_kde  # type: ignore[import-untyped]
 
 # These sampling choices match RABDAM 2 so raw Bnet values remain comparable.
-DEFAULT_TRAPEZIUM_COUNT = 99
-DEFAULT_KDE_TAIL_BANDWIDTH_COUNT = 3.0
+TRAPEZIUM_COUNT = 99
+KDE_TAIL_BANDWIDTH_COUNT = 3.0
 
 
 class _GaussianKDE(Protocol):
@@ -40,7 +39,6 @@ def calculate_bnet(
     *,
     all_bdamage_values: Sequence[float],
     bnet_site_bdamage_values: Sequence[float],
-    trapezium_count: object = DEFAULT_TRAPEZIUM_COUNT,
 ) -> BnetResult:
     """Calculate raw Bnet from all-atom and damage-sensitive BDamage values.
 
@@ -52,45 +50,28 @@ def calculate_bnet(
         all_bdamage_values: Finite BDamage values for every selected atom.
         bnet_site_bdamage_values: Finite BDamage values for damage-sensitive
             Asp/Glu carboxyl oxygens.
-        trapezium_count: Positive number of integration intervals.
 
     Returns:
         The Bnet ratio, split point, component areas, and Bnet-site count.
 
     Raises:
-        ValueError: If inputs are empty, non-finite, incorrectly shaped, contain
-            fewer than two sites or zero site variance, or produce no area below
-            the median.
+        ValueError: If there are fewer than two sites, the sites have zero
+            variance, or no KDE area falls below the median.
     """
-    all_values = _as_finite_1d_array(
-        all_bdamage_values,
-        name="all_bdamage_values",
-    )
-    site_values = _as_finite_1d_array(
-        bnet_site_bdamage_values,
-        name="bnet_site_bdamage_values",
-    )
+    all_values = np.asarray(all_bdamage_values, dtype=float)
+    site_values = np.asarray(bnet_site_bdamage_values, dtype=float)
 
     if site_values.size < 2:
         raise ValueError(
             "Cannot calculate Bnet from fewer than two Bnet-site BDamage values."
         )
 
-    trapezium_count = _as_positive_integer(
-        trapezium_count,
-        name="trapezium_count",
-    )
-
     # The all-atom median supplies the baseline while the KDE contains only
     # damage-sensitive Asp/Glu sites.
     median_bdamage = float(np.median(all_values))
 
     kde = _build_gaussian_kde_scott(site_values)
-    x_values = _bnet_kde_x_values(
-        site_values,
-        kde,
-        trapezium_count=trapezium_count,
-    )
+    x_values = _bnet_kde_x_values(site_values, kde)
     y_values = kde(x_values)
 
     below_median_area, above_median_area = _split_trapezium_areas(
@@ -109,30 +90,8 @@ def calculate_bnet(
         median_bdamage=median_bdamage,
         below_median_area=below_median_area,
         above_median_area=above_median_area,
-        site_count=int(site_values.size),
+        site_count=site_values.size,
     )
-
-
-def _as_finite_1d_array(values: Sequence[float], *, name: str) -> NDArray[np.float64]:
-    array = np.asarray(values, dtype=float)
-
-    if array.ndim != 1:
-        raise ValueError(f"{name} must be one-dimensional.")
-
-    if array.size == 0:
-        raise ValueError(f"{name} must not be empty.")
-
-    if not np.all(np.isfinite(array)):
-        raise ValueError(f"{name} must contain only finite values.")
-
-    return array
-
-
-def _as_positive_integer(value: object, *, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
-        raise ValueError(f"{name} must be a positive integer.")
-
-    return int(value)
 
 
 def _build_gaussian_kde_scott(
@@ -153,28 +112,15 @@ def _build_gaussian_kde_scott(
 def _bnet_kde_x_values(
     sample_values: NDArray[np.float64],
     kde: _GaussianKDE,
-    *,
-    trapezium_count: int,
 ) -> NDArray[np.float64]:
     """Build evenly spaced integration points spanning three tail bandwidths."""
     sample_standard_deviation = float(np.std(sample_values, ddof=0))
+    tail_width = kde.scotts_factor() * sample_standard_deviation
 
-    if sample_standard_deviation <= 0.0:
-        raise ValueError(
-            "Cannot calculate KDE because Bnet-site values have zero variance."
-        )
+    x_min = float(np.min(sample_values) - (KDE_TAIL_BANDWIDTH_COUNT * tail_width))
+    x_max = float(np.max(sample_values) + (KDE_TAIL_BANDWIDTH_COUNT * tail_width))
 
-    scott_factor = float(kde.scotts_factor())
-    tail_width = scott_factor * sample_standard_deviation
-
-    x_min = float(
-        np.min(sample_values) - (DEFAULT_KDE_TAIL_BANDWIDTH_COUNT * tail_width)
-    )
-    x_max = float(
-        np.max(sample_values) + (DEFAULT_KDE_TAIL_BANDWIDTH_COUNT * tail_width)
-    )
-
-    return np.linspace(x_min, x_max, trapezium_count + 1)
+    return np.linspace(x_min, x_max, TRAPEZIUM_COUNT + 1)
 
 
 def _split_trapezium_areas(

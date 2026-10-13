@@ -16,7 +16,6 @@ from rabdam.bnet.percentile import (
     calculate_bnet_percentile,
 )
 from rabdam.bnet.reference import (
-    DEFAULT_REFERENCE_DATABASE_CSV_PATH,
     BnetReferenceError,
     load_default_bnet_reference_database,
 )
@@ -70,15 +69,6 @@ def calculate_bnet_workflow(
             bnet_result=bnet_result,
             percentile_unavailable_reason=(
                 f"default reference database could not be loaded: {error}"
-            ),
-        )
-
-    if reference_database is None:
-        return BnetWorkflowResult(
-            bnet_result=bnet_result,
-            percentile_unavailable_reason=(
-                "default reference database not found: "
-                f"{DEFAULT_REFERENCE_DATABASE_CSV_PATH}"
             ),
         )
 
