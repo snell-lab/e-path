@@ -45,8 +45,9 @@ the model is one complete asymmetric unit.
 The space group, unit-cell volume, Matthews coefficient, and estimated solvent
 content are recorded in every run summary. Only protein and nucleic-acid atoms
 contribute to the modelled mass, as for a conventional Matthews calculation.
-Each atom counts in proportion to its occupancy, so alternate conformers are not
-double-counted. Hydrogens are removed before scoring, so their mass is added
+The mass is taken from the model as read, before the atoms that cannot be scored
+are removed. Each atom counts in proportion to its occupancy, so the alternate
+conformers of a site add up to one atom. Hydrogens the model lacks are added
 back from each residue's tabulated hydrogen count. The solvent content uses a
 partial specific volume of 0.74 cm^3/g for protein and 0.50 cm^3/g for nucleic
 acid (Kantardjieff & Rupp, 2003). Residues that were never modelled, such as

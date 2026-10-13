@@ -14,8 +14,8 @@ windows.
 The rewrite improves practical use in several ways:
 
 - Faster calculations: packing-density neighbour searches use `cKDTree`,
-  translation and trimming are fused by default to avoid materializing the full
-  3x3x3 crystal block, and BDamage window averages use cumulative sums instead
+  translation and trimming are fused to avoid materializing the full 3x3x3
+  crystal block, and BDamage window averages use cumulative sums instead
   of pandas rolling means.
 - Larger-structure speedups: in large-structure runs, these changes can make
   E-path complete more than 80 times faster than RABDAM 2.
@@ -27,10 +27,10 @@ The rewrite improves practical use in several ways:
 - Cleaner automation: the CLI uses
   `epath STRUCTURE_INPUT [STRUCTURE_INPUT ...] [options]`, supports simple
   batch runs, and writes compact per-atom CSVs plus terminal summaries.
-- Full damage context: raw protein Bnet and its resolution-matched percentile
+- Full damage context: protein Bnet and its resolution-matched percentile
   are calculated with the bundled reference database and reported alongside
   E-path results. Their scientific defaults are fixed by the integrated RABDAM
-  workflow rather than exposed as additional E-path settings.
+  pipeline rather than exposed as additional E-path settings.
 
 These improvements intentionally remove some RABDAM 2 application features.
 E-path does not support the legacy text input file, `-f`, `-i`, `-r`
@@ -39,6 +39,11 @@ dataframe outputs, and it does not produce RABDAM's HTML report, its
 per-structure BDamage plots, or its BDamage-coloured coordinate files. E-path
 writes its own equivalents instead: the `*_zfalloff.png` plot and the
 `*_model.cif` file with BDamage in the B-factor column.
+
+E-path also has no equivalent of RABDAM's optional `filter` setting, which
+stops a run when the model fails the Bnet eligibility criteria of Shelley &
+Garman (2022). As in a default RABDAM run, Bnet and its percentile are
+reported without those checks.
 
 E-path also does not expose RABDAM's atom-selection controls. RABDAM allows
 HETATM, nucleic-acid, and per-atom or per-component selection overrides;

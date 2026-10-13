@@ -7,10 +7,10 @@ the input, calculate BDamage, then run the E-path analysis:
 ```python
 from pathlib import Path
 
-from epath.workflow import EpathWorkflowOptions, run_epath_workflow
+from epath.pipeline import EpathPipelineOptions, run_epath_pipeline
 from epath.analysis.pathways import PathAnalysisOptions
-from epath.outputs.files import EpathOutputWorkflowOptions
-from rabdam.workflow import calculate_bdamage_for_structure_data
+from epath.outputs.files import EpathOutputPipelineOptions
+from rabdam.pipeline import run_bdamage_pipeline
 from xtal.rcsb import download_rcsb_mmcif
 from xtal.reader import read_structure
 from xtal.resolver import StructureSourceType, resolve_structure_input
@@ -20,24 +20,24 @@ if resolved.source_type is StructureSourceType.RCSB_ID:
     resolved = download_rcsb_mmcif(resolved)
 structure = read_structure(resolved)
 
-bdamage = calculate_bdamage_for_structure_data(structure)
+bdamage = run_bdamage_pipeline(structure)
 
-options = EpathWorkflowOptions(
+options = EpathPipelineOptions(
     paths=PathAnalysisOptions(linear_ratio=0.25),
-    output=EpathOutputWorkflowOptions(output_prefix=Path("output") / "1LYZ"),
+    output=EpathOutputPipelineOptions(output_prefix=Path("output") / "1LYZ"),
 )
-result, files = run_epath_workflow(bdamage, options=options)
+result, files = run_epath_pipeline(bdamage, options=options)
 
 for report in result.path_reports:
     print(report.endpoint_summary, report.anchor_summary)
 ```
 
-`EpathWorkflowResult` holds the scored atoms, the selection, the clusters and
+`EpathPipelineResult` holds the scored atoms, the selection, the clusters and
 their statistics, one `PathReport` per reported pathway, the cofactor sites,
-and the run record that becomes `*_run.csv`; `EpathWorkflowOutputFiles` lists
+and the run record that becomes `*_run.csv`; `EpathPipelineOutputFiles` lists
 the files written. Every option group has a frozen dataclass with the same
-defaults as the CLI: `BDamageWorkflowOptions` for the calculation,
-`EpathSelectionWorkflowOptions` and `EpathClusterWorkflowOptions` for the
+defaults as the CLI: `BDamagePipelineOptions` for the calculation,
+`EpathSelectionPipelineOptions` and `EpathClusterPipelineOptions` for the
 selection and clustering, `PathAnalysisOptions` for the topology thresholds
-and the endpoint and anchor distances, and `EpathOutputWorkflowOptions` for
+and the endpoint and anchor distances, and `EpathOutputPipelineOptions` for
 which files to write.

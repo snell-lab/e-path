@@ -13,7 +13,7 @@
   produce the clusters, then residue chemistry, topology, and endpoint and
   cofactor labelling describe each cluster as a pathway. `epath.outputs`
   writes the CSV, coordinate, plot, and report files. `epath.cli` parses
-  arguments and prints terminal summaries, and `epath.workflow` is the entry
+  arguments and prints terminal summaries, and `epath.pipeline` is the entry
   point that ties the stages together.
 - `spatial`: radius neighbour searches backed by SciPy's KD-tree, shared by
   the packing-density and clustering steps.

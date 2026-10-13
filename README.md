@@ -2,7 +2,7 @@
 
 E-path calculates per-atom BDamage scores and analyzes spatially connected
 low-BDamage atom clusters in protein crystal structures. Its
-calculation core is a from-scratch implementation of the BDamage workflow from
+calculation core is a from-scratch implementation of the BDamage pipeline from
 RABDAM 2, created by the Garman Group at the University of Oxford
 (https://github.com/GarmanGroup/RABDAM).
 
@@ -17,7 +17,7 @@ number of non-hydrogen crystal-environment atoms within 7.0 A.
 
 The E-path pipeline builds on these per-atom BDamage values with lowest-percentile
 selection, 4 A connectivity clustering, and minimum-spanning-tree
-(MST) geometry metrics. The complete RABDAM stage also calculates raw protein
+(MST) geometry metrics. The complete RABDAM stage also calculates protein
 Bnet and a resolution-matched Bnet percentile. E-path consumes BDamage only;
 Bnet and its percentile are reported alongside the E-path results but do not
 change E-path selection or clustering.
@@ -25,7 +25,7 @@ change E-path selection or clustering.
 ## Install
 
 E-path runs directly from a clone of this repository; there is no package to
-install. It requires Python 3.10 or newer and the four libraries listed in
+install. It requires Python 3.14 or newer and the four libraries listed in
 `requirements.txt`: Gemmi, NumPy, SciPy, and Matplotlib (for the default
 Z-score plot). Clone the repository, then install the libraries however you
 prefer — pip, your system package manager, conda — for example:
@@ -83,10 +83,8 @@ PDB IDs are downloaded from RCSB as mmCIF files and cached in
 fetches the file again even when a cached copy exists.
 
 `--version` and `--citations` print the program version and the papers to
-cite, and `-q`/`--quiet` suppresses progress and summary output. Two options
-exist only for debugging the BDamage calculation:
-`--materialize-translated-block` builds the full 3x3x3 translated crystal
-block instead of the fused translate-and-trim path, and `--preview-count N`
+cite, and `-q`/`--quiet` suppresses progress and summary output.
+`--preview-count N` exists only for debugging the BDamage calculation: it
 prints the first N packing-density and BDamage values to the terminal.
 
 ## Output
@@ -160,7 +158,7 @@ and the details of its outputs are in `docs/`:
   what is faster, and what was deliberately dropped.
 - [Package layout](docs/package-layout.md): the `xtal`, `rabdam`, `epath`, and
   `spatial` packages and their dependency direction.
-- [Python API](docs/python-api.md): running the workflow and overriding
+- [Python API](docs/python-api.md): running the pipeline and overriding
   thresholds from Python.
 
 ## Limits And Assumptions

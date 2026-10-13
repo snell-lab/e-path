@@ -29,7 +29,7 @@ run made with non-default values is identifiable from its output alone. The
 window size is reported as well as the fraction it came from, since it is
 derived from the scored atom count rather than set directly.
 
-The terminal and persistent summaries include raw protein Bnet and, when the
+The terminal and persistent summaries include protein Bnet and, when the
 input contains resolution metadata, its percentile against the bundled
 resolution-matched reference database. If a structure has no usable Asp/Glu
 carboxyl-oxygen sites or no resolution, the summaries explain why the
