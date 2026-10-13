@@ -101,7 +101,6 @@ def test_the_highest_occupancy_conformer_is_kept_at_each_site() -> None:
     [
         ("ALA", (True, False, False)),
         ("mse ", (True, False, False)),
-        ("HID", (True, False, False)),
         ("DA", (False, True, False)),
         ("5MC", (False, True, False)),
         ("HOH", (False, False, True)),

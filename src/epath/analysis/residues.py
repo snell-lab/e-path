@@ -7,9 +7,9 @@ here, so the reported fractions sum to one and no residue is double counted.
 
 Histidine and tyrosine are counted as aromatic rather than polar, because the
 analysis treats aromatic side chains as the redox-active set that supports
-electron delocalization and transient radical states. A modified residue or
-a protonation variant is classed with its parent residue, whatever its own
-chemistry, so phosphoserine is polar and pyroglutamate is charged.
+electron delocalization and transient radical states. A modified residue is
+classed with its parent residue, whatever its own chemistry, so phosphoserine
+is polar and pyroglutamate is charged.
 
 Enrichment is measured against the composition of the analysed model rather
 than a fixed reference table, so a class is only called enriched when the path
@@ -65,12 +65,6 @@ _RESIDUE_CLASSES: Mapping[str, ResidueClass] = {
     "TYR": "aromatic",
     "TRP": "aromatic",
     "HIS": "aromatic",
-    "HID": "aromatic",
-    "HIE": "aromatic",
-    "HIP": "aromatic",
-    "HSD": "aromatic",
-    "HSE": "aromatic",
-    "HSP": "aromatic",
     "PTR": "aromatic",
     # Sulfur-containing side chains, including selenomethionine, which is
     # substituted for methionine during phasing.
@@ -78,20 +72,16 @@ _RESIDUE_CLASSES: Mapping[str, ResidueClass] = {
     "CYS": "sulfur",
     "MSE": "sulfur",
     "SEC": "sulfur",
-    "CYM": "sulfur",
-    "CYX": "sulfur",
     "CSO": "sulfur",
     "CME": "sulfur",
     "CSD": "sulfur",
     "FME": "sulfur",
-    # Charged side chains. Their protonation variants and modified forms are
-    # classed with the parent residue, whatever charge they carry themselves.
+    # Charged side chains. Their modified forms are classed with the parent
+    # residue, whatever charge they carry themselves.
     "ASP": "charged",
     "GLU": "charged",
     "LYS": "charged",
     "ARG": "charged",
-    "ASH": "charged",
-    "GLH": "charged",
     "MLY": "charged",
     "KCX": "charged",
     "LLP": "charged",

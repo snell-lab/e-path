@@ -17,35 +17,11 @@ from rabdam.structure.models import (
 )
 from xtal.reader import AtomRecord, StructureData
 
-# Gemmi does not classify several force-field protonation variants and modified
-# nucleotides in the way atom selection needs.
-PROTEIN_COMPONENT_OVERRIDES = frozenset(
-    {
-        "ASH",
-        "CYM",
-        "CYX",
-        "GLH",
-        "HID",
-        "HIE",
-        "HIP",
-        "HSD",
-        "HSE",
-        "HSP",
-    }
-)
-
+# Modified nucleotides that Gemmi does not tabulate as nucleic acid.
 NUCLEIC_ACID_COMPONENT_OVERRIDES = frozenset(
     {
         "5MC",
         "YYG",
-    }
-)
-
-SOLVENTS = frozenset(
-    {
-        "HOH",
-        "WAT",
-        "DOD",
     }
 )
 
@@ -168,7 +144,7 @@ def _classify_component(component_name: str) -> tuple[bool, bool, bool]:
     residue = gemmi.find_tabulated_residue(component_name)
 
     return (
-        component_name in PROTEIN_COMPONENT_OVERRIDES or residue.is_amino_acid(),
+        residue.is_amino_acid(),
         component_name in NUCLEIC_ACID_COMPONENT_OVERRIDES or residue.is_nucleic_acid(),
-        component_name in SOLVENTS or residue.is_water(),
+        residue.is_water(),
     )
