@@ -22,9 +22,18 @@ import gemmi
 import numpy as np
 import pytest
 
-from epath.analysis.atoms import EpathAtom
 from epath.analysis.selection import EpathScoredAtom
-from rabdam.structure.models import PreparedAtom
+from rabdam.bdamage import BDamageAtomResult
+from rabdam.pipeline import (
+    BDamagePipelineOptions,
+    BDamagePipelineResult,
+    validate_crystal_for_prepared_structure,
+)
+from rabdam.structure.models import (
+    PreparedAtom,
+    PreparedStructure,
+    RemovedAtomCounts,
+)
 from rabdam.structure.prepare import classify_atom
 from xtal.reader import AtomRecord, StructureMetadata
 from xtal.resolver import StructureFileFormat
@@ -398,35 +407,61 @@ def make_macromolecule_atoms(
     ]
 
 
-def make_epath_atom(**overrides: object) -> EpathAtom:
-    """Return an EpathAtom with sensible defaults, overridden by keyword."""
-    fields: dict[str, object] = {
-        "source_atom_index": 0,
+def make_scored_atom(z_score: float = 0.0, **overrides: object) -> EpathScoredAtom:
+    """Return a scored atom with sensible defaults, overridden by keyword.
+
+    A keyword that names a field of the BDamage result sets it there, and any
+    other one goes to the atom record, as for `make_atom_record`.
+    """
+    result_fields: dict[str, object] = {
         "bdamage_atom_index": 1,
-        "atom_serial": 1,
-        "record_type": "ATOM",
-        "chain_id": "A",
-        "residue_name": "ALA",
-        "residue_number": 1,
-        "insertion_code": "",
-        "atom_name": "CA",
-        "element": "C",
-        "x": 0.0,
-        "y": 0.0,
-        "z": 0.0,
-        "occupancy": 1.0,
-        "b_factor": 10.0,
         "packing_density": 50,
         "average_b_factor": 10.0,
         "bdamage": 1.0,
     }
-    fields.update(overrides)
-    return EpathAtom(**fields)  # type: ignore[arg-type]
+    record_fields = {
+        name: value for name, value in overrides.items() if name not in result_fields
+    }
+    result_fields.update(
+        (name, value) for name, value in overrides.items() if name in result_fields
+    )
+    record = make_atom_record(**record_fields)
+    return EpathScoredAtom(
+        record=record,
+        bdamage_result=BDamageAtomResult(
+            source_atom_index=record.source_atom_index,
+            **result_fields,  # type: ignore[arg-type]
+        ),
+        bdamage_z_score=z_score,
+    )
 
 
-def make_scored_atom(z_score: float = 0.0, **overrides: object) -> EpathScoredAtom:
-    """Return a scored E-path atom."""
-    return EpathScoredAtom(atom=make_epath_atom(**overrides), bdamage_z_score=z_score)
+def bdamage_result_from_atoms(
+    atoms: Sequence[EpathScoredAtom],
+) -> BDamagePipelineResult:
+    """Return a BDamage result whose scored atoms are exactly `atoms`.
+
+    The E-path pipeline starts from a BDamage result, so a test that needs
+    chosen positions and BDamage values wraps them in one. The model holds
+    nothing but these atoms, which must have protein residue names, and it
+    sits in the synthetic cell whatever its coordinates are.
+    """
+    prepared_atoms = tuple(classify_atom(atom.record) for atom in atoms)
+    prepared_structure = PreparedStructure(
+        source_atoms=tuple(atom.record for atom in atoms),
+        cleaned_atoms=prepared_atoms,
+        selected_atoms=prepared_atoms,
+        metadata=make_metadata(),
+        removed=RemovedAtomCounts(0, 0, 0, 0, 0),
+    )
+    return BDamagePipelineResult(
+        prepared_structure=prepared_structure,
+        crystal=validate_crystal_for_prepared_structure(prepared_structure),
+        packing_densities=tuple(atom.bdamage_result.packing_density for atom in atoms),
+        bdamage_results=tuple(atom.bdamage_result for atom in atoms),
+        options=BDamagePipelineOptions(),
+        window_size=BDamagePipelineOptions().minimum_window_size,
+    )
 
 
 def scored_atoms_from_coordinates(

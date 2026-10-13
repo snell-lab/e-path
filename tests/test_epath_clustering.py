@@ -6,7 +6,6 @@ from support import approx, scored_atoms_from_coordinates
 
 from epath.analysis.clustering import (
     EpathClusteringError,
-    cluster_metrics_for_atoms,
     cluster_selected_atoms,
     component_statistics,
     mst_length_stats,
@@ -14,7 +13,6 @@ from epath.analysis.clustering import (
 from epath.analysis.geometry import (
     maximum_pairwise_distance_pair,
     minimum_spanning_tree_edges,
-    neighbour_pairs,
 )
 
 LINE = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (3.0, 0.0, 0.0), (4.5, 0.0, 0.0)]
@@ -49,23 +47,16 @@ def test_cluster_metrics() -> None:
         metrics.mean_step,
     ) == approx((4.5, 1.5, 4.5, 1.5))
 
-    single = cluster_metrics_for_atoms(scored_atoms_from_coordinates(LINE[:1]))
+    single = mst_length_stats(np.asarray(LINE[:1]))
     assert (single.mst_total_length, single.span, single.mean_step) == (0.0, 0.0, 0.0)
 
 
-def test_span_endpoints_and_neighbour_pairs() -> None:
+def test_span_endpoints() -> None:
     points = np.asarray([(0, 0, 0), (1, 0, 0), (0, 3, 0), (0, 0, 2)], dtype=float)
 
     first, second, span = maximum_pairwise_distance_pair(points)
     assert (first, second) == (2, 3) and span == approx(np.sqrt(13))
     assert maximum_pairwise_distance_pair(points[:1]) == (0, 0, 0.0)
-    assert neighbour_pairs(points, distance_cutoff=2.0) == ((0, 1), (0, 3))
-    assert neighbour_pairs(points, distance_cutoff=3.0) == (
-        (0, 1),
-        (0, 2),
-        (0, 3),
-        (1, 3),
-    )  # 3.0 is inclusive
 
 
 def test_non_finite_coordinates_are_rejected() -> None:
@@ -90,7 +81,7 @@ def test_clusters_are_connected_components_ordered_by_size() -> None:
 
     clusters = cluster_selected_atoms(atoms, distance_cutoff=4.0)
 
-    members = [sorted(a.atom.source_atom_index for a in c.atoms) for c in clusters]
+    members = [sorted(a.record.source_atom_index for a in c.atoms) for c in clusters]
     assert members == [[0, 1, 2], [4, 5], [3], [6], [7]]
     assert [c.cluster_id for c in clusters] == [1, 2, 3, 4, 5]
     assert clusters[0].atom_count == 3

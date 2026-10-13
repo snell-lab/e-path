@@ -5,7 +5,7 @@ using span-to-length ratios and node connectivity. Both measures come from the
 geometry the cluster is already reported with, so a path's topology is
 consistent with its reported length and span.
 
-Linearity is the span divided by the total MST length: a path that runs from
+Linearity is the span divided by the total MST length. A path that runs from
 one end to the other approaches one, while a compact region spends its length
 filling a small volume and stays low. Atom-level paths detour along every side
 chain they pass through, so an extended pathway does not approach the ratio a
@@ -16,6 +16,9 @@ within one side chain are all mutually close, and the ring of an aromatic
 residue contains junctions of its own, so atom connectivity mostly reports the
 shape of the residues a path runs through. A fork in the path itself is a
 residue in contact with three or more other residues of the same cluster.
+
+`epath.analysis.pathways` calls this once for each reported cluster, with the
+metrics `epath.analysis.clustering` calculated for it.
 """
 
 from collections.abc import Sequence
@@ -26,7 +29,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from epath.analysis.clustering import EpathClusterMetrics
-from epath.analysis.geometry import neighbour_pairs
+from spatial import radius_neighbour_indices
 
 TopologyClass = Literal["linear", "branched", "clustered"]
 
@@ -34,7 +37,7 @@ TopologyClass = Literal["linear", "branched", "clustered"]
 # than a compact region.
 DEFAULT_LINEAR_RATIO = 0.20
 
-# Above this fraction of junction residues the component spreads through a
+# At or above this fraction of junction residues the cluster spreads through a
 # volume by branching instead of carrying a single route through it.
 DEFAULT_BRANCHED_NODE_FRACTION = 0.25
 
@@ -45,7 +48,12 @@ JUNCTION_RESIDUE_DEGREE = 3
 
 @dataclass(frozen=True, slots=True)
 class PathTopology:
-    """Topological description of one E-path cluster."""
+    """Topological description of one E-path cluster.
+
+    `linearity` is the span divided by the total MST length, from zero to one.
+    `branch_fraction` is the fraction of the cluster's residues that are
+    junctions. `topology` is the class the two give.
+    """
 
     topology: TopologyClass
     linearity: float
@@ -63,21 +71,21 @@ def analyze_topology(
 ) -> PathTopology:
     """Classify a cluster as a linear, branched, or clustered network.
 
-    Args:
-        coordinates: Atom coordinates of the cluster.
-        residue_indices: The residue each atom belongs to, as an index into the
-            cluster's residue list.
-        metrics: Cluster geometry, used for the span-to-length ratio.
-        distance_cutoff: Contact distance used to build the residue graph. This
-            is the cutoff the cluster itself was built with, so two residues are
-            in contact exactly when their atoms were connected in the path.
-        linear_ratio: Span-to-length ratio at or above which a component that is
-            not branched is reported as linear.
-        branched_node_fraction: Junction-residue fraction at or above which a
-            component is reported as branched.
+    `coordinates` holds the position of each atom of the cluster, in angstroms,
+    with shape `(n, 3)`. `residue_indices` gives the residue of each atom as an
+    index into the cluster's residue list, and `metrics` is the geometry the
+    cluster is reported with, which supplies the span and the MST length.
 
-    Returns:
-        The topology class and the two measures it was derived from.
+    Two residues are in contact when an atom of one lies within
+    `distance_cutoff` angstroms of an atom of the other, the cutoff itself
+    included. This is the cutoff the cluster itself was built with, and the
+    atoms in range are found by the same search, so two residues are in
+    contact exactly when their atoms were connected in the path.
+
+    A cluster whose junction-residue fraction is at least
+    `branched_node_fraction` is branched, whatever its linearity. Any other
+    cluster is linear when its linearity is at least `linear_ratio` and
+    clustered when it is not.
     """
     degrees = _residue_degrees(
         coordinates,
@@ -86,6 +94,7 @@ def analyze_topology(
     )
     junction_count = sum(1 for degree in degrees if degree >= JUNCTION_RESIDUE_DEGREE)
     branch_fraction = junction_count / len(degrees)
+    # A cluster of one atom has no length to divide by.
     linearity = (
         metrics.span / metrics.mst_total_length
         if metrics.mst_total_length > 0.0
@@ -113,17 +122,15 @@ def _residue_degrees(
     distance_cutoff: float,
 ) -> list[int]:
     """Return how many other residues of the cluster each residue contacts."""
+    # Sets, because two residues usually touch through several pairs of atoms.
     contacts: list[set[int]] = [set() for _ in range(max(residue_indices) + 1)]
-    for first_index, second_index in neighbour_pairs(
-        coordinates,
-        distance_cutoff=distance_cutoff,
-    ):
-        first_residue = residue_indices[first_index]
-        second_residue = residue_indices[second_index]
-        if first_residue == second_residue:
-            continue
+    neighbours = radius_neighbour_indices(coordinates, distance_cutoff)
+    for residue, atom_neighbours in zip(residue_indices, neighbours, strict=True):
+        contacts[residue].update(residue_indices[index] for index in atom_neighbours)
 
-        contacts[first_residue].add(second_residue)
-        contacts[second_residue].add(first_residue)
-
-    return [len(residue_contacts) for residue_contacts in contacts]
+    # Every atom is in range of itself and of the other atoms of its residue,
+    # so a residue is taken out of its own contacts.
+    return [
+        len(residue_contacts - {residue})
+        for residue, residue_contacts in enumerate(contacts)
+    ]

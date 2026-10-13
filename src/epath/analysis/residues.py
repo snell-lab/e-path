@@ -1,17 +1,23 @@
 """Classify residues by side-chain chemistry for E-path pathway description.
 
-The pathway framework of the E-path manuscript (in preparation) describes each path by its residue
-composition: enrichment in aromatic, sulfur-containing, polar/charged, or
-hydrophobic residues. Every residue is assigned exactly one class here, so the
-reported fractions sum to one and no residue is double counted.
+E-path describes each path by its residue composition, as the share of
+aromatic, sulfur-containing, charged, polar, and hydrophobic residues and the
+classes the path is enriched in. Every residue is assigned exactly one class
+here, so the reported fractions sum to one and no residue is double counted.
 
 Histidine and tyrosine are counted as aromatic rather than polar, because the
 analysis treats aromatic side chains as the redox-active set that supports
-electron delocalization and transient radical states.
+electron delocalization and transient radical states. A modified residue or
+a protonation variant is classed with its parent residue, whatever its own
+chemistry, so phosphoserine is polar and pyroglutamate is charged.
 
 Enrichment is measured against the composition of the analysed model rather
 than a fixed reference table, so a class is only called enriched when the path
 is unusual for the structure it came from.
+
+`epath.analysis.pathways` calls this for every path and builds the structural
+descriptor from the dominant and enriched classes. `epath.outputs` writes the
+counts and fractions.
 """
 
 from collections.abc import Iterable, Mapping
@@ -37,10 +43,6 @@ RESIDUE_CLASS_ORDER: tuple[ResidueClass, ...] = (
     "other",
 )
 
-# Aromatic and sulfur side chains are the residue types the pathway model
-# credits with efficient electronic coupling.
-REDOX_ACTIVE_CLASSES: tuple[ResidueClass, ...] = ("aromatic", "sulfur")
-
 # A class is enriched when it is at least this many times more common in the
 # path than in the scored population of the same model.
 ENRICHMENT_RATIO = 1.5
@@ -51,8 +53,9 @@ ENRICHMENT_RATIO = 1.5
 # whose background is very small.
 MINIMUM_ENRICHED_FRACTION = 0.07
 
-# Classes within this fraction of the largest class share dominance, which is
-# what produces a mixed descriptor such as "hydrophobic-charged".
+# A class at least this large relative to the largest class shares dominance
+# with it, which is what produces a mixed descriptor such as
+# "hydrophobic-charged". A descriptor names at most two classes.
 DOMINANT_FRACTION_RATIO = 0.8
 MAXIMUM_DOMINANT_CLASSES = 2
 
@@ -69,8 +72,6 @@ _RESIDUE_CLASSES: Mapping[str, ResidueClass] = {
     "HSE": "aromatic",
     "HSP": "aromatic",
     "PTR": "aromatic",
-    "TPO": "polar",
-    "SEP": "polar",
     # Sulfur-containing side chains, including selenomethionine, which is
     # substituted for methionine during phasing.
     "MET": "sulfur",
@@ -83,8 +84,8 @@ _RESIDUE_CLASSES: Mapping[str, ResidueClass] = {
     "CME": "sulfur",
     "CSD": "sulfur",
     "FME": "sulfur",
-    # Charged side chains, including protonation variants and common
-    # modifications that retain the parent charge.
+    # Charged side chains. Their protonation variants and modified forms are
+    # classed with the parent residue, whatever charge they carry themselves.
     "ASP": "charged",
     "GLU": "charged",
     "LYS": "charged",
@@ -95,11 +96,14 @@ _RESIDUE_CLASSES: Mapping[str, ResidueClass] = {
     "KCX": "charged",
     "LLP": "charged",
     "PCA": "charged",
-    # Neutral polar side chains.
+    # Neutral polar side chains, plus phosphoserine and phosphothreonine,
+    # which are classed with their parent residues.
     "SER": "polar",
     "THR": "polar",
     "ASN": "polar",
     "GLN": "polar",
+    "SEP": "polar",
+    "TPO": "polar",
     # Aliphatic side chains, plus glycine and proline, which contribute a
     # low-dielectric backbone environment rather than a functional group.
     "ALA": "hydrophobic",
@@ -114,32 +118,38 @@ _RESIDUE_CLASSES: Mapping[str, ResidueClass] = {
 
 @dataclass(frozen=True, slots=True)
 class ResidueComposition:
-    """Side-chain chemistry composition of one group of residues."""
+    """Side-chain chemistry composition of one group of residues.
 
-    residue_count: int
+    `counts` and `fractions` have an entry for every class, "other" included,
+    and the fractions sum to one. `dominant_classes` holds the most common
+    class and, when another is at least `DOMINANT_FRACTION_RATIO` times as
+    common, that one too. `enriched_classes` holds the classes that are
+    over-represented relative to the model. Both are ordered from the most
+    common class down, never name "other", and are empty for a group in which
+    no residue has a named class.
+    """
+
     counts: Mapping[ResidueClass, int]
     fractions: Mapping[ResidueClass, float]
     dominant_classes: tuple[ResidueClass, ...]
     enriched_classes: tuple[ResidueClass, ...]
 
-    @property
-    def redox_fraction(self) -> float:
-        """Return the fraction of residues with aromatic or sulfur chemistry."""
-        return sum(self.fractions[name] for name in REDOX_ACTIVE_CLASSES)
-
-    @property
-    def charged_fraction(self) -> float:
-        """Return the fraction of charged residues."""
-        return self.fractions["charged"]
-
 
 def residue_class(residue_name: str) -> ResidueClass:
-    """Return the side-chain chemistry class of one residue name."""
+    """Return the side-chain chemistry class of one residue name.
+
+    Case and surrounding spaces are ignored. A name that is not an amino acid
+    listed above, such as a water, a ligand or a nucleotide, is "other".
+    """
     return _RESIDUE_CLASSES.get(residue_name.strip().upper(), "other")
 
 
 def class_counts(residue_names: Iterable[str]) -> dict[ResidueClass, int]:
-    """Count residues by side-chain chemistry class."""
+    """Count residues by side-chain chemistry class.
+
+    Every class has an entry, zero when no residue falls in it, in
+    `RESIDUE_CLASS_ORDER`.
+    """
     counts: dict[ResidueClass, int] = dict.fromkeys(RESIDUE_CLASS_ORDER, 0)
     for name in residue_names:
         counts[residue_class(name)] += 1
@@ -148,7 +158,11 @@ def class_counts(residue_names: Iterable[str]) -> dict[ResidueClass, int]:
 
 
 def class_fractions(residue_names: Iterable[str]) -> dict[ResidueClass, float]:
-    """Return the fraction of residues in each side-chain chemistry class."""
+    """Return the fraction of residues in each side-chain chemistry class.
+
+    "other" residues count towards the total, so the fractions sum to one.
+    There must be at least one residue, which is not checked here.
+    """
     counts = class_counts(residue_names)
     total = sum(counts.values())
     return {name: counts[name] / total for name in RESIDUE_CLASS_ORDER}
@@ -157,32 +171,23 @@ def class_fractions(residue_names: Iterable[str]) -> dict[ResidueClass, float]:
 def analyze_composition(
     residue_names: Iterable[str],
     *,
-    background: Mapping[ResidueClass, float] | None = None,
+    background: Mapping[ResidueClass, float],
 ) -> ResidueComposition:
-    """Describe the chemistry of a group of residues.
+    """Describe the chemistry of a group of residues, such as one path.
 
-    Args:
-        residue_names: Residue names, one per residue in the path.
-        background: Class fractions of the scored population of the same model,
-            used as the reference for enrichment. Enrichment is not reported
-            when this is omitted.
-
-    Returns:
-        Class counts and fractions, the dominant classes, and the classes the
-        path is enriched in relative to the model.
+    `residue_names` holds one name per residue and must not be empty.
+    `background` holds the class fractions of the scored population of the same
+    model, as `class_fractions` returns them, and is the reference for
+    enrichment.
     """
-    counts = class_counts(residue_names)
-    total = sum(counts.values())
-    fractions: dict[ResidueClass, float] = {
-        name: counts[name] / total for name in RESIDUE_CLASS_ORDER
-    }
+    names = tuple(residue_names)
+    fractions = class_fractions(names)
 
     return ResidueComposition(
-        residue_count=total,
-        counts=counts,
+        counts=class_counts(names),
         fractions=fractions,
         dominant_classes=_dominant_classes(fractions),
-        enriched_classes=_enriched_classes(fractions, background=background),
+        enriched_classes=_enriched_classes(fractions, background),
     )
 
 
@@ -193,39 +198,37 @@ def _dominant_classes(
     if not ranked:
         return ()
 
-    highest_fraction = fractions[ranked[0]]
+    threshold = DOMINANT_FRACTION_RATIO * fractions[ranked[0]]
     dominant: list[ResidueClass] = [
-        name
-        for name in ranked
-        if fractions[name] >= DOMINANT_FRACTION_RATIO * highest_fraction
+        name for name in ranked if fractions[name] >= threshold
     ]
     return tuple(dominant[:MAXIMUM_DOMINANT_CLASSES])
 
 
 def _enriched_classes(
     fractions: Mapping[ResidueClass, float],
-    *,
-    background: Mapping[ResidueClass, float] | None,
+    background: Mapping[ResidueClass, float],
 ) -> tuple[ResidueClass, ...]:
-    if background is None:
-        return ()
-
-    enriched: list[ResidueClass] = [
+    return tuple(
         name
         for name in _ranked_classes(fractions)
         if fractions[name] >= MINIMUM_ENRICHED_FRACTION
         and fractions[name] >= ENRICHMENT_RATIO * background[name]
-    ]
-    return tuple(enriched)
+    )
 
 
 def _ranked_classes(
     fractions: Mapping[ResidueClass, float],
-) -> tuple[ResidueClass, ...]:
-    named_classes: list[ResidueClass] = [
-        name for name in RESIDUE_CLASS_ORDER if name != "other"
+) -> list[ResidueClass]:
+    """Return the named classes that are present, most common first.
+
+    "other" is never ranked, so the result is empty when every residue is
+    "other".
+    """
+    present: list[ResidueClass] = [
+        name
+        for name in RESIDUE_CLASS_ORDER
+        if name != "other" and fractions[name] > 0.0
     ]
-    named_classes.sort(
-        key=lambda name: (-fractions[name], RESIDUE_CLASS_ORDER.index(name))
-    )
-    return tuple(name for name in named_classes if fractions[name] > 0.0)
+    # The sort is stable, so equally common classes stay in RESIDUE_CLASS_ORDER.
+    return sorted(present, key=lambda name: -fractions[name])

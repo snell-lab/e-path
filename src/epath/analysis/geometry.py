@@ -1,4 +1,18 @@
-"""Distance and spanning-tree geometry shared by the E-path analysis layers."""
+"""Distances and spanning trees over the atoms of one E-path cluster.
+
+`clustering` takes a cluster's spanning-tree lengths and span from here,
+`pathways` its steps and its two end atoms, and `endpoints` the distances from
+one point to a set of atoms. Coordinates are
+arrays of shape `(n, 3)`, and lengths come back in the units of the
+coordinates, which are angstroms for every caller.
+
+The spanning tree and the span measure every pair of points, which is fast
+enough for the atoms of one cluster. Finding the atoms within a cutoff of each
+other is left to the KD-tree in `spatial`.
+
+Nothing is checked here. The coordinates must be finite, which `clustering`
+checks for the selected atoms before it forms the clusters.
+"""
 
 from dataclasses import dataclass
 
@@ -8,7 +22,11 @@ from numpy.typing import NDArray
 
 @dataclass(frozen=True, slots=True)
 class MstEdge:
-    """One edge of a minimum spanning tree."""
+    """One edge of a minimum spanning tree.
+
+    The indices are rows of the coordinate array. `first_index` is the point
+    that was already in the tree and `second_index` the point the edge added.
+    """
 
     first_index: int
     second_index: int
@@ -16,16 +34,13 @@ class MstEdge:
 
 
 def row_norms(differences: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Return the Euclidean length of each row of a difference array.
+    """Return the Euclidean length of each row of an `(n, 3)` difference array.
 
     The squared terms are summed in coordinate order, so the result matches a
     per-pair dot product exactly.
     """
     squared = differences * differences
-    lengths: NDArray[np.float64] = np.sqrt(
-        squared[:, 0] + squared[:, 1] + squared[:, 2]
-    )
-    return lengths
+    return np.sqrt(squared[:, 0] + squared[:, 1] + squared[:, 2])
 
 
 def minimum_spanning_tree_edges(
@@ -33,22 +48,25 @@ def minimum_spanning_tree_edges(
 ) -> tuple[MstEdge, ...]:
     """Return the minimum spanning tree of a coordinate array.
 
-    Edges are returned in the order Prim's algorithm adds them, so the total
-    and largest edge lengths derived from them match the reported cluster
-    geometry exactly.
+    Prim's algorithm grows the tree from point 0, each time adding the outside
+    point nearest to the tree, and the lowest index when several are equally
+    near. Edges are returned in the order they are added, so the total and
+    largest edge lengths derived from them match the reported cluster geometry
+    exactly. Fewer than two points give no edges.
     """
-    atom_count = int(coordinates.shape[0])
-    if atom_count <= 1:
+    point_count = len(coordinates)
+    if point_count <= 1:
         return ()
 
-    in_tree = np.zeros(atom_count, dtype=bool)
-    parents = np.zeros(atom_count, dtype=int)
-    minimum_edges = _distances_from(coordinates, 0)
-    minimum_edges[0] = np.inf
+    in_tree = np.zeros(point_count, dtype=bool)
     in_tree[0] = True
+    # For each point outside the tree, the tree point nearest to it and the
+    # distance between the two.
+    parents = np.zeros(point_count, dtype=int)
+    minimum_edges = row_norms(coordinates - coordinates[0])
 
     edges: list[MstEdge] = []
-    for _ in range(atom_count - 1):
+    for _ in range(point_count - 1):
         next_index = int(np.argmin(np.where(in_tree, np.inf, minimum_edges)))
         in_tree[next_index] = True
         edges.append(
@@ -59,8 +77,8 @@ def minimum_spanning_tree_edges(
             )
         )
 
-        distances = _distances_from(coordinates, next_index)
-        improved = np.logical_and(~in_tree, distances < minimum_edges)
+        distances = row_norms(coordinates - coordinates[next_index])
+        improved = ~in_tree & (distances < minimum_edges)
         parents[improved] = next_index
         minimum_edges[improved] = distances[improved]
 
@@ -72,17 +90,17 @@ def maximum_pairwise_distance_pair(
 ) -> tuple[int, int, float]:
     """Return the two most separated points and the distance between them.
 
+    The lower index comes first, and of several pairs equally far apart the
+    first in index order is returned. Fewer than two points, or points that
+    all coincide, give `(0, 0, 0.0)`.
+
     The pair defines the span, which the analysis reports as the straight-line
     end-to-end distance of a path, so these two atoms are also its endpoints.
     """
-    atom_count = int(coordinates.shape[0])
-    if atom_count < 2:
-        return 0, 0, 0.0
-
     first_endpoint = 0
     second_endpoint = 0
     maximum_distance = 0.0
-    for first_index in range(atom_count - 1):
+    for first_index in range(len(coordinates) - 1):
         distances = row_norms(coordinates[first_index + 1 :] - coordinates[first_index])
         offset = int(np.argmax(distances))
         distance = float(distances[offset])
@@ -92,27 +110,3 @@ def maximum_pairwise_distance_pair(
             second_endpoint = first_index + 1 + offset
 
     return first_endpoint, second_endpoint, maximum_distance
-
-
-def neighbour_pairs(
-    coordinates: NDArray[np.float64],
-    *,
-    distance_cutoff: float,
-) -> tuple[tuple[int, int], ...]:
-    """Return every pair of points within a distance cutoff of each other."""
-    point_count = int(coordinates.shape[0])
-    pairs: list[tuple[int, int]] = []
-    for first_index in range(point_count - 1):
-        distances = row_norms(coordinates[first_index + 1 :] - coordinates[first_index])
-        for offset in np.nonzero(distances <= distance_cutoff)[0]:
-            pairs.append((first_index, first_index + 1 + int(offset)))
-
-    return tuple(pairs)
-
-
-def _distances_from(
-    coordinates: NDArray[np.float64],
-    index: int,
-) -> NDArray[np.float64]:
-    """Return the distance from one point to every point in an array."""
-    return row_norms(coordinates - coordinates[index])

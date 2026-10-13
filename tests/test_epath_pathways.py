@@ -6,18 +6,19 @@ import numpy as np
 import pytest
 from support import (
     approx,
-    make_epath_atom,
+    make_atom_record,
     make_prepared_atom,
+    make_scored_atom,
     scored_atoms_from_coordinates,
 )
 
-from epath.analysis.atoms import atom_token, format_residue_label, residue_label
 from epath.analysis.clustering import cluster_selected_atoms, mst_length_stats
 from epath.analysis.endpoints import (
     annotate_endpoint,
     build_endpoint_context,
     cofactor_site_summary,
 )
+from epath.analysis.labels import atom_token, format_residue_label, residue_label
 from epath.analysis.pathways import PathReport, analyze_paths
 from epath.analysis.residues import (
     ResidueClass,
@@ -73,17 +74,16 @@ def test_composition_fractions_sum_to_one_and_report_dominance_and_enrichment() 
     }
     composition = analyze_composition(names, background=background)
 
-    assert composition.residue_count == 10
-    assert composition.redox_fraction == approx(0.3)
-    assert composition.charged_fraction == approx(0.1)
+    assert composition.counts == counts
+    assert composition.fractions["aromatic"] == approx(0.2)
+    assert composition.fractions["charged"] == approx(0.1)
     assert composition.dominant_classes == ("hydrophobic",)
     assert composition.enriched_classes == (
         "aromatic",
         "sulfur",
     )  # 0.2 >= 1.5*0.08, 0.1 >= 1.5*0.03
-    assert analyze_composition(names).enriched_classes == ()
 
-    mixed = analyze_composition(["ALA"] * 5 + ["ASP"] * 6)
+    mixed = analyze_composition(["ALA"] * 5 + ["ASP"] * 6, background=background)
     assert mixed.dominant_classes == ("charged", "hydrophobic")  # 5/11 >= 0.8 * 6/11
 
 
@@ -108,8 +108,16 @@ def test_topology_classes() -> None:
     )
 
     # A hub residue in contact with three arms: one junction in four residues.
-    star = _topology([(0, 0, 0), (3.5, 0, 0), (-3.5, 0, 0), (0, 3.5, 0)], [0, 1, 2, 3])
+    arms = [(3.5, 0, 0), (-3.5, 0, 0), (0, 3.5, 0)]
+    star = _topology([(0, 0, 0), *arms], [0, 1, 2, 3])
     assert star.topology == "branched" and star.branch_fraction == approx(0.25)
+    # Atoms at exactly the cutoff are in contact, and atoms just beyond are not.
+    assert _topology([(0, 0, 0), *arms], [0, 1, 2, 3], cutoff=3.5).branch_fraction > 0
+    assert _topology([(0, 0, 0), *arms], [0, 1, 2, 3], cutoff=3.4).branch_fraction == 0
+    # A hub residue of two atoms touches each arm twice, which is still one
+    # contact per arm, and its own two atoms are not a contact at all.
+    doubled = _topology([(0, 0, 0), (0, 0, 1), *arms], [0, 0, 1, 2, 3])
+    assert doubled.branch_fraction == approx(0.25)
 
     # A tightly wound coil: a long path packed into a short span, and only
     # consecutive residues in contact, so neither linear nor branched.
@@ -208,7 +216,7 @@ def test_only_redox_capable_groups_are_cofactors() -> None:
         group(9, "XYZ", "FE"),  # an unfamiliar name that holds iron
     )
     context = build_endpoint_context(
-        scored_atoms=[make_epath_atom()], cleaned_atoms=cleaned
+        scored_atoms=[make_scored_atom()], cleaned_atoms=cleaned
     )
 
     assert [site.label for site in context.sites] == ["ZNH", "U10", "CU", "XYZ"]
@@ -216,25 +224,31 @@ def test_only_redox_capable_groups_are_cofactors() -> None:
 
 def test_cofactor_sites_are_numbered_and_other_groups_ignored() -> None:
     context = build_endpoint_context(
-        scored_atoms=[make_epath_atom()], cleaned_atoms=_cleaned_model()
+        scored_atoms=[make_scored_atom()], cleaned_atoms=_cleaned_model()
     )
 
     assert [site.label for site in context.sites] == ["FMN", "SF4-1", "SF4-2"]
-    assert [
-        (site.chain_id, site.residue_number, site.atom_count) for site in context.sites
-    ] == [("A", 201, 1), ("A", 301, 1), ("B", 302, 1)]
-    assert context.chain_ids == ("A", "B")
+    assert [(site.chain_id, site.residue_number) for site in context.sites] == [
+        ("A", 201),
+        ("A", 301),
+        ("B", 302),
+    ]
     assert (
         cofactor_site_summary(context.sites)
         == "FMN (Fmn201 chain A), SF4-1 (Sf4301 chain A), SF4-2 (Sf4302 chain B)"
     )
     assert cofactor_site_summary(()) == "none detected"
-    assert build_endpoint_context(scored_atoms=[make_epath_atom()]).sites == ()
+    assert (
+        build_endpoint_context(
+            scored_atoms=[make_scored_atom()], cleaned_atoms=()
+        ).sites
+        == ()
+    )
 
 
 def test_endpoints_are_labelled_in_order_of_mechanistic_weight() -> None:
     scored = [
-        make_epath_atom(packing_density=d) for d in (10, 20, 30, 40, 50, 60, 70, 80)
+        make_scored_atom(packing_density=d) for d in (10, 20, 30, 40, 50, 60, 70, 80)
     ]
     context = build_endpoint_context(
         scored_atoms=scored, cleaned_atoms=_cleaned_model()
@@ -244,53 +258,46 @@ def test_endpoints_are_labelled_in_order_of_mechanistic_weight() -> None:
     )
 
     contact = annotate_endpoint(
-        make_epath_atom(
+        make_scored_atom(
             chain_id="A", residue_name="TRP", residue_number=7, x=9.0, packing_density=1
         ),
         context,
     )
     assert (contact.kind, contact.label) == ("cofactor", "FMN")
-    assert contact.cofactor is not None and contact.cofactor.label == "FMN"
-    assert contact.cofactor_distance == approx(3.0)
-    assert (
-        contact.is_cofactor_anchored
-        and contact.residue == "Trp7"
-        and contact.atom_token == "A:7:CA"
-    )
+    assert contact.residue == "Trp7" and contact.atom_token == "A:7:CA"
 
     region = annotate_endpoint(
-        make_epath_atom(chain_id="A", x=5.0, packing_density=1), context
+        make_scored_atom(chain_id="A", x=5.0, packing_density=1), context
     )
     assert (region.kind, region.label) == ("cofactor_region", "FMN region")
 
     # Within 4 A of chain B's protein atom, but more than 8 A from any cofactor.
     interface = annotate_endpoint(
-        make_epath_atom(chain_id="A", x=30.0, y=0.0, packing_density=1), context
+        make_scored_atom(chain_id="A", x=30.0, y=0.0, packing_density=1), context
     )
     assert (interface.kind, interface.label) == ("interface", "Interface region")
-    assert not interface.is_cofactor_anchored
 
     surface = annotate_endpoint(
-        make_epath_atom(chain_id="A", x=-20.0, packing_density=20), context
+        make_scored_atom(chain_id="A", x=-20.0, packing_density=20), context
     )
     assert (surface.kind, surface.label) == ("surface", "Surface region")
 
     buried = annotate_endpoint(
-        make_epath_atom(chain_id="A", x=-20.0, packing_density=70), context
+        make_scored_atom(chain_id="A", x=-20.0, packing_density=70), context
     )
     assert (buried.kind, buried.label) == ("buried", "Buried region")
 
     # An atom of the same chain does not make an interface.
     assert (
         annotate_endpoint(
-            make_epath_atom(chain_id="B", x=30.0, packing_density=70), context
+            make_scored_atom(chain_id="B", x=30.0, packing_density=70), context
         ).kind
         == "buried"
     )
 
 
 def test_labels_and_tokens() -> None:
-    atom = make_epath_atom(
+    atom = make_atom_record(
         chain_id="B",
         residue_name="his",
         residue_number=87,
@@ -340,9 +347,9 @@ def _path(
         )
     clusters = cluster_selected_atoms(scored, distance_cutoff=4.0)
     assert len(clusters) == 1
-    return analyze_paths(
-        clusters, scored_atoms=[a.atom for a in scored], cleaned_atoms=cleaned
-    ).reports[0]
+    return analyze_paths(clusters, scored_atoms=scored, cleaned_atoms=cleaned).reports[
+        0
+    ]
 
 
 def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
@@ -362,8 +369,8 @@ def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
     # so neither endpoint is labelled with it, but the path is still anchored.
     names = ["ALA", "LEU", "VAL", "GLY", "TRP", "ILE", "PRO", "ALA"]
     midway = _path(names, cofactor_at_start=True, cofactor_position=(12.25, 3.0, 0.0))
-    assert not midway.start_endpoint.is_cofactor_anchored
-    assert not midway.end_endpoint.is_cofactor_anchored
+    assert midway.start_endpoint.kind == "surface"
+    assert midway.end_endpoint.kind == "surface"
     assert midway.anchor is not None and midway.anchor.label == "FMN"
     assert midway.anchor.distance == approx(np.hypot(1.75, 3.0))
     assert midway.anchor.residue in {"Gly4", "Trp5"}
@@ -399,7 +406,7 @@ def test_residue_path_listing_and_step_provenance() -> None:
     )
     clusters = cluster_selected_atoms(scored, distance_cutoff=4.0)
 
-    report = analyze_paths(clusters, scored_atoms=[a.atom for a in scored]).reports[0]
+    report = analyze_paths(clusters, scored_atoms=scored, cleaned_atoms=()).reports[0]
 
     # Chains are ordered by the lowest residue number each contributes, so
     # chain B's Ala5 leads; atoms keep the order the graph reached them in.
@@ -443,7 +450,9 @@ def test_single_residue_hotspot_descriptor() -> None:
         atom_names=["CG", "CD1", "CE1"],
     )
     report = analyze_paths(
-        cluster_selected_atoms(scored), scored_atoms=[a.atom for a in scored]
+        cluster_selected_atoms(scored),
+        scored_atoms=scored,
+        cleaned_atoms=(),
     ).reports[0]
 
     assert report.structural_descriptor == "Single aromatic hotspot"

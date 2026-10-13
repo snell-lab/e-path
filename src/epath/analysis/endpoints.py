@@ -10,23 +10,26 @@ Endpoints are the two atoms that define the cluster span, which the analysis
 already reports as the straight-line end-to-end distance of the path. A path
 can also pass a cofactor part-way along its length, so the nearest cofactor to
 any of its atoms is reported separately as its anchor.
+
+`pathways` builds one `EndpointContext` per model and labels the endpoints and
+the anchor of every path against it. The scored atoms come from `selection`,
+and the cofactor sites from the cleaned model that `rabdam.structure`
+prepared. Distances are in angstroms.
 """
 
-from collections.abc import Iterable, Sequence
+from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
-from epath.analysis.atoms import (
-    EpathAtom,
-    atom_token,
-    format_residue_label,
-    residue_label,
-)
 from epath.analysis.geometry import row_norms
+from epath.analysis.labels import atom_token, format_residue_label, residue_label
+from epath.analysis.selection import EpathScoredAtom
 from rabdam.structure.models import PreparedAtom
+from xtal.reader import AtomRecord
 
 EndpointKind = Literal[
     "cofactor",
@@ -36,9 +39,7 @@ EndpointKind = Literal[
     "buried",
 ]
 
-# An endpoint this close to a cofactor is in direct contact with it. The
-# default matches the connectivity cutoff used to build the path graph, so a
-# cofactor at this range would have joined the path had cofactors been scored.
+# An endpoint this close to a cofactor is in direct contact with it.
 DEFAULT_COFACTOR_CONTACT_ANGSTROM = 4.0
 
 # An endpoint within this range terminates in the cofactor's environment
@@ -113,69 +114,80 @@ ORGANIC_REDOX_COFACTORS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class CofactorSite:
-    """One modelled redox cofactor or redox-active metal site."""
+    """One modelled redox cofactor or redox-active metal site.
+
+    A site is one residue of the cleaned model. `label` is its residue name,
+    followed by a number, as in SF4-2, when the model holds several sites of
+    that name. `residue_name` is in upper case.
+    """
 
     label: str
     chain_id: str
     residue_name: str
     residue_number: int | None
     insertion_code: str
-    atom_count: int
 
 
 @dataclass(frozen=True, slots=True)
 class PathEndpoint:
-    """One end of a path and the environment it terminates in."""
+    """One end of a path and the environment it terminates in.
+
+    `label` is the reported name of the environment. It is the label of the
+    cofactor site for a "cofactor" endpoint, that label followed by " region"
+    for a "cofactor_region" endpoint, and "Interface region", "Surface region"
+    or "Buried region" for the others. `atom_token` and `residue` name the
+    endpoint atom, in the forms of `labels.atom_token` and
+    `labels.residue_label`.
+    """
 
     label: str
     kind: EndpointKind
     atom_token: str
     residue: str
-    chain_id: str
-    cofactor: CofactorSite | None = None
-    cofactor_distance: float | None = None
-
-    @property
-    def is_cofactor_anchored(self) -> bool:
-        """Return whether this endpoint terminates at or beside a cofactor."""
-        return self.kind in ("cofactor", "cofactor_region")
 
 
 @dataclass(frozen=True, slots=True)
 class PathAnchor:
-    """The cofactor nearest to any atom of a path, when one is within range."""
+    """The cofactor nearest to any atom of a path, when one is within range.
 
-    cofactor: CofactorSite
+    `label` is the label of the cofactor site. `distance` is measured between
+    the closest pair of atoms, one of the site and one of the path, and
+    `atom_token` and `residue` name the path atom of that pair.
+    """
+
+    label: str
     distance: float
     atom_token: str
     residue: str
 
-    @property
-    def label(self) -> str:
-        """Return the label of the anchoring cofactor site."""
-        return self.cofactor.label
-
 
 @dataclass(frozen=True, slots=True)
 class EndpointContext:
-    """Structural context used to label path endpoints."""
+    """Structural context used to label path endpoints.
+
+    `cofactor_coordinates` holds every atom of every site, with shape
+    `(n, 3)`, and `cofactor_site_indices` gives, for each of those rows, the
+    position of its site in `sites`. `protein_coordinates` and
+    `protein_chain_ids` are aligned in the same way, one row per protein atom.
+    `surface_packing_density` is the packing density at or below which an
+    endpoint is a surface site.
+    """
 
     sites: tuple[CofactorSite, ...]
     cofactor_coordinates: NDArray[np.float64]
     cofactor_site_indices: NDArray[np.int_]
     protein_coordinates: NDArray[np.float64]
-    protein_chain_indices: NDArray[np.int_]
-    chain_ids: tuple[str, ...]
+    protein_chain_ids: NDArray[np.str_]
     surface_packing_density: float
-    cofactor_contact_distance: float = DEFAULT_COFACTOR_CONTACT_ANGSTROM
-    cofactor_proximity_distance: float = DEFAULT_COFACTOR_PROXIMITY_ANGSTROM
-    interface_distance: float = DEFAULT_INTERFACE_ANGSTROM
+    cofactor_contact_distance: float
+    cofactor_proximity_distance: float
+    interface_distance: float
 
 
 def build_endpoint_context(
     *,
-    scored_atoms: Sequence[EpathAtom],
-    cleaned_atoms: Sequence[PreparedAtom] | None = None,
+    scored_atoms: Sequence[EpathScoredAtom],
+    cleaned_atoms: Sequence[PreparedAtom],
     cofactor_contact_distance: float = DEFAULT_COFACTOR_CONTACT_ANGSTROM,
     cofactor_proximity_distance: float = DEFAULT_COFACTOR_PROXIMITY_ANGSTROM,
     interface_distance: float = DEFAULT_INTERFACE_ANGSTROM,
@@ -183,37 +195,31 @@ def build_endpoint_context(
 ) -> EndpointContext:
     """Collect the cofactor, chain, and packing context for endpoint labelling.
 
-    Args:
-        scored_atoms: Every atom that received a BDamage score, used for the
-            chain map and the surface packing-density threshold.
-        cleaned_atoms: The complete cleaned model. Cofactor sites are taken
-            from here, because cofactors are never scored. Endpoints are
-            labelled without cofactor context when this is omitted.
-        cofactor_contact_distance: Contact range for a cofactor endpoint.
-        cofactor_proximity_distance: Range for a cofactor-region endpoint.
-        interface_distance: Range at which another chain marks an interface.
-        surface_percentile: Packing-density percentile below which an endpoint
-            is reported as a surface site.
+    `scored_atoms` is every atom that received a BDamage score. The surface
+    threshold is the `surface_percentile` percentile of their packing
+    densities, so there must be at least one.
 
-    Returns:
-        The context needed to label any endpoint of this model.
+    `cleaned_atoms` is the complete cleaned model. The cofactor sites are taken
+    from it, because cofactors are never scored, and its protein atoms are the
+    ones that can mark an interface.
+
+    The three distances are the ranges, in angstroms, that `annotate_endpoint`
+    and `find_path_anchor` test against. Nothing is checked here.
     """
     sites, cofactor_coordinates, site_indices = _cofactor_sites(cleaned_atoms)
-    protein_coordinates, chain_indices, chain_ids = _protein_chain_map(
-        scored_atoms,
-        cleaned_atoms,
-    )
+    protein_coordinates, protein_chain_ids = _protein_chains(cleaned_atoms)
 
     return EndpointContext(
         sites=sites,
         cofactor_coordinates=cofactor_coordinates,
         cofactor_site_indices=site_indices,
         protein_coordinates=protein_coordinates,
-        protein_chain_indices=chain_indices,
-        chain_ids=chain_ids,
-        surface_packing_density=_surface_threshold(
-            scored_atoms,
-            percentile=surface_percentile,
+        protein_chain_ids=protein_chain_ids,
+        surface_packing_density=float(
+            np.percentile(
+                [atom.bdamage_result.packing_density for atom in scored_atoms],
+                surface_percentile,
+            )
         ),
         cofactor_contact_distance=cofactor_contact_distance,
         cofactor_proximity_distance=cofactor_proximity_distance,
@@ -221,45 +227,39 @@ def build_endpoint_context(
     )
 
 
-def annotate_endpoint(atom: EpathAtom, context: EndpointContext) -> PathEndpoint:
+def annotate_endpoint(atom: EpathScoredAtom, context: EndpointContext) -> PathEndpoint:
     """Label one endpoint atom by the environment it terminates in.
 
-    Environments are tested in order of mechanistic weight: contact with a
-    cofactor, then the environment of a nearby cofactor, then a subunit
-    interface, and finally the surface or interior of the chain itself.
+    Environments are tested in order of mechanistic weight. Contact with a
+    cofactor comes first, then the environment of a nearby cofactor, then a
+    subunit interface, and finally the surface or interior of the chain itself.
+
+    The cofactor is the one with the atom nearest to the endpoint. An interface
+    is a protein atom of another chain within the interface distance, and a
+    surface site has a packing density no higher than the surface threshold.
+    Every range includes its limit.
     """
-    point = np.asarray((atom.x, atom.y, atom.z), dtype=float)
-    site, distance = _nearest_cofactor(point, context)
-    if site is not None and distance is not None:
+    record = atom.record
+    point = np.asarray((record.x, record.y, record.z), dtype=float)
+    nearest = _nearest_cofactor(point, context)
+    if nearest is not None:
+        site, distance = nearest
         if distance <= context.cofactor_contact_distance:
-            return _endpoint(
-                atom,
-                label=site.label,
-                kind="cofactor",
-                cofactor=site,
-                cofactor_distance=distance,
-            )
+            return _endpoint(record, label=site.label, kind="cofactor")
 
-        if distance <= context.cofactor_proximity_distance:
-            return _endpoint(
-                atom,
-                label=f"{site.label} region",
-                kind="cofactor_region",
-                cofactor=site,
-                cofactor_distance=distance,
-            )
+        return _endpoint(record, label=f"{site.label} region", kind="cofactor_region")
 
-    if _is_interface(point, atom.chain_id, context):
-        return _endpoint(atom, label="Interface region", kind="interface")
+    if _is_interface(point, record.chain_id, context):
+        return _endpoint(record, label="Interface region", kind="interface")
 
-    if atom.packing_density <= context.surface_packing_density:
-        return _endpoint(atom, label="Surface region", kind="surface")
+    if atom.bdamage_result.packing_density <= context.surface_packing_density:
+        return _endpoint(record, label="Surface region", kind="surface")
 
-    return _endpoint(atom, label="Buried region", kind="buried")
+    return _endpoint(record, label="Buried region", kind="buried")
 
 
 def find_path_anchor(
-    atoms: Sequence[EpathAtom],
+    atoms: Sequence[AtomRecord],
     context: EndpointContext,
 ) -> PathAnchor | None:
     """Return the cofactor nearest to any atom of a path, if one is in range.
@@ -269,239 +269,27 @@ def find_path_anchor(
     elsewhere, so every atom is tested, against the same range that places an
     endpoint in a cofactor's environment.
 
-    Args:
-        atoms: The atoms of one path.
-        context: Cofactor context built by `build_endpoint_context`.
-
-    Returns:
-        The nearest cofactor and the path atom closest to it, or None when the
-        model has no cofactor within the proximity range of the path.
+    The anchor names the path atom closest to the cofactor, and the first such
+    atom in path order when several are equally close. None is returned when
+    no cofactor atom lies within the proximity range of any atom of the path.
     """
-    if context.cofactor_coordinates.size == 0:
-        return None
-
-    best_index = -1
-    best_site_index = -1
-    best_distance = float("inf")
-    for index, atom in enumerate(atoms):
+    anchor: PathAnchor | None = None
+    for atom in atoms:
         point = np.asarray((atom.x, atom.y, atom.z), dtype=float)
-        distances = row_norms(context.cofactor_coordinates - point)
-        nearest = int(np.argmin(distances))
-        distance = float(distances[nearest])
-        if distance < best_distance:
-            best_index = index
-            best_site_index = int(context.cofactor_site_indices[nearest])
-            best_distance = distance
-
-    if best_distance > context.cofactor_proximity_distance:
-        return None
-
-    anchor_atom = atoms[best_index]
-    return PathAnchor(
-        cofactor=context.sites[best_site_index],
-        distance=best_distance,
-        atom_token=atom_token(anchor_atom),
-        residue=residue_label(anchor_atom),
-    )
-
-
-def _endpoint(
-    atom: EpathAtom,
-    *,
-    label: str,
-    kind: EndpointKind,
-    cofactor: CofactorSite | None = None,
-    cofactor_distance: float | None = None,
-) -> PathEndpoint:
-    return PathEndpoint(
-        label=label,
-        kind=kind,
-        atom_token=atom_token(atom),
-        residue=residue_label(atom),
-        chain_id=atom.chain_id,
-        cofactor=cofactor,
-        cofactor_distance=cofactor_distance,
-    )
-
-
-def _nearest_cofactor(
-    point: NDArray[np.float64],
-    context: EndpointContext,
-) -> tuple[CofactorSite | None, float | None]:
-    if context.cofactor_coordinates.size == 0:
-        return None, None
-
-    differences = context.cofactor_coordinates - point
-    distances = row_norms(differences)
-    nearest = int(np.argmin(distances))
-    distance = float(distances[nearest])
-    if distance > context.cofactor_proximity_distance:
-        return None, None
-
-    return context.sites[int(context.cofactor_site_indices[nearest])], distance
-
-
-def _is_interface(
-    point: NDArray[np.float64],
-    chain_id: str,
-    context: EndpointContext,
-) -> bool:
-    if context.protein_coordinates.size == 0:
-        return False
-
-    chain_index = context.chain_ids.index(chain_id)
-    differences = context.protein_coordinates - point
-    distances = row_norms(differences)
-    within_range = distances <= context.interface_distance
-    if not bool(np.any(within_range)):
-        return False
-
-    return bool(np.any(context.protein_chain_indices[within_range] != chain_index))
-
-
-def _cofactor_sites(
-    cleaned_atoms: Sequence[PreparedAtom] | None,
-) -> tuple[tuple[CofactorSite, ...], NDArray[np.float64], NDArray[np.int_]]:
-    empty_coordinates = np.zeros((0, 3), dtype=float)
-    empty_indices = np.zeros(0, dtype=int)
-    if not cleaned_atoms:
-        return (), empty_coordinates, empty_indices
-
-    bound_groups: dict[tuple[str, str, int | None, str], list[PreparedAtom]] = {}
-    for atom in cleaned_atoms:
-        if not _is_bound_group_atom(atom):
+        nearest = _nearest_cofactor(point, context)
+        if nearest is None:
             continue
 
-        record = atom.record
-        key = (
-            record.chain_id,
-            record.residue_name.strip().upper(),
-            record.residue_number,
-            record.insertion_code.strip(),
-        )
-        bound_groups.setdefault(key, []).append(atom)
-
-    grouped = {
-        key: atoms
-        for key, atoms in bound_groups.items()
-        if _is_redox_cofactor(key[1], atoms)
-    }
-    if not grouped:
-        return (), empty_coordinates, empty_indices
-
-    ordered_keys = sorted(
-        grouped,
-        key=lambda key: (key[0], key[2] if key[2] is not None else 0, key[3]),
-    )
-    labels = _site_labels(ordered_keys)
-
-    sites: list[CofactorSite] = []
-    coordinates: list[tuple[float, float, float]] = []
-    site_indices: list[int] = []
-    for site_index, key in enumerate(ordered_keys):
-        chain_id, residue_name, residue_number, insertion_code = key
-        atoms = grouped[key]
-        sites.append(
-            CofactorSite(
-                label=labels[site_index],
-                chain_id=chain_id,
-                residue_name=residue_name,
-                residue_number=residue_number,
-                insertion_code=insertion_code,
-                atom_count=len(atoms),
+        site, distance = nearest
+        if anchor is None or distance < anchor.distance:
+            anchor = PathAnchor(
+                label=site.label,
+                distance=distance,
+                atom_token=atom_token(atom),
+                residue=residue_label(atom),
             )
-        )
-        for atom in atoms:
-            record = atom.record
-            coordinates.append((record.x, record.y, record.z))
-            site_indices.append(site_index)
 
-    return (
-        tuple(sites),
-        np.asarray(coordinates, dtype=float),
-        np.asarray(site_indices, dtype=int),
-    )
-
-
-def _site_labels(
-    ordered_keys: Sequence[tuple[str, str, int | None, str]],
-) -> list[str]:
-    name_counts: dict[str, int] = {}
-    for key in ordered_keys:
-        name_counts[key[1]] = name_counts.get(key[1], 0) + 1
-
-    seen: dict[str, int] = {}
-    labels: list[str] = []
-    for key in ordered_keys:
-        residue_name = key[1]
-        if name_counts[residue_name] == 1:
-            labels.append(residue_name)
-            continue
-
-        seen[residue_name] = seen.get(residue_name, 0) + 1
-        labels.append(f"{residue_name}-{seen[residue_name]}")
-
-    return labels
-
-
-def _is_bound_group_atom(atom: PreparedAtom) -> bool:
-    return not (atom.is_protein or atom.is_solvent or atom.is_nucleic_acid)
-
-
-def _is_redox_cofactor(residue_name: str, atoms: Sequence[PreparedAtom]) -> bool:
-    if residue_name in ORGANIC_REDOX_COFACTORS:
-        return True
-
-    return any(
-        atom.record.element.strip().upper() in REDOX_ACTIVE_METALS for atom in atoms
-    )
-
-
-def _protein_chain_map(
-    scored_atoms: Sequence[EpathAtom],
-    cleaned_atoms: Sequence[PreparedAtom] | None,
-) -> tuple[NDArray[np.float64], NDArray[np.int_], tuple[str, ...]]:
-    coordinates: list[tuple[float, float, float]] = []
-    chain_indices: list[int] = []
-    chain_ids: list[str] = []
-    index_by_chain: dict[str, int] = {}
-
-    def chain_index(chain_id: str) -> int:
-        if chain_id not in index_by_chain:
-            index_by_chain[chain_id] = len(chain_ids)
-            chain_ids.append(chain_id)
-        return index_by_chain[chain_id]
-
-    if cleaned_atoms:
-        for prepared_atom in cleaned_atoms:
-            if not prepared_atom.is_protein:
-                continue
-
-            record = prepared_atom.record
-            coordinates.append((record.x, record.y, record.z))
-            chain_indices.append(chain_index(record.chain_id))
-    else:
-        for atom in scored_atoms:
-            coordinates.append((atom.x, atom.y, atom.z))
-            chain_indices.append(chain_index(atom.chain_id))
-
-    for atom in scored_atoms:
-        chain_index(atom.chain_id)
-
-    return (
-        np.asarray(coordinates, dtype=float).reshape(-1, 3),
-        np.asarray(chain_indices, dtype=int),
-        tuple(chain_ids),
-    )
-
-
-def _surface_threshold(
-    scored_atoms: Iterable[EpathAtom],
-    *,
-    percentile: float,
-) -> float:
-    packing_densities = [atom.packing_density for atom in scored_atoms]
-    return float(np.percentile(packing_densities, percentile))
+    return anchor
 
 
 def cofactor_site_summary(sites: Sequence[CofactorSite]) -> str:
@@ -515,3 +303,155 @@ def cofactor_site_summary(sites: Sequence[CofactorSite]) -> str:
         f" chain {site.chain_id})"
         for site in sites
     )
+
+
+def _cofactor_sites(
+    cleaned_atoms: Sequence[PreparedAtom],
+) -> tuple[tuple[CofactorSite, ...], NDArray[np.float64], NDArray[np.int_]]:
+    """Return the cofactor sites, their atom coordinates, and each atom's site.
+
+    The sites are ordered by chain, residue number and insertion code.
+    """
+    bound_groups: dict[tuple[str, str, int | None, str], list[AtomRecord]] = {}
+    for atom in cleaned_atoms:
+        # A bound group is whatever is neither polymer nor solvent.
+        if atom.is_protein or atom.is_nucleic_acid or atom.is_solvent:
+            continue
+
+        record = atom.record
+        key = (
+            record.chain_id,
+            record.residue_name.strip().upper(),
+            record.residue_number,
+            record.insertion_code.strip(),
+        )
+        bound_groups.setdefault(key, []).append(record)
+
+    # A residue with no number sorts as residue 0 of its chain.
+    ordered_keys = sorted(
+        (
+            key
+            for key, records in bound_groups.items()
+            if _is_redox_cofactor(key[1], records)
+        ),
+        key=lambda key: (key[0], key[2] if key[2] is not None else 0, key[3]),
+    )
+    labels = _site_labels([key[1] for key in ordered_keys])
+
+    sites: list[CofactorSite] = []
+    coordinates: list[tuple[float, float, float]] = []
+    site_indices: list[int] = []
+    for site_index, key in enumerate(ordered_keys):
+        chain_id, residue_name, residue_number, insertion_code = key
+        sites.append(
+            CofactorSite(
+                label=labels[site_index],
+                chain_id=chain_id,
+                residue_name=residue_name,
+                residue_number=residue_number,
+                insertion_code=insertion_code,
+            )
+        )
+        for record in bound_groups[key]:
+            coordinates.append((record.x, record.y, record.z))
+            site_indices.append(site_index)
+
+    # The reshape keeps the `(n, 3)` shape when the model has no cofactor.
+    return (
+        tuple(sites),
+        np.asarray(coordinates, dtype=float).reshape(-1, 3),
+        np.asarray(site_indices, dtype=int),
+    )
+
+
+def _is_redox_cofactor(residue_name: str, records: Sequence[AtomRecord]) -> bool:
+    if residue_name in ORGANIC_REDOX_COFACTORS:
+        return True
+
+    return any(
+        record.element.strip().upper() in REDOX_ACTIVE_METALS for record in records
+    )
+
+
+def _site_labels(residue_names: Sequence[str]) -> list[str]:
+    """Label each site with its residue name, numbering the names that repeat.
+
+    A name that occurs once is used as it is. The sites of a repeated name are
+    numbered from 1 in the order given, as in SF4-1 and SF4-2.
+    """
+    name_counts = Counter(residue_names)
+    seen: Counter[str] = Counter()
+    labels: list[str] = []
+    for residue_name in residue_names:
+        if name_counts[residue_name] == 1:
+            labels.append(residue_name)
+            continue
+
+        seen[residue_name] += 1
+        labels.append(f"{residue_name}-{seen[residue_name]}")
+
+    return labels
+
+
+def _protein_chains(
+    cleaned_atoms: Sequence[PreparedAtom],
+) -> tuple[NDArray[np.float64], NDArray[np.str_]]:
+    """Return the position and the chain of each protein atom of the model."""
+    records = [atom.record for atom in cleaned_atoms if atom.is_protein]
+    # The reshape keeps the `(n, 3)` shape when there is no protein atom.
+    return (
+        np.asarray(
+            [(record.x, record.y, record.z) for record in records], dtype=float
+        ).reshape(-1, 3),
+        np.asarray([record.chain_id for record in records], dtype=str),
+    )
+
+
+def _nearest_cofactor(
+    point: NDArray[np.float64],
+    context: EndpointContext,
+) -> tuple[CofactorSite, float] | None:
+    """Return the site with the atom nearest to a point, and that distance.
+
+    None is returned when the model has no cofactor, or when the nearest one
+    is beyond the proximity range.
+    """
+    if not context.sites:
+        return None
+
+    distances = row_norms(context.cofactor_coordinates - point)
+    nearest = np.argmin(distances)
+    distance = float(distances[nearest])
+    if distance > context.cofactor_proximity_distance:
+        return None
+
+    return context.sites[int(context.cofactor_site_indices[nearest])], distance
+
+
+def _endpoint(
+    atom: AtomRecord,
+    *,
+    label: str,
+    kind: EndpointKind,
+) -> PathEndpoint:
+    return PathEndpoint(
+        label=label,
+        kind=kind,
+        atom_token=atom_token(atom),
+        residue=residue_label(atom),
+    )
+
+
+def _is_interface(
+    point: NDArray[np.float64],
+    chain_id: str,
+    context: EndpointContext,
+) -> bool:
+    """Return whether a point lies at an interface with another chain.
+
+    It does when a protein atom of a chain other than `chain_id` is within the
+    interface distance of it, the distance itself included.
+    """
+    distances = row_norms(context.protein_coordinates - point)
+    within_range = distances <= context.interface_distance
+    return bool(np.any(context.protein_chain_ids[within_range] != chain_id))
