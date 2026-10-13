@@ -56,7 +56,6 @@ def test_lowest_percentile_selects_the_smallest_bdamage_values() -> None:
         1.0,
         2.0,
     ]
-    assert result.method == "percentile"
     assert result.selected_percent == approx(2.0)
     assert result.bdamage_threshold == approx(np.percentile(values, 2.0))
     assert result.boundary_z_score == approx(

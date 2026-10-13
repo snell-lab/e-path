@@ -194,7 +194,6 @@ def test_pipeline_from_a_bdamage_result(synthetic_pdb: Path) -> None:
     assert stages == EPATH_STAGES
     assert files.combined_csv is None
     assert result.analyzed_chains == ("A", "B")
-    assert result.selection_result.method == "percentile"
     assert result.bdamage_pipeline_result is bdamage
     assert [site.label for site in result.cofactor_sites] == ["FMN"]
     assert result.bnet_pipeline_result.bnet_result is not None

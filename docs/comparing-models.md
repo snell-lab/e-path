@@ -2,9 +2,9 @@
 
 Comparing many structures means reading the same run-level values back out
 again, so each run records them once in `*_run.csv`: the input, selection
-method and cutoff, scored atom count, atoms selected, the equivalent Z-score
-and BDamage threshold, Bnet and its percentile, the connected-component counts,
-and the geometry of the largest component. A batch run writes the same rows
+cutoff, scored atom count, atoms selected, the equivalent Z-score and BDamage
+threshold, Bnet and its percentile, the connected-component counts, and the
+geometry of the largest component. A batch run writes the same rows
 combined into `epath_runs.csv`, which is the comparison table for that cohort.
 A later batch into the same output directory writes `epath_runs_1.csv`, then
 `epath_runs_2.csv`, so the table of an earlier batch is never overwritten.

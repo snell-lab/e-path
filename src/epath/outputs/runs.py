@@ -43,7 +43,6 @@ class EpathRunRecord:
 
     structure: str
     input_path: str
-    selection_method: str
     cutoff_percent: float
     total_atoms: int
     atoms_selected: int
@@ -91,7 +90,6 @@ def build_run_record(
     return EpathRunRecord(
         structure=split_structure_file_name(structure_path.name)[0],
         input_path=str(structure_path),
-        selection_method=selection_result.method,
         cutoff_percent=cutoff_percent,
         total_atoms=len(selection_result.scored_atoms),
         atoms_selected=len(selection_result.selected_atoms),

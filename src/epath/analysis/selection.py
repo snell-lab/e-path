@@ -52,7 +52,6 @@ class EpathSelectionResult:
 
     scored_atoms: tuple[EpathScoredAtom, ...]
     selected_atoms: tuple[EpathScoredAtom, ...]
-    method: str
     description: str
     selected_percent: float
     bdamage_mean: float
@@ -144,7 +143,6 @@ def select_atoms_by_percentile(
     return EpathSelectionResult(
         scored_atoms=scored_atoms,
         selected_atoms=selected_atoms,
-        method="percentile",
         description=(
             f"lowest {percentile:.3f}% by BDamage "
             f"(bdamage_threshold={bdamage_threshold:.6f}; "
