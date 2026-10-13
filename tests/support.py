@@ -26,10 +26,11 @@ import pytest
 
 from epath.analysis.atoms import EpathAtom
 from epath.analysis.selection import EpathScoredAtom
-from rabdam.structure.classify import classify_atom
 from rabdam.structure.models import PreparedAtom
+from rabdam.structure.prepare import classify_atom
 from xtal.reader import AtomRecord, StructureMetadata
 from xtal.resolver import StructureFileFormat
+from xtal.validate import MacromoleculeAtom, MacromoleculeKind
 
 # A monoclinic cell so that symmetry expansion and lattice translation are
 # both non-trivial. The volume gives a Matthews coefficient of about 2 for
@@ -373,6 +374,30 @@ def make_metadata(
         unit_cell_gamma=gamma,
         resolution_angstrom=resolution,
     )
+
+
+def make_macromolecule_atoms(
+    elements: Sequence[str],
+    *,
+    kind: MacromoleculeKind = MacromoleculeKind.PROTEIN,
+    occupancy: float = 1.0,
+) -> list[MacromoleculeAtom]:
+    """Return one-atom, untabulated residues with the given element symbols.
+
+    Each atom gets the per-heavy-atom implicit-hydrogen fallback, so tests
+    that need exact masses should compute them with `macromolecule_mass`.
+    """
+    return [
+        MacromoleculeAtom(
+            element=element,
+            occupancy=occupancy,
+            kind=kind,
+            residue_name="",
+            residue_id=("A", index, ""),
+            atom_name=element,
+        )
+        for index, element in enumerate(elements, start=1)
+    ]
 
 
 def make_epath_atom(**overrides: object) -> EpathAtom:

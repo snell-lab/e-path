@@ -21,7 +21,7 @@ from rabdam.packing import packing_density_counts_as_tuple
 from rabdam.structure.models import (
     PreparedAtom,
     PreparedStructure,
-    StructurePreparationReport,
+    RemovedAtomCounts,
 )
 from rabdam.structure.prepare import prepare_structure
 from rabdam.workflow import (
@@ -179,9 +179,7 @@ def test_workflow_rejects_structures_that_cannot_be_scored() -> None:
             cleaned_atoms=selected,
             selected_atoms=selected,
             metadata=make_metadata(),
-            report=StructurePreparationReport(
-                len(selected), len(selected), len(selected), 0, 0, 0, 0, 0
-            ),
+            removed=RemovedAtomCounts(0, 0, 0, 0, 0),
         )
 
     with pytest.raises(BDamageWorkflowError, match="no selected atoms"):
@@ -214,4 +212,7 @@ def test_only_macromolecule_atoms_count_toward_the_matthews_mass(
     assert (
         crystal.content.macromolecule_atom_count == len(prepared.selected_atoms) == 77
     )
-    assert crystal.content.hydrogens_excluded is True
+    # The synthetic model has no hydrogens, so every residue gains its
+    # tabulated chain hydrogens.
+    assert crystal.content.implicit_hydrogen_mass_dalton > 0.0
+    assert crystal.content.nucleic_acid_mass_dalton == 0.0

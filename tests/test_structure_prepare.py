@@ -1,4 +1,4 @@
-"""Atom cleaning, alternate-conformer resolution, classification, selection."""
+"""Structure preparation: cleaning, conformer resolution, classification, selection."""
 
 from __future__ import annotations
 
@@ -6,61 +6,62 @@ import math
 from pathlib import Path
 
 import pytest
-from support import make_atom_record, make_metadata, make_prepared_atom
+from support import make_atom_record, make_metadata
 
-from rabdam.structure.altlocs import select_atom_site_altlocs
-from rabdam.structure.classify import classify_component
-from rabdam.structure.filters import filter_clean_atoms, is_hydrogen
 from rabdam.structure.models import (
+    PreparedStructure,
+    RemovedAtomCounts,
     StructurePreparationError,
-    StructurePreparationOptions,
 )
 from rabdam.structure.prepare import prepare_structure
-from rabdam.structure.selection import select_bdamage_atoms
-from xtal.reader import StructureData, read_structure
+from xtal.reader import AtomRecord, StructureData, read_structure
 from xtal.resolver import resolve_structure_input
 
 
-def test_filter_removes_each_kind_of_unusable_atom() -> None:
-    atoms = (
+def _prepare(*atoms: AtomRecord) -> PreparedStructure:
+    return prepare_structure(StructureData(atoms=atoms, metadata=make_metadata()))
+
+
+def _source_indices(prepared: PreparedStructure) -> list[int]:
+    return [atom.record.source_atom_index for atom in prepared.cleaned_atoms]
+
+
+def test_each_kind_of_unusable_atom_is_removed_and_counted() -> None:
+    prepared = _prepare(
         make_atom_record(source_atom_index=0),
         make_atom_record(source_atom_index=1, atom_name="HB1", element="H"),
         make_atom_record(source_atom_index=2, atom_name="DG", element="D"),
-        make_atom_record(source_atom_index=3, x=math.nan),
-        make_atom_record(source_atom_index=4, occupancy=0.0),
-        make_atom_record(source_atom_index=5, occupancy=1.5),
-        make_atom_record(source_atom_index=6, b_factor=0.0),
-        make_atom_record(source_atom_index=7, b_factor=-3.0),
+        # A hydrogen is counted as a hydrogen even when it fails another test.
+        make_atom_record(source_atom_index=3, atom_name="HA", element="H", x=math.nan),
+        make_atom_record(source_atom_index=4, atom_name="CB", x=math.nan),
+        make_atom_record(source_atom_index=5, atom_name="N", occupancy=0.0),
+        make_atom_record(source_atom_index=6, atom_name="C", occupancy=1.5),
+        make_atom_record(source_atom_index=7, atom_name="O", b_factor=0.0),
+        make_atom_record(source_atom_index=8, atom_name="OXT", b_factor=-3.0),
+        make_atom_record(source_atom_index=9, atom_name="CG", b_factor=math.nan),
+        # Mercury is not hydrogen, even though its symbol starts with H.
+        make_atom_record(
+            source_atom_index=10,
+            residue_name="HG",
+            residue_number=2,
+            atom_name="HG",
+            element="HG",
+            is_hetatm=True,
+        ),
     )
 
-    result = filter_clean_atoms(atoms)
-
-    assert [atom.source_atom_index for atom in result.atoms] == [0]
-    assert (
-        result.counts.hydrogen,
-        result.counts.invalid_coordinates,
-        result.counts.invalid_occupancy,
-        result.counts.invalid_b_factor,
-    ) == (2, 1, 2, 2)
-
-    relaxed = filter_clean_atoms(
-        atoms,
-        remove_hydrogens=False,
-        require_valid_occupancy=False,
-        require_positive_b_factor=False,
+    assert _source_indices(prepared) == [0, 10]
+    assert prepared.removed == RemovedAtomCounts(
+        hydrogens=3,
+        non_finite_coordinates=1,
+        invalid_occupancy=2,
+        non_positive_b_factor=3,
+        alternate_conformers=0,
     )
-    assert [atom.source_atom_index for atom in relaxed.atoms] == [0, 1, 2, 4, 5, 6, 7]
 
 
-def test_hydrogen_detection_falls_back_to_the_atom_name() -> None:
-    assert is_hydrogen(make_atom_record(element="H"))
-    assert is_hydrogen(make_atom_record(element="", atom_name="HD21"))
-    assert not is_hydrogen(make_atom_record(element="HG", atom_name="HG"))  # mercury
-    assert not is_hydrogen(make_atom_record(element="", atom_name="CA"))
-
-
-def test_altlocs_keep_the_highest_occupancy_site_and_warn_once_per_residue() -> None:
-    atoms = (
+def test_the_highest_occupancy_conformer_is_kept_at_each_site() -> None:
+    prepared = _prepare(
         make_atom_record(source_atom_index=0, atom_name="CA"),
         make_atom_record(
             source_atom_index=1, atom_name="OG", altloc="A", occupancy=0.4
@@ -93,25 +94,8 @@ def test_altlocs_keep_the_highest_occupancy_site_and_warn_once_per_residue() -> 
         make_atom_record(source_atom_index=7, residue_number=3, atom_name="N"),
     )
 
-    result = select_atom_site_altlocs(atoms)
-
-    assert [atom.source_atom_index for atom in result.atoms] == [0, 2, 3, 5, 7]
-    assert result.removed_count == 3
-    assert result.warnings == (
-        "Alternate conformers detected in chain A residue ALA1. Highest-occupancy atom sites were retained.",
-        "Alternate conformers detected in chain A residue ALA2. Highest-occupancy atom sites were retained.",
-    )
-
-
-def test_altloc_resolution_can_be_disabled() -> None:
-    atoms = (
-        make_atom_record(altloc="A", occupancy=0.5),
-        make_atom_record(source_atom_index=1, altloc="B", occupancy=0.5),
-    )
-    from rabdam.structure.altlocs import select_altlocs
-
-    result = select_altlocs(atoms, StructurePreparationOptions(resolve_altlocs=False))
-    assert result.atoms == atoms and result.removed_count == 0
+    assert _source_indices(prepared) == [0, 2, 3, 5, 7]
+    assert prepared.removed.alternate_conformers == 3
 
 
 @pytest.mark.parametrize(
@@ -130,45 +114,46 @@ def test_altloc_resolution_can_be_disabled() -> None:
     ],
 )
 def test_component_classification(name: str, expected: tuple[bool, bool, bool]) -> None:
-    assert classify_component(name) == expected
+    prepared = _prepare(
+        make_atom_record(source_atom_index=0),
+        make_atom_record(source_atom_index=1, residue_name=name, residue_number=2),
+    )
+
+    atom = prepared.cleaned_atoms[1]
+    assert (atom.is_protein, atom.is_nucleic_acid, atom.is_solvent) == expected
 
 
 def test_only_protein_atoms_are_selected() -> None:
-    atoms = (
-        make_prepared_atom(source_atom_index=0, residue_name="ALA"),
-        make_prepared_atom(source_atom_index=1, residue_name="MSE", is_hetatm=True),
-        make_prepared_atom(source_atom_index=2, residue_name="HOH", is_hetatm=True),
-        make_prepared_atom(source_atom_index=3, residue_name="DA"),
-        make_prepared_atom(source_atom_index=4, residue_name="FMN", is_hetatm=True),
+    prepared = _prepare(
+        make_atom_record(source_atom_index=0, residue_name="ALA"),
+        make_atom_record(source_atom_index=1, residue_name="MSE", is_hetatm=True),
+        make_atom_record(source_atom_index=2, residue_name="HOH", is_hetatm=True),
+        make_atom_record(source_atom_index=3, residue_name="DA"),
+        make_atom_record(source_atom_index=4, residue_name="FMN", is_hetatm=True),
     )
 
-    default = select_bdamage_atoms(atoms, StructurePreparationOptions())
-    assert [atom.record.source_atom_index for atom in default] == [0, 1]
-
-    strict = select_bdamage_atoms(
-        atoms,
-        StructurePreparationOptions(include_protein_like_hetatm_in_selection=False),
-    )
-    assert [atom.record.source_atom_index for atom in strict] == [0]
+    assert _source_indices(prepared) == [0, 1, 2, 3, 4]
+    assert [atom.record.source_atom_index for atom in prepared.selected_atoms] == [
+        0,
+        1,
+    ]
 
 
-def test_prepare_structure_reports_every_cleaning_step(synthetic_pdb: Path) -> None:
+def test_prepare_structure_counts_every_cleaning_step(synthetic_pdb: Path) -> None:
     data = read_structure(resolve_structure_input(str(synthetic_pdb)))
 
     prepared = prepare_structure(data)
-    report = prepared.report
 
-    assert report.input_atom_count == 88
-    assert report.removed_hydrogen_count == 1
-    assert report.removed_invalid_occupancy_count == 1
-    assert report.removed_invalid_b_factor_count == 1
-    assert report.removed_altloc_count == 1
-    assert report.removed_invalid_coordinate_count == 0
-    assert report.cleaned_atom_count == len(prepared.cleaned_atoms) == 84
-    assert report.selected_atom_count == len(prepared.selected_atoms) == 77
-    assert report.warnings == (
-        "Alternate conformers detected in chain A residue SER5. Highest-occupancy atom sites were retained.",
+    assert len(data.atoms) == 88
+    assert prepared.removed == RemovedAtomCounts(
+        hydrogens=1,
+        non_finite_coordinates=0,
+        invalid_occupancy=1,
+        non_positive_b_factor=1,
+        alternate_conformers=1,
     )
+    assert len(prepared.cleaned_atoms) == 84
+    assert len(prepared.selected_atoms) == 77
     assert prepared.metadata is data.metadata
 
     kept_og = [a for a in prepared.cleaned_atoms if a.record.atom_name == "OG"]
@@ -182,15 +167,8 @@ def test_prepare_structure_reports_every_cleaning_step(synthetic_pdb: Path) -> N
 
 
 def test_prepare_structure_requires_protein() -> None:
-    water_only = StructureData(
-        atoms=(make_atom_record(residue_name="HOH", is_hetatm=True),),
-        metadata=make_metadata(),
-    )
     with pytest.raises(StructurePreparationError, match="No protein atoms"):
-        prepare_structure(water_only)
+        _prepare(make_atom_record(residue_name="HOH", is_hetatm=True))
 
-    nothing_left = StructureData(
-        atoms=(make_atom_record(b_factor=0.0),), metadata=make_metadata()
-    )
     with pytest.raises(StructurePreparationError, match="No atoms remain"):
-        prepare_structure(nothing_left)
+        _prepare(make_atom_record(b_factor=0.0))

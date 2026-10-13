@@ -12,16 +12,12 @@ import pytest
 from support import approx, make_metadata, make_prepared_atom, write_synthetic_pdb
 
 from rabdam.crystal.symmetry import (
-    CrystalSymmetryError,
     expand_atoms_by_symmetry,
     expand_prepared_structure_by_symmetry,
 )
 from rabdam.crystal.translate import (
-    CrystalTranslationError,
-    translate_atoms,
     translate_expanded_unit_cell,
     translation_vector_for_offsets,
-    unit_cell_translation_vectors,
 )
 from rabdam.crystal.trim import (
     CrystalTrimError,
@@ -31,7 +27,12 @@ from rabdam.crystal.trim import (
 )
 from rabdam.structure.models import PreparedAtom
 from rabdam.structure.prepare import prepare_structure
-from xtal.cell import UnitCellParameters, translation_vectors_from_gemmi_cell
+from xtal.cell import (
+    UnitCellParameters,
+    UnitCellTranslationVectors,
+    make_gemmi_unit_cell,
+    translation_vectors_from_gemmi_cell,
+)
 from xtal.reader import read_structure
 from xtal.resolver import resolve_structure_input
 from xtal.validate import ValidatedCrystal, validate_crystal
@@ -106,11 +107,6 @@ def test_images_match_gemmi_operations_without_wrapping(space_group: str) -> Non
     )
 
 
-def test_empty_expansion_is_rejected() -> None:
-    with pytest.raises(CrystalSymmetryError):
-        expand_atoms_by_symmetry(atoms=(), crystal=validate_crystal(make_metadata()))
-
-
 def test_prepared_structure_expansion_uses_all_cleaned_atoms(
     synthetic_pdb: Path,
 ) -> None:
@@ -121,27 +117,29 @@ def test_prepared_structure_expansion_uses_all_cleaned_atoms(
     expanded = expand_prepared_structure_by_symmetry(prepared)
 
     assert len(expanded.atoms) == 2 * len(prepared.cleaned_atoms)
-    assert expanded.translation_vectors is not None
+
+
+def _standard_frame_vectors(
+    *cell: float,
+) -> UnitCellTranslationVectors:
+    return translation_vectors_from_gemmi_cell(
+        make_gemmi_unit_cell(UnitCellParameters(*cell))
+    )
 
 
 def test_standard_translation_vectors() -> None:
-    ortho = unit_cell_translation_vectors(UnitCellParameters(10, 20, 30, 90, 90, 90))
-    assert (ortho.a.x, ortho.a.y, ortho.a.z) == approx((10, 0, 0))
-    assert (ortho.b.x, ortho.b.y, ortho.b.z) == approx((0, 20, 0), abs=1e-12)
-    assert (ortho.c.x, ortho.c.y, ortho.c.z) == approx((0, 0, 30), abs=1e-12)
+    ortho = _standard_frame_vectors(10, 20, 30, 90, 90, 90)
+    assert (ortho.a.x, ortho.a.y, ortho.a.z) == approx((10, 0, 0), abs=1e-9)
+    assert (ortho.b.x, ortho.b.y, ortho.b.z) == approx((0, 20, 0), abs=1e-9)
+    assert (ortho.c.x, ortho.c.y, ortho.c.z) == approx((0, 0, 30), abs=1e-9)
 
-    mono = unit_cell_translation_vectors(UnitCellParameters(10, 20, 30, 90, 120, 90))
+    mono = _standard_frame_vectors(10, 20, 30, 90, 120, 90)
     assert (mono.c.x, mono.c.y, mono.c.z) == approx(
-        (-15, 0, 30 * np.sin(np.radians(120))), abs=1e-12
+        (-15, 0, 30 * np.sin(np.radians(120))), abs=1e-9
     )
 
     shift = translation_vector_for_offsets(ortho, a_offset=1, b_offset=-1, c_offset=2)
-    assert (shift.x, shift.y, shift.z) == approx((10, -20, 60), abs=1e-12)
-
-    with pytest.raises(CrystalTranslationError):
-        unit_cell_translation_vectors(UnitCellParameters(10, 20, 30, 90, 90, 180))
-    with pytest.raises(CrystalTranslationError):
-        unit_cell_translation_vectors(UnitCellParameters(10, 20, 30, 10, 10, 170))
+    assert (shift.x, shift.y, shift.z) == approx((10, -20, 60), abs=1e-9)
 
 
 def test_translation_generates_every_neighbouring_cell() -> None:
@@ -174,17 +172,8 @@ def test_translation_generates_every_neighbouring_cell() -> None:
         range(1, len(block.atoms) + 1)
     )
 
-    single = translate_atoms(
-        atoms=expanded.atoms, unit_cell=expanded.unit_cell, translation_range=0
-    )
+    single = translate_expanded_unit_cell(expanded, translation_range=0)
     assert len(single.atoms) == len(ATOMS)
-
-    with pytest.raises(CrystalTranslationError):
-        translate_atoms(
-            atoms=expanded.atoms, unit_cell=expanded.unit_cell, translation_range=-1
-        )
-    with pytest.raises(CrystalTranslationError):
-        translate_atoms(atoms=(), unit_cell=expanded.unit_cell)
 
 
 def test_bounds_and_padding() -> None:
@@ -199,10 +188,6 @@ def test_bounds_and_padding() -> None:
     ) == (-4.5, 20.0, -1.0, 7.25, 3.0, 12.0)
     padded = expand_bounds(bounds, 7.0)
     assert (padded.x_min, padded.x_max, padded.z_max) == (-11.5, 27.0, 19.0)
-    with pytest.raises(CrystalTrimError):
-        expand_bounds(bounds, -1.0)
-    with pytest.raises(CrystalTrimError):
-        bounds_from_prepared_atoms(())
 
 
 def test_trimmed_block_matches_brute_force_translation() -> None:
@@ -278,23 +263,17 @@ def test_trimmed_block_matches_brute_force_translation() -> None:
     assert trimmed.padding == padding and trimmed.trim_bounds == bounds
 
 
-def test_trim_rejects_invalid_input() -> None:
+def test_trim_rejects_a_region_that_retains_no_atoms() -> None:
     crystal = validate_crystal(make_metadata(space_group="P 1"))
     expanded = expand_atoms_by_symmetry(atoms=ATOMS, crystal=crystal)
-    with pytest.raises(CrystalTrimError):
-        trim_expanded_unit_cell_to_reference_atoms(
-            expanded_structure=expanded, reference_atoms=ATOMS, padding=-1.0
-        )
-    with pytest.raises(CrystalTrimError):
+    # A reference atom far from every image leaves an empty neighbour region.
+    far_away = (make_prepared_atom(source_atom_index=99, x=1000.0),)
+    with pytest.raises(CrystalTrimError, match="no atoms"):
         trim_expanded_unit_cell_to_reference_atoms(
             expanded_structure=expanded,
-            reference_atoms=ATOMS,
+            reference_atoms=far_away,
             padding=1.0,
-            translation_range=1.0,  # type: ignore[arg-type]
-        )
-    with pytest.raises(CrystalTrimError):
-        trim_expanded_unit_cell_to_reference_atoms(
-            expanded_structure=expanded, reference_atoms=(), padding=1.0
+            translation_range=0,
         )
 
 
@@ -325,5 +304,7 @@ def test_file_specific_orthogonalization_frame_is_kept(tmp_path: Path) -> None:
     assert crystal.translation_vectors == translation_vectors_from_gemmi_cell(
         metadata.gemmi_cell
     )
-    standard = unit_cell_translation_vectors(crystal.unit_cell)
+    standard = translation_vectors_from_gemmi_cell(
+        make_gemmi_unit_cell(crystal.unit_cell)
+    )
     assert (standard.a.x, standard.a.y, standard.a.z) == approx((15, 0, 0))

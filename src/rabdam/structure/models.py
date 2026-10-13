@@ -1,4 +1,4 @@
-"""Define shared structure-preparation data models and options."""
+"""Define the prepared-structure data models."""
 
 from dataclasses import dataclass
 
@@ -6,59 +6,35 @@ from xtal.reader import AtomRecord, StructureMetadata
 
 
 class StructurePreparationError(ValueError):
-    """Report invalid input to the structure-preparation pipeline."""
-
-
-@dataclass(frozen=True, slots=True)
-class StructurePreparationOptions:
-    """Configure atom cleaning, classification, and BDamage selection."""
-
-    # Hydrogens and unusable B-factor records cannot contribute to the
-    # published BDamage metric.
-    remove_hydrogens: bool = True
-    require_valid_occupancy: bool = True
-    require_positive_b_factor: bool = True
-    resolve_altlocs: bool = True
-
-    # Only protein atoms are scored. Modified amino acids are often encoded as
-    # HETATM but still belong to the polypeptide, so they stay in the
-    # selection. Solvent, ions, ligands, cofactors, and nucleic acids are never
-    # scored; they still contribute to the packing density of nearby atoms.
-    include_protein_like_hetatm_in_selection: bool = True
+    """Report a structure that leaves nothing to score after preparation."""
 
 
 @dataclass(frozen=True, slots=True)
 class PreparedAtom:
-    """Pair an input atom record with its structural classifications."""
+    """Pair an input atom record with its component classification."""
 
     record: AtomRecord
-    is_hydrogen: bool
     is_protein: bool
     is_nucleic_acid: bool
     is_solvent: bool
-    is_hetatm: bool
 
 
 @dataclass(frozen=True, slots=True)
-class StructurePreparationReport:
-    """Summarize atom counts, removals, and warnings from preparation."""
+class RemovedAtomCounts:
+    """Count the atoms removed during preparation, by reason."""
 
-    input_atom_count: int
-    cleaned_atom_count: int
-    selected_atom_count: int
-    removed_hydrogen_count: int
-    removed_invalid_coordinate_count: int
-    removed_invalid_occupancy_count: int
-    removed_invalid_b_factor_count: int
-    removed_altloc_count: int
-    warnings: tuple[str, ...] = ()
+    hydrogens: int
+    non_finite_coordinates: int
+    invalid_occupancy: int
+    non_positive_b_factor: int
+    alternate_conformers: int
 
 
 @dataclass(frozen=True, slots=True)
 class PreparedStructure:
-    """Store cleaned atoms, the BDamage selection, and source metadata."""
+    """Store cleaned atoms, the BDamage selection, metadata, and removal counts."""
 
     cleaned_atoms: tuple[PreparedAtom, ...]
     selected_atoms: tuple[PreparedAtom, ...]
     metadata: StructureMetadata
-    report: StructurePreparationReport
+    removed: RemovedAtomCounts

@@ -10,10 +10,8 @@ from numpy.typing import NDArray
 
 from rabdam.crystal.symmetry import SymmetryExpandedStructure
 from rabdam.crystal.translate import (
-    TranslatedAtom,
     UnitCellTranslationVectors,
     translation_vector_for_offsets,
-    unit_cell_translation_vectors,
 )
 from rabdam.structure.models import PreparedAtom, PreparedStructure
 
@@ -32,22 +30,6 @@ class CartesianBounds:
     y_max: float
     z_min: float
     z_max: float
-
-
-@dataclass(frozen=True, slots=True)
-class TrimmedCrystalBlock:
-    """Store object-based translated atoms retained inside Cartesian bounds."""
-
-    atoms: tuple[TranslatedAtom, ...]
-    reference_bounds: CartesianBounds
-    trim_bounds: CartesianBounds
-    padding: float
-    original_atom_count: int
-
-    @property
-    def atom_count(self) -> int:
-        """Return the number of retained atoms."""
-        return len(self.atoms)
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,9 +57,6 @@ class ArrayTrimmedCrystalBlock:
     def atom_count(self) -> int:
         """Return the number of retained coordinate rows."""
         return int(self.coordinates.shape[0])
-
-
-TrimmedNeighbourBlock = TrimmedCrystalBlock | ArrayTrimmedCrystalBlock
 
 
 def trim_expanded_unit_cell_for_bdamage(
@@ -120,29 +99,12 @@ def trim_expanded_unit_cell_to_reference_atoms(
         for retained atom images.
 
     Raises:
-        CrystalTrimError: If an input is empty, a numeric option is invalid, or
-            trimming retains no atoms.
+        CrystalTrimError: If trimming retains no atoms.
     """
-    if padding < 0:
-        raise CrystalTrimError(f"padding must be non-negative, got {padding!r}.")
-
-    if type(translation_range) is not int or translation_range < 0:
-        raise CrystalTrimError(
-            "translation_range must be a non-negative integer, "
-            f"got {translation_range!r}."
-        )
-
-    expanded_atoms = tuple(expanded_structure.atoms)
-    if not expanded_atoms:
-        raise CrystalTrimError("Cannot trim an empty symmetry-expanded atom list.")
-
+    expanded_atoms = expanded_structure.atoms
     reference_bounds = bounds_from_prepared_atoms(reference_atoms)
     trim_bounds = expand_bounds(reference_bounds, padding)
-    vectors = (
-        expanded_structure.translation_vectors
-        if expanded_structure.translation_vectors is not None
-        else unit_cell_translation_vectors(expanded_structure.unit_cell)
-    )
+    vectors = expanded_structure.translation_vectors
 
     base_coordinates = np.asarray(
         [(atom.x, atom.y, atom.z) for atom in expanded_atoms],
@@ -220,7 +182,7 @@ def trim_expanded_unit_cell_to_reference_atoms(
         translation_offsets=np.concatenate(offset_chunks, axis=0),
         reference_bounds=reference_bounds,
         trim_bounds=trim_bounds,
-        padding=float(padding),
+        padding=padding,
         original_atom_count=len(expanded_atoms) * translated_cell_count,
         translation_vectors=vectors,
         translation_range=translation_range,
@@ -231,45 +193,31 @@ def trim_expanded_unit_cell_to_reference_atoms(
 def bounds_from_prepared_atoms(
     atoms: Iterable[PreparedAtom],
 ) -> CartesianBounds:
-    """Compute inclusive Cartesian bounds for prepared atoms.
-
-    Raises:
-        CrystalTrimError: If no atoms are provided.
-    """
+    """Compute inclusive Cartesian bounds for prepared atoms."""
     atom_tuple = tuple(atoms)
-    if not atom_tuple:
-        raise CrystalTrimError("Cannot calculate bounds for an empty atom list.")
-
     x_values = tuple(atom.record.x for atom in atom_tuple)
     y_values = tuple(atom.record.y for atom in atom_tuple)
     z_values = tuple(atom.record.z for atom in atom_tuple)
 
     return CartesianBounds(
-        x_min=float(min(x_values)),
-        x_max=float(max(x_values)),
-        y_min=float(min(y_values)),
-        y_max=float(max(y_values)),
-        z_min=float(min(z_values)),
-        z_max=float(max(z_values)),
+        x_min=min(x_values),
+        x_max=max(x_values),
+        y_min=min(y_values),
+        y_max=max(y_values),
+        z_min=min(z_values),
+        z_max=max(z_values),
     )
 
 
 def expand_bounds(bounds: CartesianBounds, padding: float) -> CartesianBounds:
-    """Expand Cartesian bounds by a nonnegative padding in angstroms.
-
-    Raises:
-        CrystalTrimError: If `padding` is negative.
-    """
-    if padding < 0:
-        raise CrystalTrimError(f"padding must be non-negative, got {padding!r}.")
-
+    """Expand Cartesian bounds by a nonnegative padding in angstroms."""
     # Cartesian padding cannot exclude a Euclidean neighbour because that atom
     # must be within the cutoff along every individual axis.
     return CartesianBounds(
-        x_min=float(bounds.x_min - padding),
-        x_max=float(bounds.x_max + padding),
-        y_min=float(bounds.y_min - padding),
-        y_max=float(bounds.y_max + padding),
-        z_min=float(bounds.z_min - padding),
-        z_max=float(bounds.z_max + padding),
+        x_min=bounds.x_min - padding,
+        x_max=bounds.x_max + padding,
+        y_min=bounds.y_min - padding,
+        y_max=bounds.y_max + padding,
+        z_min=bounds.z_min - padding,
+        z_max=bounds.z_max + padding,
     )

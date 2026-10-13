@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
@@ -20,17 +20,22 @@ from rabdam.crystal.translate import (
     translate_expanded_unit_cell,
 )
 from rabdam.crystal.trim import (
-    TrimmedNeighbourBlock,
+    ArrayTrimmedCrystalBlock,
     trim_expanded_unit_cell_for_bdamage,
 )
 from rabdam.packing import (
     PackingDensityResult,
     calculate_bdamage_packing_density,
 )
-from rabdam.structure.models import PreparedStructure, StructurePreparationOptions
+from rabdam.structure.models import PreparedAtom, PreparedStructure
 from rabdam.structure.prepare import prepare_structure
 from xtal.reader import StructureData
-from xtal.validate import ValidatedCrystal, validate_crystal
+from xtal.validate import (
+    MacromoleculeAtom,
+    MacromoleculeKind,
+    ValidatedCrystal,
+    validate_crystal,
+)
 
 T = TypeVar("T")
 
@@ -68,7 +73,7 @@ class BDamageWorkflowResult:
     crystal: ValidatedCrystal
     symmetry_expanded_structure: SymmetryExpandedStructure
     translated_block: TranslatedCrystalBlock | None
-    trimmed_block: TrimmedNeighbourBlock
+    trimmed_block: ArrayTrimmedCrystalBlock
     packing_density_result: PackingDensityResult
     bdamage_score_result: BDamageScoreResult
     options: BDamageWorkflowOptions
@@ -79,7 +84,6 @@ def calculate_bdamage_for_structure_data(
     structure_data: StructureData,
     *,
     workflow_options: BDamageWorkflowOptions | None = None,
-    preparation_options: StructurePreparationOptions | None = None,
     stage_runner: WorkflowStageRunner | None = None,
 ) -> BDamageWorkflowResult:
     """Prepare structure data and calculate per-atom BDamage scores.
@@ -87,7 +91,6 @@ def calculate_bdamage_for_structure_data(
     Args:
         structure_data: Parsed atoms and crystallographic metadata.
         workflow_options: Scientific calculation settings.
-        preparation_options: Atom cleaning and selection settings.
         stage_runner: Optional wrapper for timing or reporting named stages.
 
     Returns:
@@ -96,10 +99,7 @@ def calculate_bdamage_for_structure_data(
     """
     prepared_structure = _run_workflow_stage(
         "Preparing structure",
-        lambda: prepare_structure(
-            structure_data,
-            options=preparation_options,
-        ),
+        lambda: prepare_structure(structure_data),
         stage_runner=stage_runner,
     )
 
@@ -225,21 +225,40 @@ def validate_crystal_for_prepared_structure(
 
     Only protein and nucleic-acid atoms contribute to the modelled mass, as
     they do for a conventional Matthews calculation. Solvent, ions, and other
-    heteroatoms are excluded even when they are scored.
+    heteroatoms are excluded even when they are scored. The protein and
+    nucleic-acid split comes from the same residue classification that
+    structure preparation uses. The cleaned atoms are checked, so alternate
+    conformers have already been resolved when preparation does that.
     """
-    macromolecule_elements = tuple(
-        atom.record.element
-        for atom in prepared_structure.cleaned_atoms
-        if atom.is_protein or atom.is_nucleic_acid
-    )
-    hydrogens_excluded = not any(
-        atom.is_hydrogen for atom in prepared_structure.cleaned_atoms
-    )
-
     return validate_crystal(
         prepared_structure.metadata,
-        macromolecule_elements=macromolecule_elements,
-        hydrogens_excluded=hydrogens_excluded,
+        macromolecule_atoms=_macromolecule_atoms(prepared_structure.cleaned_atoms),
+    )
+
+
+def _macromolecule_atoms(
+    atoms: Iterable[PreparedAtom],
+) -> tuple[MacromoleculeAtom, ...]:
+    """Return the protein and nucleic-acid atoms as asymmetric-unit check input."""
+    return tuple(
+        MacromoleculeAtom(
+            element=atom.record.element,
+            occupancy=atom.record.occupancy,
+            kind=(
+                MacromoleculeKind.PROTEIN
+                if atom.is_protein
+                else MacromoleculeKind.NUCLEIC_ACID
+            ),
+            residue_name=atom.record.residue_name,
+            residue_id=(
+                atom.record.chain_id,
+                atom.record.residue_number,
+                atom.record.insertion_code,
+            ),
+            atom_name=atom.record.atom_name,
+        )
+        for atom in atoms
+        if atom.is_protein or atom.is_nucleic_acid
     )
 
 
@@ -253,28 +272,9 @@ def bdamage_window_size_from_fraction(
 
     The rounded fractional size is increased to the next odd integer and then
     bounded below by `minimum_window_size`. The result is always odd, so an
-    even minimum is raised to the next odd size.
-
-    Raises:
-        BDamageWorkflowError: If the atom count, fraction, or minimum is invalid.
+    even minimum is raised to the next odd size. The inputs are checked by
+    `calculate_bdamage_for_prepared_structure` before this is called.
     """
-    if type(atom_count) is not int or atom_count <= 0:
-        raise BDamageWorkflowError(
-            f"atom_count must be a positive integer, got {atom_count!r}."
-        )
-
-    if not math.isfinite(window_size_fraction) or not 0 < window_size_fraction < 1:
-        raise BDamageWorkflowError(
-            "window_size_fraction must be a finite float in the range 0 to 1, "
-            f"got {window_size_fraction!r}."
-        )
-
-    if type(minimum_window_size) is not int or minimum_window_size <= 0:
-        raise BDamageWorkflowError(
-            "minimum_window_size must be a positive integer, "
-            f"got {minimum_window_size!r}."
-        )
-
     window_size = int(round(atom_count * window_size_fraction, 0))
     # A centered window needs a single middle atom; rounding upward preserves
     # at least the requested fraction.
@@ -283,7 +283,7 @@ def bdamage_window_size_from_fraction(
 
     window_size = max(window_size, minimum_window_size)
     # The minimum is user-configurable, so an even minimum must be raised to
-    # the next odd size as well, rather than failing later in validation.
+    # the next odd size as well.
     if window_size % 2 == 0:
         window_size += 1
 
@@ -291,10 +291,9 @@ def bdamage_window_size_from_fraction(
 
 
 def validate_workflow_options(options: BDamageWorkflowOptions) -> None:
-    """Validate all BDamage workflow options.
+    """Check that every numeric BDamage workflow option is in range.
 
-    Raises:
-        BDamageWorkflowError: If a numeric range or option type is invalid.
+    An out-of-range value raises `BDamageWorkflowError`.
     """
     if (
         not math.isfinite(options.packing_density_threshold)
@@ -314,22 +313,16 @@ def validate_workflow_options(options: BDamageWorkflowOptions) -> None:
             f"got {options.window_size_fraction!r}."
         )
 
-    if type(options.minimum_window_size) is not int or options.minimum_window_size <= 0:
+    if options.minimum_window_size <= 0:
         raise BDamageWorkflowError(
             "minimum_window_size must be a positive integer, "
             f"got {options.minimum_window_size!r}."
         )
 
-    if type(options.translation_range) is not int or options.translation_range < 0:
+    if options.translation_range < 0:
         raise BDamageWorkflowError(
             "translation_range must be a non-negative integer, "
             f"got {options.translation_range!r}."
-        )
-
-    if type(options.materialize_translated_block) is not bool:
-        raise BDamageWorkflowError(
-            "materialize_translated_block must be a boolean, "
-            f"got {options.materialize_translated_block!r}."
         )
 
 

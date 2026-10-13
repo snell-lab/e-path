@@ -14,10 +14,6 @@ from xtal.cell import UnitCellParameters, UnitCellTranslationVectors
 from xtal.validate import ValidatedCrystal, validate_crystal
 
 
-class CrystalSymmetryError(ValueError):
-    """Report invalid crystallographic metadata or symmetry expansion."""
-
-
 @dataclass(frozen=True, slots=True)
 class SymmetryExpandedAtom:
     """Describe one Cartesian atom image produced by a symmetry operation."""
@@ -41,9 +37,8 @@ class SymmetryExpandedStructure:
     space_group_name: str
     operation_count: int
     # Lattice vectors in the same Cartesian frame as the expanded coordinates,
-    # so later unit-cell translations stay consistent with the images. When
-    # absent, the standard orthogonalization of `unit_cell` is assumed.
-    translation_vectors: UnitCellTranslationVectors | None = None
+    # so later unit-cell translations stay consistent with the images.
+    translation_vectors: UnitCellTranslationVectors
 
 
 def expand_prepared_structure_by_symmetry(
@@ -83,14 +78,8 @@ def expand_atoms_by_symmetry(
     Returns:
         Expanded atoms ordered by input atom and then symmetry operation, plus
         the unit cell and normalized space-group name of the validated crystal.
-
-    Raises:
-        CrystalSymmetryError: If the atom list is empty.
     """
     atom_tuple = tuple(atoms)
-
-    if not atom_tuple:
-        raise CrystalSymmetryError("Cannot symmetry-expand an empty atom list.")
 
     operations = crystal.operations
     expanded_coordinates = _symmetry_expanded_coordinates(
