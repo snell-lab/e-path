@@ -38,8 +38,7 @@ def calculate_packing_density(
     The counts are returned in selected-atom order.
 
     Nothing is checked here. The threshold must be finite and positive and the
-    selection must not be empty, which `rabdam.pipeline` checks before this is
-    called.
+    selection must not be empty.
     """
     selected_atom_tuple = tuple(selected_atoms)
     selected_coordinates = _selected_atom_coordinates(selected_atom_tuple)

@@ -8,7 +8,6 @@ measures each cluster. `epath.analysis.pathways` then describes each cluster
 as a path.
 """
 
-import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
@@ -119,15 +118,10 @@ def cluster_selected_atoms(
     the order the search reached them, not in input order. No atoms give no
     components.
 
-    An `EpathClusteringError` is raised when the cutoff is not a finite
-    positive number or a coordinate is not finite.
+    The cutoff must be a finite positive number, which the command line
+    enforces and is not checked here. An `EpathClusteringError` is raised when
+    a coordinate is not finite.
     """
-    if not math.isfinite(distance_cutoff) or distance_cutoff <= 0.0:
-        raise EpathClusteringError(
-            "distance_cutoff must be a finite positive number, "
-            f"got {distance_cutoff!r}."
-        )
-
     atom_tuple = tuple(atoms)
     if not atom_tuple:
         return ()

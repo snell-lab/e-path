@@ -42,8 +42,7 @@ class EpathSelectionPipelineOptions:
     """Set how many atoms are selected as pathway candidates.
 
     `percentile` is the percentage of the scored atoms to select, taken from
-    the low end of BDamage. It must lie between 0 and 100, which the selection
-    stage checks.
+    the low end of BDamage. It must lie between 0 and 100.
     """
 
     percentile: float = 2.0
@@ -55,7 +54,8 @@ class EpathClusterPipelineOptions:
 
     Two selected atoms are connected when they lie within `distance_cutoff`
     angstroms of each other. A connected component is reported as a cluster
-    only when it holds at least `minimum_cluster_size` atoms.
+    only when it holds at least `minimum_cluster_size` atoms. The cutoff and
+    the size must be positive.
     """
 
     distance_cutoff: float = DEFAULT_CLUSTER_DISTANCE_ANGSTROM
@@ -66,7 +66,8 @@ class EpathClusterPipelineOptions:
 class EpathPipelineOptions:
     """Group the options of every stage of the E-path pipeline.
 
-    Constructing one checks nothing; `run_epath_pipeline` and its stages do.
+    Nothing checks the numeric ranges here or in the pipeline. The command
+    line enforces them when it parses its arguments.
     """
 
     selection: EpathSelectionPipelineOptions = field(
@@ -136,10 +137,8 @@ def run_epath_pipeline(
     `stage_runner` is handed each stage as a label and a callback, so a caller
     can time or report the stages, as the command line does.
 
-    An `EpathPipelineError` is raised before any stage runs when
-    `minimum_cluster_size` is below 1 or a display chain is not in the cleaned
-    model. The percentile and the distance cutoff are checked by the selection
-    and clustering stages, which raise their own errors.
+    An `EpathPipelineError` is raised before any stage runs when a display
+    chain is not in the cleaned model.
     """
     if options is None:
         options = EpathPipelineOptions()
@@ -147,11 +146,6 @@ def run_epath_pipeline(
     prepared_structure = bdamage_pipeline_result.prepared_structure
     cleaned_atoms = prepared_structure.cleaned_atoms
     minimum_cluster_size = options.clustering.minimum_cluster_size
-    if minimum_cluster_size <= 0:
-        raise EpathPipelineError(
-            "minimum_cluster_size must be a positive integer, "
-            f"got {minimum_cluster_size!r}."
-        )
 
     # A chain that holds only solvent or ligands is still a chain of the
     # model, so the display chains are checked against the cleaned model, not

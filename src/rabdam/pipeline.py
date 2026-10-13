@@ -1,13 +1,11 @@
 """Run the BDamage calculation from parsed structure data to per-atom scores.
 
-The options are checked once, here, and the stages then run in order, each
-from its own module: structure preparation, crystal validation, symmetry
-expansion, translation and trimming of the neighbouring cells, packing density,
-and the BDamage scores. `rabdam.bnet` and `epath` start from the result
-returned here.
+The stages run in order, each from its own module: structure preparation,
+crystal validation, symmetry expansion, translation and trimming of the
+neighbouring cells, packing density, and the BDamage scores. `rabdam.bnet` and
+`epath` start from the result returned here.
 """
 
-import math
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Protocol
@@ -52,7 +50,10 @@ class BDamagePipelineOptions:
     `translation_range` is how many unit cells the crystal is extended by in
     each direction along every axis, so 1 gives a 3x3x3 block of cells.
 
-    Constructing one checks nothing; `validate_pipeline_options` does.
+    Nothing checks the values here or in the pipeline. The threshold and the
+    minimum window size must be positive, the fraction between 0 and 1, and
+    the translation range not negative, which the command line enforces when
+    it parses its arguments.
     """
 
     packing_density_threshold: float = 7.0
@@ -115,29 +116,20 @@ def run_bdamage_pipeline_from_prepared(
 ) -> BDamagePipelineResult:
     """Calculate per-atom BDamage scores for a prepared structure.
 
-    The options and the window size are checked before any stage runs. The
-    crystal is then validated and expanded by symmetry, the neighbouring cells
-    are translated and trimmed to the region around the selected atoms,
-    neighbours within the packing-density threshold are counted, and each
-    B-factor is divided by the mean over a window of atoms with similar
-    packing density.
+    The window size is checked before any stage runs. The crystal is then
+    validated and expanded by symmetry, the neighbouring cells are translated
+    and trimmed to the region around the selected atoms, neighbours within the
+    packing-density threshold are counted, and each B-factor is divided by the
+    mean over a window of atoms with similar packing density.
 
-    A `BDamagePipelineError` is raised when an option is out of range, no atoms
-    are selected, or the window would be larger than the selection. A missing
-    or invalid unit cell or space group raises `xtal.cell.CrystalMetadataError`
-    from crystal validation.
+    A `BDamagePipelineError` is raised when the window would be larger than
+    the selection. A missing or invalid unit cell or space group raises
+    `xtal.cell.CrystalMetadataError` from crystal validation.
     """
     if options is None:
         options = BDamagePipelineOptions()
 
-    validate_pipeline_options(options)
-
     selected_atom_count = len(prepared_structure.selected_atoms)
-    if selected_atom_count == 0:
-        raise BDamagePipelineError(
-            "Cannot calculate BDamage for a prepared structure with no selected atoms."
-        )
-
     window_size = bdamage_window_size_from_fraction(
         atom_count=selected_atom_count,
         window_size_fraction=options.window_size_fraction,
@@ -207,40 +199,6 @@ def run_bdamage_pipeline_from_prepared(
     )
 
 
-def validate_pipeline_options(options: BDamagePipelineOptions) -> None:
-    """Check that every numeric BDamage pipeline option is in range.
-
-    An out-of-range value raises `BDamagePipelineError`.
-    """
-    if (
-        not math.isfinite(options.packing_density_threshold)
-        or options.packing_density_threshold <= 0
-    ):
-        raise BDamagePipelineError(
-            "packing_density_threshold must be a finite positive number, "
-            f"got {options.packing_density_threshold!r}."
-        )
-
-    # Written as a negation so that NaN is rejected too.
-    if not 0 < options.window_size_fraction < 1:
-        raise BDamagePipelineError(
-            "window_size_fraction must be greater than 0 and less than 1, "
-            f"got {options.window_size_fraction!r}."
-        )
-
-    if options.minimum_window_size <= 0:
-        raise BDamagePipelineError(
-            "minimum_window_size must be a positive integer, "
-            f"got {options.minimum_window_size!r}."
-        )
-
-    if options.translation_range < 0:
-        raise BDamagePipelineError(
-            "translation_range must be a non-negative integer, "
-            f"got {options.translation_range!r}."
-        )
-
-
 def bdamage_window_size_from_fraction(
     *,
     atom_count: int,
@@ -253,8 +211,6 @@ def bdamage_window_size_from_fraction(
     integer and never less than `minimum_window_size`. An even size, whether
     it came from the fraction or from the minimum, is raised to the next odd
     one. The result can exceed `atom_count`, which the caller has to reject.
-    The inputs are checked by `run_bdamage_pipeline_from_prepared`
-    before this is called.
     """
     window_size = max(round(atom_count * window_size_fraction), minimum_window_size)
     # A centered window needs a single middle atom, and going up rather than

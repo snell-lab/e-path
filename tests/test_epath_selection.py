@@ -112,9 +112,3 @@ def test_percentile_extremes() -> None:
     everything = select_atoms_by_percentile(*atoms, percentile=100.0)
     assert everything.selected_atoms == everything.scored_atoms
     assert everything.bdamage_threshold == 3.0 and everything.selected_percent == 100.0
-
-
-@pytest.mark.parametrize("percentile", [-1.0, 100.5, float("nan"), float("inf")])
-def test_invalid_percentiles_are_rejected(percentile: float) -> None:
-    with pytest.raises(EpathSelectionError):
-        select_atoms_by_percentile(*_atoms([1.0, 2.0]), percentile=percentile)

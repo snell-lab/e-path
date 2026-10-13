@@ -18,10 +18,7 @@ from rabdam.bdamage import (
 )
 from rabdam.packing import calculate_packing_density
 from rabdam.pipeline import (
-    BDamagePipelineError,
-    BDamagePipelineOptions,
     bdamage_window_size_from_fraction,
-    validate_pipeline_options,
 )
 from rabdam.structure.models import (
     PreparedAtom,
@@ -233,20 +230,3 @@ def test_window_size_from_fraction(
         minimum_window_size=minimum,
     )
     assert window == expected and window % 2 == 1
-
-
-@pytest.mark.parametrize(
-    "options",
-    [
-        BDamagePipelineOptions(packing_density_threshold=0.0),
-        BDamagePipelineOptions(window_size_fraction=0.0),
-        BDamagePipelineOptions(window_size_fraction=1.0),
-        BDamagePipelineOptions(window_size_fraction=1.5),
-        BDamagePipelineOptions(minimum_window_size=0),
-        BDamagePipelineOptions(translation_range=-1),
-    ],
-)
-def test_pipeline_option_validation(options: BDamagePipelineOptions) -> None:
-    with pytest.raises(BDamagePipelineError):
-        validate_pipeline_options(options)
-    validate_pipeline_options(BDamagePipelineOptions())

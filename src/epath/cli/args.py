@@ -5,8 +5,8 @@ translation from a parsed namespace into pipeline option objects. It does not
 run anything. `epath.cli.run` takes the namespace and the options from here.
 
 The validators reject an out-of-range value while the arguments are parsed, so
-argparse reports it as a usage error. The pipelines check the same ranges again
-for callers that build the options themselves.
+argparse reports it as a usage error. This is the only place the ranges are
+checked: the pipelines take the option objects as they are.
 """
 
 import argparse

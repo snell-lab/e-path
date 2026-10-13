@@ -143,7 +143,7 @@ def test_an_empty_selection_still_writes_every_output(tmp_path: Path) -> None:
     assert "nan" not in summary and "nan" not in files.run_csv.read_text()
 
 
-def test_options_are_checked_before_any_stage_runs() -> None:
+def test_display_chains_are_checked_before_any_stage_runs() -> None:
     bdamage = bdamage_result_from_atoms(_grid_atoms())
     stages: list[str] = []
 
@@ -151,14 +151,6 @@ def test_options_are_checked_before_any_stage_runs() -> None:
         stages.append(label)
         return callback()
 
-    with pytest.raises(EpathPipelineError, match="minimum_cluster_size"):
-        run_epath_pipeline(
-            bdamage,
-            options=EpathPipelineOptions(
-                clustering=EpathClusterPipelineOptions(minimum_cluster_size=0)
-            ),
-            stage_runner=stage_runner,
-        )
     # Chain A is in the model and chain Z is not.
     with pytest.raises(
         EpathPipelineError, match=r"not in the model: Z\. The model has chains A\."

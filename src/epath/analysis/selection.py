@@ -123,15 +123,11 @@ def select_atoms_by_percentile(
     A percentile of 0 selects nothing, with the lowest BDamage as its
     threshold, and 100 selects every atom, with the highest.
 
-    `percentile` must be from 0 to 100, both included, and every BDamage must
-    be finite, or `EpathSelectionError` is raised. There must be at least one
-    atom, which the BDamage pipeline guarantees.
+    `percentile` must be from 0 to 100, both included, which the command line
+    enforces and is not checked here. Every BDamage must be finite, or
+    `EpathSelectionError` is raised. There must be at least one atom, which the
+    BDamage pipeline guarantees.
     """
-    if not 0.0 <= percentile <= 100.0:
-        raise EpathSelectionError(
-            f"percentile must be in the range 0 to 100, got {percentile!r}."
-        )
-
     scored_atoms = score_bdamage_atoms(atoms, bdamage_results)
     selected_atoms, bdamage_threshold = _select_lowest_percentile(
         scored_atoms,

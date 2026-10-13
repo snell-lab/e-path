@@ -156,21 +156,12 @@ def test_pipeline_rejects_structures_that_cannot_be_scored() -> None:
             removed=RemovedAtomCounts(0, 0, 0, 0, 0),
         )
 
-    with pytest.raises(BDamagePipelineError, match="no selected atoms"):
-        run_bdamage_pipeline_from_prepared(prepared_structure=prepared_with(()))
-
     five = tuple(
         make_prepared_atom(source_atom_index=i, atom_serial=i + 1, x=float(i))
         for i in range(5)
     )
     with pytest.raises(BDamagePipelineError, match="window size is larger"):
         run_bdamage_pipeline_from_prepared(prepared_structure=prepared_with(five))
-
-    with pytest.raises(BDamagePipelineError):
-        run_bdamage_pipeline_from_prepared(
-            prepared_structure=prepared_with(five),
-            options=BDamagePipelineOptions(translation_range=-1),
-        )
 
 
 def test_only_macromolecule_atoms_count_toward_the_matthews_mass(

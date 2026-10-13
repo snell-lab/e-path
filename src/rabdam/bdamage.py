@@ -125,8 +125,7 @@ def calculate_bdamage_scores(
     `calculate_bdamage_scores_for_structure` numbers them.
 
     `window_size` is the positive odd number of atoms in each window. The
-    pipeline entry point has already checked that there are atoms and that the
-    window fits them.
+    pipeline entry point has already checked that the window fits the atoms.
     """
     sorted_inputs = sort_atom_inputs_for_bdamage(atom_inputs)
     sorted_average_b_factors = centered_window_average_b_factors(

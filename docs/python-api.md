@@ -45,3 +45,7 @@ group has a frozen dataclass with the same defaults as the CLI:
 `BDamagePipelineOptions` for the calculation, `EpathSelectionPipelineOptions`
 and `EpathClusterPipelineOptions` for the selection and clustering, and
 `EpathOutputPipelineOptions` for which files to write.
+
+The option values are not range-checked. The command line validates its
+arguments as it parses them, and the pipelines take the option objects as they
+are, so a value built in Python has to be in range already.

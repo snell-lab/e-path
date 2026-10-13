@@ -93,11 +93,3 @@ def test_clusters_are_connected_components_ordered_by_size() -> None:
     assert (statistics.total_count, statistics.largest_atom_count) == (5, 3)
     assert statistics.largest_metrics == clusters[0].metrics
     assert component_statistics(()).largest_metrics is None
-
-
-@pytest.mark.parametrize("cutoff", [0.0, -1.0, float("nan"), float("inf")])
-def test_invalid_cutoffs_are_rejected(cutoff: float) -> None:
-    with pytest.raises(EpathClusteringError):
-        cluster_selected_atoms(
-            scored_atoms_from_coordinates(LINE), distance_cutoff=cutoff
-        )
