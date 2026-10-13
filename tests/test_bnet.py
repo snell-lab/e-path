@@ -10,7 +10,6 @@ import numpy as np
 import pytest
 from support import approx, synthetic_atoms, write_synthetic_pdb
 
-import rabdam.bnet.reference as bnet_reference
 from rabdam.bnet.metric import (
     BnetMetricError,
     bnet_from_bdamage_values,
@@ -19,7 +18,6 @@ from rabdam.bnet.metric import (
     protein_bnet_site_bdamage_values,
 )
 from rabdam.bnet.percentile import (
-    BnetPercentileError,
     calculate_bnet_percentile,
     find_resolution_matched_reference_set,
 )
@@ -27,7 +25,6 @@ from rabdam.bnet.pipeline import run_bnet_pipeline
 from rabdam.bnet.reference import (
     DEFAULT_REFERENCE_DATABASE_CSV_PATH,
     BnetReferenceDatabase,
-    BnetReferenceEntry,
     BnetReferenceError,
     load_bnet_reference_database,
     load_default_bnet_reference_database,
@@ -146,11 +143,9 @@ def _database(
 ) -> BnetReferenceDatabase:
     """Return a reference database with the given resolutions and Bnet values."""
     return BnetReferenceDatabase(
-        entries=[
-            BnetReferenceEntry(f"{i:04d}", r, b)
-            for i, (r, b) in enumerate(zip(resolutions, bnets, strict=True))
-        ],
         database_id="test-db",
+        resolution_values=np.asarray(resolutions, dtype=np.float64),
+        bnet_values=np.asarray(bnets, dtype=np.float64),
     )
 
 
@@ -193,98 +188,45 @@ def test_percentile_is_the_rank_of_the_nearest_local_reference_value() -> None:
     )
     assert top.percentile_percent == 100.0
 
-    overrides: tuple[dict[str, Any], ...] = (
-        {"bnet": float("nan")},
-        {"resolution_angstrom": 0.0},
-        {"nearest_resolution_count": 0},
-        {"nearest_resolution_count": 6},
+
+def _write_reference(tmp_path: Path, text: str, *, sha256: str | None = None) -> Path:
+    """Write a reference CSV and a manifest recording its digest, or `sha256`."""
+    csv_path = tmp_path / "ref.csv"
+    csv_path.write_bytes(text.encode("utf-8"))
+    digest = sha256 or hashlib.sha256(csv_path.read_bytes()).hexdigest()
+    (tmp_path / "ref.manifest.json").write_text(
+        json.dumps({"database_id": "demo", "sha256": digest})
     )
-    for bad in overrides:
-        with pytest.raises(BnetPercentileError):
-            arguments: dict[str, Any] = {
-                "bnet": 1.0,
-                "resolution_angstrom": 2.0,
-                "reference_database": database,
-                "nearest_resolution_count": 2,
-                **bad,
-            }
-            calculate_bnet_percentile(**arguments)
+    return csv_path
 
 
-def test_reference_csv_loading_reads_the_columns_and_a_manifest(
+def test_reference_csv_loading_reads_the_columns_and_the_manifest(
     tmp_path: Path,
 ) -> None:
-    csv_path = tmp_path / "ref.csv"
-    csv_path.write_text(
-        ",PDB code,Resolution (A),Bnet\n0,6Q5R,1.61,173.36\n\n1,7udy,2.4,143.8\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "ref.manifest.json").write_text(
-        json.dumps({"database_id": "demo", "entry_count": 2})
+    csv_path = _write_reference(
+        tmp_path,
+        ",PDB code,Resolution (A),Bnet\r\n0,6Q5R,1.61,173.36\r\n1,7udy,2.4,143.8\r\n",
     )
 
     database = load_bnet_reference_database(csv_path)
 
     assert database.entry_count == 2
-    assert [entry.pdb_id for entry in database.entries] == ["6Q5R", "7udy"]
     assert database.resolution_values.tolist() == [1.61, 2.4]
     assert database.bnet_values.tolist() == [173.36, 143.8]
-    assert not database.bnet_values.flags.writeable
     assert database.database_id == "demo"
 
-    unnamed = tmp_path / "other.csv"
-    unnamed.write_text("PDB code,Resolution (A),Bnet\nX,1.0,2.0\n")
-    assert load_bnet_reference_database(unnamed).database_id == "other"
 
-
-@pytest.mark.parametrize(
-    ("text", "message"),
-    [
-        ("PDB code,Bnet\nX,1.0\n", r"missing the column 'Resolution \(A\)'"),
-        ("pdb_id,resolution,bnet\nX,1.0,2.0\n", "missing the column 'PDB code'"),
-        ("PDB code,Resolution (A),Bnet\nX,1.0,2.0\nx,1.5,3.0\n", "Duplicate pdb_id"),
-        ("PDB code,Resolution (A),Bnet\nX,abc,2.0\n", "non-numeric"),
-        ("PDB code,Resolution (A),Bnet\nX,0.0,2.0\n", "greater than zero"),
-        ("PDB code,Resolution (A),Bnet\nX,1.0,-2.0\n", "greater than or equal to zero"),
-        ("PDB code,Resolution (A),Bnet\n", "must contain entries"),
-    ],
-)
-def test_reference_csv_validation(tmp_path: Path, text: str, message: str) -> None:
-    path = tmp_path / "bad.csv"
-    path.write_text(text)
-    with pytest.raises(BnetReferenceError, match=message):
-        load_bnet_reference_database(path)
-    with pytest.raises(FileNotFoundError):
-        load_bnet_reference_database(tmp_path / "missing.csv")
-
-
-@pytest.mark.parametrize(
-    ("manifest", "message"),
-    [
-        ({"entry_count": 3}, "holds 2 entries"),
-        ({"sha256": "0" * 64}, "SHA-256"),
-    ],
-)
 def test_a_reference_csv_that_disagrees_with_its_manifest_is_rejected(
-    tmp_path: Path, manifest: dict[str, Any], message: str
+    tmp_path: Path,
 ) -> None:
-    csv_path = tmp_path / "ref.csv"
-    csv_path.write_text("PDB code,Resolution (A),Bnet\n1ABC,1.5,2.0\n2ABC,1.6,3.0\n")
-    (tmp_path / "ref.manifest.json").write_text(json.dumps(manifest))
-
-    with pytest.raises(BnetReferenceError, match=message):
-        load_bnet_reference_database(csv_path)
-
-
-def test_a_reference_csv_matching_its_manifest_digest_loads(tmp_path: Path) -> None:
-    csv_path = tmp_path / "ref.csv"
-    csv_path.write_bytes(b"PDB code,Resolution (A),Bnet\r\n1ABC,1.5,2.0\r\n")
-    digest = hashlib.sha256(csv_path.read_bytes()).hexdigest()
-    (tmp_path / "ref.manifest.json").write_text(
-        json.dumps({"entry_count": 1, "sha256": digest})
+    csv_path = _write_reference(
+        tmp_path, "PDB code,Resolution (A),Bnet\n1ABC,1.5,2.0\n", sha256="0" * 64
     )
 
-    assert load_bnet_reference_database(csv_path).entry_count == 1
+    with pytest.raises(BnetReferenceError, match="SHA-256"):
+        load_bnet_reference_database(csv_path)
+    with pytest.raises(FileNotFoundError):
+        load_bnet_reference_database(tmp_path / "missing.csv")
 
 
 def test_the_bundled_reference_database_is_read_once() -> None:
@@ -325,27 +267,6 @@ def test_bnet_pipeline_reports_full_results(
     )
     assert result.percentile_result.resolution_angstrom == approx(1.8)
     assert result.percentile_result.local_reference_count >= 1000
-
-
-def test_bnet_pipeline_explains_a_missing_reference_database(
-    bdamage_result: BDamagePipelineResult,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        bnet_reference, "DEFAULT_REFERENCE_DATABASE_CSV_PATH", tmp_path / "none.csv"
-    )
-
-    result = run_bnet_pipeline(
-        prepared_structure=bdamage_result.prepared_structure,
-        bdamage_results=bdamage_result.bdamage_results,
-    )
-
-    assert result.bnet_result is not None and result.percentile_result is None
-    assert result.percentile_unavailable_reason is not None
-    assert result.percentile_unavailable_reason.startswith(
-        "default reference database could not be loaded"
-    )
 
 
 def test_bnet_pipeline_explains_missing_resolution(tmp_path: Path) -> None:

@@ -16,15 +16,8 @@ from rabdam.bnet.metric import (
     ProteinBnetResult,
     calculate_protein_bnet,
 )
-from rabdam.bnet.percentile import (
-    BnetPercentileError,
-    BnetPercentileResult,
-    calculate_bnet_percentile,
-)
-from rabdam.bnet.reference import (
-    BnetReferenceError,
-    load_default_bnet_reference_database,
-)
+from rabdam.bnet.percentile import BnetPercentileResult, calculate_bnet_percentile
+from rabdam.bnet.reference import load_default_bnet_reference_database
 from rabdam.structure.models import PreparedStructure
 
 
@@ -57,10 +50,9 @@ def run_bnet_pipeline(
     Nothing is raised for a structure that Bnet cannot describe. Bnet is
     unavailable when `calculate_protein_bnet` rejects the structure, usually
     for having too few scored Asp/Glu carboxyl oxygens. The percentile is then
-    unavailable as well, as it is when the structure records no resolution,
-    when the bundled reference database cannot be loaded, or when
-    `calculate_bnet_percentile` rejects its input. The matching reason field
-    says which.
+    unavailable as well, as it is when the structure records no resolution.
+    The matching reason field says which. A bundled reference database that
+    cannot be loaded raises as `load_default_bnet_reference_database` does.
 
     Bnet values are reported by E-path but do not participate in its atom
     selection or clustering calculations.
@@ -84,32 +76,11 @@ def run_bnet_pipeline(
             percentile_unavailable_reason="structure resolution is unavailable",
         )
 
-    # The bundled database is package data, so failing to load it is a broken
-    # installation rather than bad input. It costs only the percentile, and
-    # the rest of the run is still worth finishing.
-    try:
-        reference_database = load_default_bnet_reference_database()
-    except (BnetReferenceError, OSError) as error:
-        return BnetPipelineResult(
-            bnet_result=bnet_result,
-            percentile_unavailable_reason=(
-                f"default reference database could not be loaded: {error}"
-            ),
-        )
-
-    try:
-        percentile_result = calculate_bnet_percentile(
-            bnet=bnet_result.bnet,
-            resolution_angstrom=resolution_angstrom,
-            reference_database=reference_database,
-        )
-    except BnetPercentileError as error:
-        return BnetPipelineResult(
-            bnet_result=bnet_result,
-            percentile_unavailable_reason=str(error),
-        )
-
     return BnetPipelineResult(
         bnet_result=bnet_result,
-        percentile_result=percentile_result,
+        percentile_result=calculate_bnet_percentile(
+            bnet=bnet_result.bnet,
+            resolution_angstrom=resolution_angstrom,
+            reference_database=load_default_bnet_reference_database(),
+        ),
     )
