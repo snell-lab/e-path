@@ -1,18 +1,32 @@
-"""Read structure files into RABDAM data models."""
+"""Read a coordinate file into flat atom records and crystallographic metadata.
 
+Gemmi does the parsing. This module flattens its model-chain-residue-atom
+hierarchy into immutable records in file order and recovers the resolution
+where Gemmi leaves it unset.
+"""
+
+import copy
 import math
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import gemmi
 
 from xtal.resolver import (
-    InputResolutionError,
     ResolvedStructureInput,
     StructureFileFormat,
+    StructureInputError,
 )
 
+
+class StructureReadError(StructureInputError):
+    """Report a structure file that cannot be read or validated."""
+
+
+# Tried in order, so the refinement resolution wins over the high-resolution
+# limit of the merged reflection data.
 _RESOLUTION_CIF_TAGS = (
     "_refine.ls_d_res_high",
     "_reflns.d_resolution_high",
@@ -21,16 +35,24 @@ _PDB_RESOLUTION_RE = re.compile(
     r"^REMARK\s+2\s+RESOLUTION\.\s+([0-9]+(?:\.[0-9]*)?)",
     re.IGNORECASE,
 )
-_MISSING_METADATA_VALUES = frozenset({"", ".", "?", "null", "none", "nan", "na", "n/a"})
-
-
-class StructureReadError(InputResolutionError):
-    """Report a structure file that cannot be read or validated."""
 
 
 @dataclass(frozen=True, slots=True)
 class AtomRecord:
-    """Store one atom record with Cartesian coordinates in angstroms."""
+    """Store one atom's identifiers, position, and isotropic B-factor.
+
+    Coordinates are Cartesian, in angstroms. `source_atom_index` counts atoms
+    from 0 in the order they appear in the file, for PDB and mmCIF alike. A
+    chain whose atoms are split in the file, typically because its ligands and
+    waters follow a later chain, keeps that split, so atoms with one
+    `chain_id` need not be contiguous.
+
+    Absent alternate-location and insertion codes are empty strings.
+    `residue_number` is None when the file gives no number, and `atom_serial`
+    is None when the serial is missing or unparseable. Gemmi
+    reports an unrecognised element as "X". `model_number` counts models from
+    1 rather than repeating the file's own MODEL serial.
+    """
 
     source_atom_index: int
     model_number: int
@@ -54,8 +76,11 @@ class AtomRecord:
 class StructureMetadata:
     """Store crystallographic metadata extracted from a structure file.
 
-    Unit-cell lengths and resolution are in angstroms; unit-cell angles are in
-    degrees. Missing or invalid metadata values are represented by `None`.
+    Unit-cell lengths and resolution are in angstroms and unit-cell angles in
+    degrees. A value the file does not provide is None. Cell values that are
+    present are passed through without range checks, so consumers go through
+    `xtal.cell`, which validates them. The resolution, by contrast, is only
+    ever a positive finite number or None.
     """
 
     source_path: Path
@@ -69,29 +94,29 @@ class StructureMetadata:
     unit_cell_beta: float | None
     unit_cell_gamma: float | None
     resolution_angstrom: float | None = None
-    # The cell exactly as Gemmi read it, including any file-specific
-    # orthogonalization frame. Excluded from equality so metadata built by
-    # hand compares by its parameter values alone.
+    # A copy of the cell exactly as Gemmi read it, so a file-specific
+    # orthogonalization frame from SCALE or _atom_sites.fract_transf_matrix
+    # survives into symmetry expansion. It is excluded from equality so that
+    # metadata built by hand compares by its parameter values alone.
     gemmi_cell: gemmi.UnitCell | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
 class StructureData:
-    """Pair source-order atom records with crystallographic metadata."""
+    """Pair the atom records of one model with the file's crystallographic metadata."""
 
     atoms: tuple[AtomRecord, ...]
     metadata: StructureMetadata
 
 
 def read_structure(resolved_input: ResolvedStructureInput) -> StructureData:
-    """Read and validate a single-model local structure.
+    """Read a local coordinate file that holds exactly one model.
 
-    Returns:
-        Source-order atom records and available crystallographic metadata.
-
-    Raises:
-        StructureReadError: If the input is not a readable local coordinate
-            file, contains anything other than one model, or contains no atoms.
+    Gemmi chooses the parser from the file extension. Every atom is kept,
+    including hydrogens, waters, and all alternate conformers, so filtering is
+    left to the caller. Raise StructureReadError if the input is not an
+    existing local file, Gemmi cannot parse it, or it does not hold exactly
+    one model with at least one atom.
     """
     if not resolved_input.is_local_file:
         raise StructureReadError(
@@ -110,18 +135,27 @@ def read_structure(resolved_input: ResolvedStructureInput) -> StructureData:
     if not path.is_file():
         raise StructureReadError(f"Expected a structure file, but got: {path!s}")
 
+    # Gemmi fills the document only for mmCIF input. Keeping it lets the
+    # resolution fallback reuse the parsed file instead of reading it again.
+    document = gemmi.cif.Document()
     try:
-        structure = gemmi.read_structure(str(path))
+        # Merging would move the later parts of a split chain up to its first
+        # part, so atom order would no longer match the file.
+        structure = gemmi.read_structure(
+            str(path), merge_chain_parts=False, save_doc=document
+        )
     except Exception as error:
         raise StructureReadError(
             f"Gemmi could not read structure file {path!s}: {error}"
         ) from error
 
-    if len(structure) != 1:
+    if len(structure) > 1:
         raise StructureReadError(
             f"Expected a single-model structure, but found {len(structure)} models."
         )
 
+    # An mmCIF file without atoms yields no model at all, while a PDB file
+    # without atoms yields one empty model. Both end up here.
     atoms = _extract_atom_records(structure)
 
     if not atoms:
@@ -131,6 +165,7 @@ def read_structure(resolved_input: ResolvedStructureInput) -> StructureData:
 
     metadata = _extract_metadata(
         structure=structure,
+        document=document,
         resolved_input=resolved_input,
         path=path,
     )
@@ -150,9 +185,10 @@ def _extract_atom_records(structure: gemmi.Structure) -> list[AtomRecord]:
 
             for residue in chain:
                 residue_name = residue.name
-                residue_number = _get_residue_number(residue)
-                insertion_code = _get_insertion_code(residue)
-                is_hetatm = _is_hetatm(residue)
+                residue_number = residue.seqid.num
+                insertion_code = residue.seqid.icode.strip()
+                # Gemmi keeps the record type per residue, not per atom.
+                is_hetatm = residue.het_flag == "H"
 
                 for atom in residue:
                     position = atom.pos
@@ -167,13 +203,15 @@ def _extract_atom_records(structure: gemmi.Structure) -> list[AtomRecord]:
                             insertion_code=insertion_code,
                             atom_name=atom.name.strip(),
                             element=atom.element.name,
-                            altloc=_clean_altloc(atom.altloc),
+                            # Gemmi reports a blank alternate location as NUL.
+                            altloc=atom.altloc.replace("\x00", "").strip(),
                             x=float(position.x),
                             y=float(position.y),
                             z=float(position.z),
                             occupancy=float(atom.occ),
                             b_factor=float(atom.b_iso),
-                            atom_serial=_get_atom_serial(atom),
+                            # Gemmi reports a missing or unparseable serial as 0.
+                            atom_serial=atom.serial or None,
                             is_hetatm=is_hetatm,
                         )
                     )
@@ -184,113 +222,71 @@ def _extract_atom_records(structure: gemmi.Structure) -> list[AtomRecord]:
 def _extract_metadata(
     *,
     structure: gemmi.Structure,
+    document: gemmi.cif.Document,
     resolved_input: ResolvedStructureInput,
     path: Path,
 ) -> StructureMetadata:
-    cell = structure.cell
-    space_group = _get_space_group_name(structure)
-    # Gemmi represents a missing cell as a 1 A cube rather than zeros, so a
-    # file without CRYST1 or _cell must be recognized before its placeholder
-    # lengths are mistaken for real ones.
-    has_cell = bool(cell.is_crystal())
+    # Gemmi represents a missing cell, and an all-zero CRYST1, as a 1 A cube.
+    # is_crystal() recognizes that placeholder so its lengths are not
+    # mistaken for a real cell. EM and NMR files often carry the same cube
+    # explicitly and are treated as having no cell. The cell is copied because
+    # Structure.cell is a view that would keep the whole parsed model alive.
+    cell = copy.copy(structure.cell) if structure.cell.is_crystal() else None
 
     return StructureMetadata(
         source_path=path.resolve(),
         structure_id=resolved_input.structure_id,
         file_format=resolved_input.file_format,
-        space_group=space_group,
-        unit_cell_a=_none_if_zero(cell.a) if has_cell else None,
-        unit_cell_b=_none_if_zero(cell.b) if has_cell else None,
-        unit_cell_c=_none_if_zero(cell.c) if has_cell else None,
-        unit_cell_alpha=_none_if_zero(cell.alpha) if has_cell else None,
-        unit_cell_beta=_none_if_zero(cell.beta) if has_cell else None,
-        unit_cell_gamma=_none_if_zero(cell.gamma) if has_cell else None,
-        resolution_angstrom=_extract_resolution_angstrom(
-            structure=structure,
-            path=path,
-            file_format=resolved_input.file_format,
-        ),
-        gemmi_cell=cell if has_cell else None,
+        space_group=structure.spacegroup_hm or None,
+        unit_cell_a=cell.a if cell is not None else None,
+        unit_cell_b=cell.b if cell is not None else None,
+        unit_cell_c=cell.c if cell is not None else None,
+        unit_cell_alpha=cell.alpha if cell is not None else None,
+        unit_cell_beta=cell.beta if cell is not None else None,
+        unit_cell_gamma=cell.gamma if cell is not None else None,
+        resolution_angstrom=_extract_resolution_angstrom(structure, document),
+        gemmi_cell=cell,
     )
 
 
-def _get_space_group_name(structure: gemmi.Structure) -> str | None:
-    space_group = getattr(structure, "spacegroup_hm", None)
-
-    if space_group:
-        return str(space_group)
-
-    return None
-
-
 def _extract_resolution_angstrom(
-    *,
-    structure: gemmi.Structure,
-    path: Path,
-    file_format: StructureFileFormat,
+    structure: gemmi.Structure, document: gemmi.cif.Document
 ) -> float | None:
-    resolution = _get_structure_resolution_angstrom(structure)
+    """Return the resolution, falling back to looser parsing than Gemmi's.
+
+    Gemmi leaves Structure.resolution at 0 for some files it otherwise reads
+    correctly. Examples are an mmCIF whose _refine category lacks
+    pdbx_refine_id, and a PDB REMARK 2 line that is not column-aligned or
+    omits ANGSTROMS. The mmCIF fallback reads the first data block, as Gemmi's
+    structure reader does.
+    """
+    resolution = _positive_finite_or_none(structure.resolution)
     if resolution is not None:
         return resolution
 
-    # Gemmi does not populate Structure.resolution for every valid file.
-    if file_format is StructureFileFormat.MMCIF:
-        return _extract_mmcif_resolution_angstrom(path)
+    if len(document) > 0:
+        block = document[0]
+        for tag in _RESOLUTION_CIF_TAGS:
+            # find_values covers both a single pair and a looped category,
+            # such as a joint X-ray and neutron refinement.
+            resolution = _first_positive_finite(
+                gemmi.cif.as_string(value) for value in block.find_values(tag)
+            )
+            if resolution is not None:
+                return resolution
+        return None
 
-    if file_format is StructureFileFormat.PDB:
-        return _extract_pdb_resolution_angstrom(path)
+    for line in structure.raw_remarks:
+        match = _PDB_RESOLUTION_RE.match(line)
+        if match is not None:
+            return _positive_finite_or_none(match.group(1))
 
     return None
 
 
-def _get_structure_resolution_angstrom(structure: gemmi.Structure) -> float | None:
-    resolution = getattr(structure, "resolution", None)
-    return _finite_positive_float_or_none(resolution)
-
-
-def _extract_mmcif_resolution_angstrom(path: Path) -> float | None:
+def _positive_finite_or_none(value: str | float) -> float | None:
     try:
-        document = gemmi.cif.read_file(str(path))
-    except (OSError, RuntimeError, ValueError):
-        return None
-
-    if len(document) == 0:
-        return None
-
-    block = document[0]
-    for tag in _RESOLUTION_CIF_TAGS:
-        resolution = _finite_positive_float_or_none(block.find_value(tag))
-        if resolution is not None:
-            return resolution
-
-    return None
-
-
-def _extract_pdb_resolution_angstrom(path: Path) -> float | None:
-    try:
-        with path.open("r", encoding="utf-8", errors="replace") as handle:
-            for line in handle:
-                match = _PDB_RESOLUTION_RE.match(line)
-                if match is None:
-                    continue
-
-                return _finite_positive_float_or_none(match.group(1))
-    except OSError:
-        return None
-
-    return None
-
-
-def _finite_positive_float_or_none(value: object) -> float | None:
-    if value is None:
-        return None
-
-    text = str(value).strip().strip("'\"")
-    if text.casefold() in _MISSING_METADATA_VALUES:
-        return None
-
-    try:
-        number = float(text)
+        number = float(value)
     except ValueError:
         return None
 
@@ -300,53 +296,10 @@ def _finite_positive_float_or_none(value: object) -> float | None:
     return number
 
 
-def _get_residue_number(residue: gemmi.Residue) -> int | None:
-    residue_number = getattr(residue.seqid, "num", None)
+def _first_positive_finite(values: Iterable[str]) -> float | None:
+    for value in values:
+        number = _positive_finite_or_none(value)
+        if number is not None:
+            return number
 
-    if residue_number is None:
-        return None
-
-    return int(residue_number)
-
-
-def _get_insertion_code(residue: gemmi.Residue) -> str:
-    insertion_code = getattr(residue.seqid, "icode", "")
-
-    if insertion_code is None:
-        return ""
-
-    return str(insertion_code).strip()
-
-
-def _get_atom_serial(atom: gemmi.Atom) -> int | None:
-    atom_serial = getattr(atom, "serial", None)
-
-    if atom_serial is None:
-        return None
-
-    return int(atom_serial)
-
-
-def _clean_altloc(altloc: str | None) -> str:
-    if altloc is None:
-        return ""
-
-    cleaned = str(altloc).replace("\x00", "").strip()
-
-    if cleaned in {".", "?"}:
-        return ""
-
-    return cleaned
-
-
-def _is_hetatm(residue: gemmi.Residue) -> bool:
-    return str(getattr(residue, "het_flag", "")).strip().upper() == "H"
-
-
-def _none_if_zero(value: float) -> float | None:
-    value = float(value)
-
-    if value == 0.0:
-        return None
-
-    return value
+    return None

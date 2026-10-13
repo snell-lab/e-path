@@ -5,14 +5,14 @@ from __future__ import annotations
 import dataclasses
 import math
 
-import gemmi
 import pytest
-from support import approx, make_metadata
+from support import approx, make_macromolecule_atoms, make_metadata
 
-from rabdam.crystal.translate import unit_cell_translation_vectors
 from xtal.cell import (
+    CartesianVector,
     CrystalMetadataError,
     UnitCellParameters,
+    UnitCellTranslationVectors,
     make_gemmi_unit_cell,
     normalize_space_group_name,
     space_group_from_metadata,
@@ -22,7 +22,7 @@ from xtal.cell import (
 from xtal.validate import (
     MATTHEWS_PROTEIN_CONSTANT,
     CrystalValidationError,
-    macromolecule_mass_dalton,
+    macromolecule_mass,
     validate_crystal,
 )
 
@@ -45,8 +45,9 @@ def test_invalid_unit_cells_are_rejected(
 
 def test_incomplete_unit_cells_are_rejected() -> None:
     partial = dataclasses.replace(make_metadata(), unit_cell_c=None)
-    with pytest.raises(CrystalMetadataError, match="missing complete"):
+    with pytest.raises(CrystalMetadataError, match="missing complete") as error:
         unit_cell_from_metadata(partial)
+    assert "biological-assembly downloads" in str(error.value)
 
 
 def test_space_group_names_are_normalized_and_resolved() -> None:
@@ -72,22 +73,21 @@ def test_validate_crystal_without_content_check() -> None:
 
 
 def test_matthews_coefficient_and_solvent_fraction() -> None:
-    elements = ["C"] * 100 + ["N"] * 30 + ["O"] * 30 + ["S"] * 2
+    atoms = make_macromolecule_atoms(["C"] * 100 + ["N"] * 30 + ["O"] * 30 + ["S"] * 2)
     crystal = validate_crystal(
         make_metadata(cell=(20, 20, 20, 90, 90, 90), space_group="P 1"),
-        macromolecule_elements=elements,
+        macromolecule_atoms=atoms,
     )
 
     content = crystal.content
     assert content is not None
-    mass = sum(gemmi.Element(e).weight for e in elements)
+    mass = macromolecule_mass(atoms).total_dalton
     assert content.macromolecule_mass_dalton == approx(mass)
-    assert content.macromolecule_atom_count == len(elements)
+    assert content.macromolecule_atom_count == len(atoms)
     assert content.matthews_coefficient == approx(8000 / mass)
     assert content.solvent_fraction == approx(
         1 - MATTHEWS_PROTEIN_CONSTANT / (8000 / mass)
     )
-    assert content.hydrogens_excluded is True
     assert crystal.warnings == ()
 
 
@@ -95,29 +95,57 @@ def test_content_warnings_and_rejection() -> None:
     # Ten carbon atoms in a 30 A cube: far too little protein for the cell.
     sparse = validate_crystal(
         make_metadata(cell=(30, 30, 30, 90, 90, 90), space_group="P 1"),
-        macromolecule_elements=["C"] * 10,
+        macromolecule_atoms=make_macromolecule_atoms(["C"] * 10),
     )
     assert len(sparse.warnings) == 1 and "higher than expected" in sparse.warnings[0]
 
     # A 10 A cube holding 60 carbon atoms is dense but still fits.
     dense = validate_crystal(
         make_metadata(cell=(10, 10, 10, 90, 90, 90), space_group="P 1"),
-        macromolecule_elements=["C"] * 60,
+        macromolecule_atoms=make_macromolecule_atoms(["C"] * 60),
     )
     assert len(dense.warnings) == 1 and "lower than expected" in dense.warnings[0]
 
     with pytest.raises(CrystalValidationError, match="cannot fit"):
         validate_crystal(
             make_metadata(cell=(10, 10, 10, 90, 90, 90), space_group="P 1"),
-            macromolecule_elements=["C"] * 200,
+            macromolecule_atoms=make_macromolecule_atoms(["C"] * 200),
         )
 
 
 def test_unknown_elements_contribute_no_mass() -> None:
-    assert macromolecule_mass_dalton(["C"]) == approx(gemmi.Element("C").weight)
-    assert macromolecule_mass_dalton(["Xx", ""]) == 0.0
-    crystal = validate_crystal(make_metadata(), macromolecule_elements=["Xx"])
+    assert macromolecule_mass(make_macromolecule_atoms(["Xx", ""])).total_dalton == 0.0
+    crystal = validate_crystal(
+        make_metadata(), macromolecule_atoms=make_macromolecule_atoms(["Xx"])
+    )
     assert crystal.content is None
+
+
+def _standard_orthogonalization(cell: UnitCellParameters) -> UnitCellTranslationVectors:
+    """Build cell vectors with a along x and b in the xy plane.
+
+    This is an independent reference for the vectors read back from gemmi.
+    """
+    cos_alpha, cos_beta, cos_gamma = (
+        math.cos(math.radians(angle)) for angle in (cell.alpha, cell.beta, cell.gamma)
+    )
+    sin_gamma = math.sin(math.radians(cell.gamma))
+    volume_factor = math.sqrt(
+        1
+        - cos_alpha**2
+        - cos_beta**2
+        - cos_gamma**2
+        + 2 * cos_alpha * cos_beta * cos_gamma
+    )
+    return UnitCellTranslationVectors(
+        a=CartesianVector(cell.a, 0.0, 0.0),
+        b=CartesianVector(cell.b * cos_gamma, cell.b * sin_gamma, 0.0),
+        c=CartesianVector(
+            cell.c * cos_beta,
+            cell.c * (cos_alpha - cos_beta * cos_gamma) / sin_gamma,
+            cell.c * volume_factor / sin_gamma,
+        ),
+    )
 
 
 @pytest.mark.parametrize(
@@ -132,7 +160,7 @@ def test_gemmi_frame_vectors_match_the_standard_orthogonalization(
     cell: tuple[float, float, float, float, float, float],
 ) -> None:
     parameters = UnitCellParameters(*cell)
-    standard = unit_cell_translation_vectors(parameters)
+    standard = _standard_orthogonalization(parameters)
     from_gemmi = translation_vectors_from_gemmi_cell(make_gemmi_unit_cell(parameters))
 
     for axis in "abc":

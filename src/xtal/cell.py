@@ -1,13 +1,15 @@
-"""Unit-cell and space-group accessors for crystallographic metadata.
+"""Unit cells, space groups, and lattice vectors from crystallographic metadata.
 
-These helpers turn the raw metadata read from a coordinate file into
-validated, Gemmi-backed crystallographic objects. They are generic
-crystallography rather than part of any particular damage calculation, so
-they live here and are consumed by `xtal.validate` and by `rabdam.crystal`.
+These helpers turn the raw metadata read from a coordinate file into checked
+unit-cell parameters, Gemmi cell and space-group objects, and the Cartesian
+lattice vectors used to translate atoms between cells. They are generic
+crystallography rather than part of any damage calculation, so they live here,
+where `xtal.validate` and `rabdam.crystal` both use them.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import cast
 
@@ -17,12 +19,27 @@ from xtal.reader import StructureMetadata
 
 
 class CrystalMetadataError(ValueError):
-    """Report missing or invalid unit-cell or space-group metadata."""
+    """Report missing or invalid unit-cell or space-group metadata.
+
+    `xtal.validate.CrystalValidationError` derives from this class, so catching
+    it also covers a crystal that fails the later volume and content checks.
+    """
+
+
+# A flat cell evaluates to rounding noise of about 1e-16 rather than exactly
+# zero, so it is rejected below this floor. Real crystal cells sit many orders
+# of magnitude above it. Because the value is also at most sin(gamma)^2, the
+# floor keeps the standard orthogonalization clear of dividing by zero.
+_MINIMUM_UNIT_VOLUME_SQUARED = 1e-9
 
 
 @dataclass(frozen=True, slots=True)
 class UnitCellParameters:
-    """Store unit-cell lengths in angstroms and angles in degrees."""
+    """Store unit-cell lengths in angstroms and angles in degrees.
+
+    Constructing one directly checks nothing. `unit_cell_from_metadata`
+    returns only cells that pass `validate_unit_cell`.
+    """
 
     a: float
     b: float
@@ -32,12 +49,33 @@ class UnitCellParameters:
     gamma: float
 
 
-def unit_cell_from_metadata(metadata: StructureMetadata) -> UnitCellParameters:
-    """Validate and extract complete unit-cell parameters from metadata.
+@dataclass(frozen=True, slots=True)
+class CartesianVector:
+    """Store a Cartesian displacement vector in angstroms."""
 
-    Raises:
-        CrystalMetadataError: If any parameter is absent, nonnumeric, or outside
-            its physical range.
+    x: float
+    y: float
+    z: float
+
+
+@dataclass(frozen=True, slots=True)
+class UnitCellTranslationVectors:
+    """Store the three unit-cell axes as Cartesian displacements.
+
+    Each axis is the shift that moves an atom one cell along that lattice
+    direction, in the same Cartesian frame as the atom coordinates.
+    """
+
+    a: CartesianVector
+    b: CartesianVector
+    c: CartesianVector
+
+
+def unit_cell_from_metadata(metadata: StructureMetadata) -> UnitCellParameters:
+    """Return the unit cell recorded in `metadata`.
+
+    A `CrystalMetadataError` is raised when any of the six parameters is
+    missing or the cell fails `validate_unit_cell`.
     """
     unit_cell_a = metadata.unit_cell_a
     unit_cell_b = metadata.unit_cell_b
@@ -55,35 +93,68 @@ def unit_cell_from_metadata(metadata: StructureMetadata) -> UnitCellParameters:
         or unit_cell_gamma is None
     ):
         raise CrystalMetadataError(
-            "Structure metadata is missing complete unit-cell parameters."
+            "Structure metadata is missing complete unit-cell parameters. "
+            "E-path needs a crystal structure's unit cell. NMR and cryo-EM "
+            "models and biological-assembly downloads have none; for a crystal "
+            "structure, use the deposited asymmetric-unit file."
         )
 
-    try:
-        unit_cell = UnitCellParameters(
-            a=float(unit_cell_a),
-            b=float(unit_cell_b),
-            c=float(unit_cell_c),
-            alpha=float(unit_cell_alpha),
-            beta=float(unit_cell_beta),
-            gamma=float(unit_cell_gamma),
-        )
-    except (TypeError, ValueError) as error:
-        raise CrystalMetadataError(
-            "Structure metadata contains non-numeric unit-cell parameters."
-        ) from error
-
-    if unit_cell.a <= 0 or unit_cell.b <= 0 or unit_cell.c <= 0:
-        raise CrystalMetadataError(f"Invalid unit-cell lengths: {unit_cell!r}.")
-
-    angles = (unit_cell.alpha, unit_cell.beta, unit_cell.gamma)
-    if not all(0 < angle < 180 for angle in angles):
-        raise CrystalMetadataError(f"Invalid unit-cell angles: {unit_cell!r}.")
-
+    unit_cell = UnitCellParameters(
+        a=unit_cell_a,
+        b=unit_cell_b,
+        c=unit_cell_c,
+        alpha=unit_cell_alpha,
+        beta=unit_cell_beta,
+        gamma=unit_cell_gamma,
+    )
+    validate_unit_cell(unit_cell)
     return unit_cell
 
 
+def validate_unit_cell(unit_cell: UnitCellParameters) -> None:
+    """Raise `CrystalMetadataError` unless `unit_cell` describes a real cell.
+
+    Every parameter must be finite, every length positive, and every angle
+    strictly between 0 and 180 degrees. The three angles must also close into
+    a cell that is not flat, which rules out combinations such as 10, 10 and
+    170 degrees that pass the range check one angle at a time.
+    """
+    lengths = (unit_cell.a, unit_cell.b, unit_cell.c)
+    angles = (unit_cell.alpha, unit_cell.beta, unit_cell.gamma)
+
+    if not all(math.isfinite(value) for value in (*lengths, *angles)):
+        raise CrystalMetadataError(f"Non-finite unit-cell parameters: {unit_cell!r}.")
+
+    if not all(length > 0 for length in lengths):
+        raise CrystalMetadataError(f"Invalid unit-cell lengths: {unit_cell!r}.")
+
+    if not all(0 < angle < 180 for angle in angles):
+        raise CrystalMetadataError(f"Invalid unit-cell angles: {unit_cell!r}.")
+
+    # The determinant of the metric tensor divided by (abc)^2 is the squared
+    # volume of a cell with unit edges. It falls to zero when one angle reaches
+    # the sum of the other two or the three reach 360 degrees.
+    cos_alpha, cos_beta, cos_gamma = (math.cos(math.radians(angle)) for angle in angles)
+    unit_volume_squared = (
+        1
+        - cos_alpha**2
+        - cos_beta**2
+        - cos_gamma**2
+        + 2 * cos_alpha * cos_beta * cos_gamma
+    )
+    if unit_volume_squared <= _MINIMUM_UNIT_VOLUME_SQUARED:
+        raise CrystalMetadataError(
+            f"Unit-cell angles do not form a valid cell: {unit_cell!r}."
+        )
+
+
 def make_gemmi_unit_cell(unit_cell: UnitCellParameters) -> gemmi.UnitCell:
-    """Build a Gemmi unit cell from validated parameters."""
+    """Return a Gemmi cell for `unit_cell` in the standard Cartesian frame.
+
+    The standard frame puts a along x and b in the xy plane. It ignores any
+    `SCALE` or `fract_transf_matrix` frame a file carries, so prefer the cell
+    Gemmi read from the file, `StructureMetadata.gemmi_cell`, when there is one.
+    """
     return gemmi.UnitCell(
         unit_cell.a,
         unit_cell.b,
@@ -95,18 +166,35 @@ def make_gemmi_unit_cell(unit_cell: UnitCellParameters) -> gemmi.UnitCell:
 
 
 def space_group_from_metadata(metadata: StructureMetadata) -> gemmi.SpaceGroup:
-    """Resolve a Gemmi space group from structure metadata.
+    """Return the Gemmi space group named in `metadata`.
 
-    Raises:
-        CrystalMetadataError: If the space-group name is absent or unrecognized.
+    The name is normalized with `normalize_space_group_name` before lookup,
+    and a name that is missing, empty after normalization, or unrecognized
+    raises `CrystalMetadataError`. Files write a bare symbol such as "R 3" for
+    both settings of an R-centred group, so the setting, and with it the
+    number of operations, is chosen from the cell angles. Without them the
+    hexagonal setting is assumed.
     """
-    if metadata.space_group is None or not str(metadata.space_group).strip():
+    space_group_name = (
+        ""
+        if metadata.space_group is None
+        else normalize_space_group_name(metadata.space_group)
+    )
+    if not space_group_name:
         raise CrystalMetadataError("Structure metadata is missing a space-group name.")
 
-    space_group_name = normalize_space_group_name(metadata.space_group)
+    alpha = metadata.unit_cell_alpha
+    gamma = metadata.unit_cell_gamma
+    # Gemmi reads the angles only to choose the setting of an R-centred group
+    # and treats zero as unknown. Its stub declares a non-optional return, but
+    # the lookup returns None for a name it does not recognize.
     space_group = cast(
         gemmi.SpaceGroup | None,
-        gemmi.find_spacegroup_by_name(space_group_name),
+        gemmi.find_spacegroup_by_name(
+            space_group_name,
+            alpha=0.0 if alpha is None else alpha,
+            gamma=0.0 if gamma is None else gamma,
+        ),
     )
 
     if space_group is None:
@@ -117,22 +205,10 @@ def space_group_from_metadata(metadata: StructureMetadata) -> gemmi.SpaceGroup:
     return space_group
 
 
-@dataclass(frozen=True, slots=True)
-class CartesianVector:
-    """Store a Cartesian displacement vector in angstroms."""
-
-    x: float
-    y: float
-    z: float
-
-
-@dataclass(frozen=True, slots=True)
-class UnitCellTranslationVectors:
-    """Store Cartesian displacement vectors for the three unit-cell axes."""
-
-    a: CartesianVector
-    b: CartesianVector
-    c: CartesianVector
+def normalize_space_group_name(space_group_name: str) -> str:
+    """Remove every quote character and collapse whitespace in a space-group name."""
+    cleaned = space_group_name.replace("'", "").replace('"', "")
+    return " ".join(cleaned.split())
 
 
 def translation_vectors_from_gemmi_cell(
@@ -140,27 +216,14 @@ def translation_vectors_from_gemmi_cell(
 ) -> UnitCellTranslationVectors:
     """Return the unit-cell axes in the Cartesian frame of a Gemmi cell.
 
-    The axes are the columns of the cell's orthogonalization matrix. Gemmi
-    keeps the file's own frame when a coordinate file carries a non-standard
-    `SCALE`/`fract_transf_matrix`, so taking the axes from the same matrix
-    that positions the atoms keeps symmetry images and lattice translations
-    in one consistent frame.
+    The axes are the columns of the cell's orthogonalization matrix. When a
+    file carries a non-standard `SCALE` or `fract_transf_matrix`, Gemmi keeps
+    that frame for the atoms, so taking the axes from the same matrix keeps
+    symmetry images and lattice translations in one consistent frame.
     """
     matrix = cell.orth.mat.tolist()
     return UnitCellTranslationVectors(
-        a=CartesianVector(
-            float(matrix[0][0]), float(matrix[1][0]), float(matrix[2][0])
-        ),
-        b=CartesianVector(
-            float(matrix[0][1]), float(matrix[1][1]), float(matrix[2][1])
-        ),
-        c=CartesianVector(
-            float(matrix[0][2]), float(matrix[1][2]), float(matrix[2][2])
-        ),
+        a=CartesianVector(matrix[0][0], matrix[1][0], matrix[2][0]),
+        b=CartesianVector(matrix[0][1], matrix[1][1], matrix[2][1]),
+        c=CartesianVector(matrix[0][2], matrix[1][2], matrix[2][2]),
     )
-
-
-def normalize_space_group_name(space_group_name: str) -> str:
-    """Remove quoting and normalize whitespace in a space-group name."""
-    cleaned = str(space_group_name).replace("'", "").replace('"', "")
-    return " ".join(cleaned.split())
