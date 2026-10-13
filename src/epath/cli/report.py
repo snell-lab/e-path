@@ -1,14 +1,15 @@
-"""Terminal reporting for E-path command-line runs.
+"""Print the terminal messages and run summaries of the E-path command line.
 
-The section contents are built by `epath.outputs`, the same builders that
-write the persistent summary report, so the terminal and the file never
-disagree about a value. This module only decides which sections to show and
-how to indent them. Long lines are wrapped with a hanging indent and
-warnings and errors are highlighted when the stream is a colour terminal
-(see `epath.cli.style`).
+The crystal, BDamage and Bnet sections and the list of files written come from
+the builders in `epath.outputs.summary` that also write the summary report, so
+the terminal and the file show the same lines for these. The selection and
+pathway sections are built here, as a shorter version of the report's, with one
+line per pathway and values rounded to fewer digits. Sections are printed
+through `epath.cli.style`, which wraps long lines with a hanging indent and
+highlights warnings and errors on a colour terminal.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, TextIO
 
 from epath.analysis.endpoints import cofactor_site_summary
@@ -19,7 +20,6 @@ from epath.outputs.summary import (
     crystal_summary_lines,
     output_file_entries,
 )
-from rabdam.bdamage import bdamage_scores_as_tuple
 
 if TYPE_CHECKING:
     from epath.cli.run import EpathBatchCliResult, EpathCliResult
@@ -53,11 +53,6 @@ Run 'epath --help' for all options."""
 INDENT = "  "
 
 
-def print_missing_structure_input_error(*, stream: TextIO) -> None:
-    """Print a compact recovery message for missing structure input."""
-    print_error(MISSING_STRUCTURE_INPUT_MESSAGE, stream=stream)
-
-
 def print_error(message: str, *, stream: TextIO) -> None:
     """Print an error message, highlighting the ``epath: error:`` prefix."""
     enabled = supports_color(stream)
@@ -77,12 +72,16 @@ def print_epath_summary(
     total_runtime_seconds: float,
     stream: TextIO,
 ) -> None:
-    """Print a compact full E-path run summary."""
+    """Print the summary of one finished run.
+
+    The sections are the crystal, the BDamage calculation, the selection, the
+    Bnet results, the pathways and the files written. A positive
+    `preview_count` adds the packing-density counts and BDamage scores of the
+    first `preview_count` scored atoms, or of all of them when there are
+    fewer. Crystal warnings are part of the crystal section.
+    """
     pipeline_result = result.pipeline_result
     bdamage_result = pipeline_result.bdamage_pipeline_result
-    # The CLI always runs E-path from its own BDamage pipeline.
-    assert bdamage_result is not None
-    crystal = bdamage_result.crystal
 
     print(file=stream)
     print("Done.", file=stream)
@@ -90,7 +89,11 @@ def print_epath_summary(
     print(f"Input: {result.local_input.local_path}", file=stream)
     print(f"Output prefix: {result.output_prefix}", file=stream)
 
-    _print_section("Crystal:", crystal_summary_lines(crystal), stream=stream)
+    _print_section(
+        "Crystal:",
+        crystal_summary_lines(bdamage_result.crystal),
+        stream=stream,
+    )
     _print_section(
         "BDamage calculation:",
         bdamage_summary_lines(bdamage_result),
@@ -117,25 +120,16 @@ def print_epath_summary(
     )
 
     if preview_count > 0:
-        packing_density_counts = bdamage_result.packing_densities[:preview_count]
-        bdamage_scores = bdamage_scores_as_tuple(bdamage_result.bdamage_results)[
-            :preview_count
-        ]
+        counts = bdamage_result.packing_densities[:preview_count]
+        scores = bdamage_result.bdamage_results[:preview_count]
         _print_section(
             "BDamage preview:",
             (
-                f"Packing-density counts, first {preview_count}:",
-                INDENT + _format_int_values(packing_density_counts),
-                f"BDamage scores, first {preview_count}:",
-                INDENT + _format_float_values(bdamage_scores),
+                f"Packing-density counts, first {len(counts)}:",
+                INDENT + ", ".join(str(count) for count in counts),
+                f"BDamage scores, first {len(scores)}:",
+                INDENT + ", ".join(f"{score.bdamage:.3f}" for score in scores),
             ),
-            stream=stream,
-        )
-
-    if crystal.warnings:
-        _print_section(
-            "Warnings:",
-            (f"WARNING: {warning}" for warning in crystal.warnings),
             stream=stream,
         )
 
@@ -148,19 +142,21 @@ def print_epath_batch_summary(
     *,
     stream: TextIO,
 ) -> None:
-    """Print a compact full E-path batch-run summary."""
+    """Print the summary of a batch run.
+
+    It gives the number of inputs that succeeded and failed, where the outputs
+    went, and the failed inputs by name, in the order they were given.
+    """
     lines = [
         f"Successful: {len(result.results)}",
-        f"Failed: {len(result.errors)}",
+        f"Failed: {len(result.failed_inputs)}",
         f"Output directory: {result.output_dir}",
     ]
     if result.cohort_csv is not None:
         lines.append(f"Cohort CSV: {result.cohort_csv}")
-    if result.errors:
+    if result.failed_inputs:
         lines.append("Failed inputs:")
-        lines.extend(
-            INDENT + item_error.structure_input for item_error in result.errors
-        )
+        lines.extend(INDENT + failed_input for failed_input in result.failed_inputs)
     lines.append(f"Total runtime: {result.elapsed_seconds:.1f}s")
 
     _print_section("Batch summary:", lines, stream=stream)
@@ -195,8 +191,7 @@ def _pathway_lines(pipeline_result: EpathPipelineResult) -> tuple[str, ...]:
         f"Cofactor sites: {cofactor_site_summary(pipeline_result.cofactor_sites)}"
     )
     lines.extend(
-        f"Path {report.path_id} "
-        f"{report.start_endpoint.label} -> {report.end_endpoint.label}: "
+        f"Path {report.path_id} {report.endpoint_summary}: "
         f"{report.residue_count} residues, {report.node_count} nodes, "
         f"{report.total_length:.2f} A, nearest cofactor {report.anchor_summary}, "
         f"{report.structural_descriptor}"
@@ -208,12 +203,4 @@ def _pathway_lines(pipeline_result: EpathPipelineResult) -> tuple[str, ...]:
 def _print_section(title: str, lines: Iterable[str], *, stream: TextIO) -> None:
     print(file=stream)
     print(title, file=stream)
-    print_lines(tuple(lines), indent=INDENT, stream=stream)
-
-
-def _format_int_values(values: Sequence[int]) -> str:
-    return ", ".join(str(value) for value in values)
-
-
-def _format_float_values(values: Sequence[float]) -> str:
-    return ", ".join(f"{value:.3f}" for value in values)
+    print_lines(lines, indent=INDENT, stream=stream)

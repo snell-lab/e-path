@@ -1,14 +1,16 @@
-"""Terminal styling helpers: ANSI colour and indented line wrapping.
+"""Colour and wrap the terminal output of `epath.cli.report`.
 
-Colour is only emitted when the stream is an interactive terminal and the
-``NO_COLOR`` environment variable is unset, so redirected or piped output
-stays plain text.
+Colour is emitted only on an interactive terminal, so redirected or piped
+output stays plain text. The ``NO_COLOR`` environment variable turns it off
+everywhere and ``FORCE_COLOR`` turns it on everywhere, with ``NO_COLOR``
+winning when both are set.
 """
 
 import os
 import shutil
 import sys
 import textwrap
+from collections.abc import Iterable
 from typing import TextIO
 
 RESET = "\033[0m"
@@ -16,51 +18,58 @@ BOLD = "\033[1m"
 RED = "\033[31m"
 YELLOW = "\033[33m"
 
-WARNING_PREFIX = "WARNING:"
-ERROR_PREFIX = "error:"
+# The line prefixes that are highlighted, each with its colour.
+_HIGHLIGHTS = (
+    ("WARNING:", BOLD + YELLOW),
+    ("epath: error:", BOLD + RED),
+)
 
 _DEFAULT_WIDTH = 100
 _MAX_WIDTH = 120
 
 
 def supports_color(stream: TextIO) -> bool:
-    """Return whether ANSI colour should be emitted on `stream`."""
+    """Return whether ANSI colour should be emitted on `stream`.
+
+    An empty ``NO_COLOR`` or ``FORCE_COLOR`` counts as unset.
+    """
     if os.environ.get("NO_COLOR"):
         return False
-    if os.environ.get("FORCE_COLOR"):
-        return True
+    if not (os.environ.get("FORCE_COLOR") or stream.isatty()):
+        return False
     if sys.platform == "win32":
         # Windows Terminal and modern consoles understand ANSI sequences once
         # virtual-terminal processing is enabled; ``os.system("")`` does that.
         os.system("")
-    return stream.isatty()
-
-
-def colorize(text: str, *codes: str, enabled: bool) -> str:
-    """Wrap `text` in the given ANSI codes when colour is enabled."""
-    if not enabled:
-        return text
-    return "".join(codes) + text + RESET
+    return True
 
 
 def style_line(line: str, *, enabled: bool) -> str:
-    """Highlight a well-known prefix (warning or error) in `line`."""
+    """Highlight a leading ``WARNING:`` or ``epath: error:`` in `line`.
+
+    Only the prefix is coloured, and indentation before it is kept. Any other
+    line is returned unchanged, as is every line when `enabled` is false.
+    """
+    if not enabled:
+        return line
     stripped = line.lstrip()
     leading = line[: len(line) - len(stripped)]
-    if stripped.startswith(WARNING_PREFIX):
-        prefix = colorize(WARNING_PREFIX, BOLD, YELLOW, enabled=enabled)
-        return leading + prefix + stripped[len(WARNING_PREFIX) :]
-    if stripped.startswith("epath: " + ERROR_PREFIX):
-        prefix = colorize("epath: " + ERROR_PREFIX, BOLD, RED, enabled=enabled)
-        return leading + prefix + stripped[len("epath: " + ERROR_PREFIX) :]
+    for prefix, colour in _HIGHLIGHTS:
+        if stripped.startswith(prefix):
+            return leading + colour + prefix + RESET + stripped[len(prefix) :]
     return line
 
 
 def terminal_width(stream: TextIO) -> int:
-    """Return a sensible wrapping width for `stream`."""
+    """Return the width, in columns, to wrap output on `stream` to.
+
+    This is 100 when `stream` is not a terminal. Otherwise it is the width of
+    the terminal, or 120 if the terminal is wider than that.
+    """
     if not stream.isatty():
         return _DEFAULT_WIDTH
-    return min(shutil.get_terminal_size((_DEFAULT_WIDTH, 24)).columns, _MAX_WIDTH)
+    columns = shutil.get_terminal_size(fallback=(_DEFAULT_WIDTH, 24)).columns
+    return min(columns, _MAX_WIDTH)
 
 
 def wrap_indented(line: str, *, indent: str, width: int) -> list[str]:
@@ -69,30 +78,26 @@ def wrap_indented(line: str, *, indent: str, width: int) -> list[str]:
     Any indentation already present in `line` is preserved and continuation
     lines are indented by that plus two extra spaces so the wrapped text reads
     as a single item rather than as new entries.
+
+    `width` counts the indentation. Lines break only at spaces, so a word
+    longer than the width is kept whole and overruns it. A blank line gives
+    one line with no trailing spaces.
     """
     stripped = line.lstrip(" ")
-    existing = line[: len(line) - len(stripped)]
-    initial = indent + existing
-    subsequent = initial + "  "
-    if not stripped:
-        return [initial.rstrip()]
+    initial = indent + line[: len(line) - len(stripped)]
     wrapped = textwrap.wrap(
         stripped,
         width=width,
         initial_indent=initial,
-        subsequent_indent=subsequent,
+        subsequent_indent=initial + "  ",
         break_long_words=False,
         break_on_hyphens=False,
     )
-    return wrapped or [initial + stripped]
+    # textwrap returns no lines at all for a blank line.
+    return wrapped or [initial.rstrip()]
 
 
-def print_lines(
-    lines: list[str] | tuple[str, ...],
-    *,
-    indent: str,
-    stream: TextIO,
-) -> None:
+def print_lines(lines: Iterable[str], *, indent: str, stream: TextIO) -> None:
     """Print `lines` indented, wrapped to the terminal width, and styled."""
     enabled = supports_color(stream)
     width = terminal_width(stream)

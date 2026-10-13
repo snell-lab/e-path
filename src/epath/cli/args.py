@@ -2,7 +2,11 @@
 
 This module owns the argparse parser, the argument validators, and the
 translation from a parsed namespace into pipeline option objects. It does not
-run anything.
+run anything. `epath.cli.run` takes the namespace and the options from here.
+
+The validators reject an out-of-range value while the arguments are parsed, so
+argparse reports it as a usage error. The pipelines check the same ranges again
+for callers that build the options themselves.
 """
 
 import argparse
@@ -23,8 +27,7 @@ from rabdam.pipeline import BDamagePipelineOptions
 from xtal.rcsb import DEFAULT_RCSB_DOWNLOAD_DIR
 from xtal.resolver import COMPRESSED_SUFFIX, SUPPORTED_STRUCTURE_SUFFIXES
 
-DEFAULT_OUTPUT_DIR = Path("output")
-DEFAULT_DOWNLOAD_DIR = DEFAULT_RCSB_DOWNLOAD_DIR
+DEFAULT_OUTPUT_DIR = "output"
 
 REMOVED_BDAMAGE_COMMAND_MESSAGE = """\
 epath: error: the 'bdamage' subcommand has been removed.
@@ -36,15 +39,21 @@ combined '*_epath.csv' output."""
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the full E-path pipeline parser."""
+    """Build the full E-path pipeline parser.
+
+    The defaults of the calculation options are read from the pipeline option
+    classes, so the command line and the library cannot drift apart.
+    """
     bdamage_defaults = BDamagePipelineOptions()
     epath_defaults = EpathPipelineOptions()
     parser = argparse.ArgumentParser(
         prog="epath",
         usage="%(prog)s STRUCTURE_INPUT [STRUCTURE_INPUT ...] [options]",
         description="Run the full E-path pipeline for structure files or PDB IDs.",
+        # `-h` is added by hand so that it is listed under the general options.
         add_help=False,
     )
+    # The help lists the groups in the order they are created here.
     input_group = parser.add_argument_group("input")
     output = parser.add_argument_group("output options")
     epath_selection = parser.add_argument_group("E-path selection options")
@@ -66,9 +75,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# The groups below are typed `Any` because argparse does not export the class
+# of an argument group.
 def _add_structure_input_argument(group: Any) -> None:
     group.add_argument(
         "structure_inputs",
+        # Not required here, so that `--citations` works without an input.
+        # `epath.cli.main` reports a missing input itself.
         nargs="*",
         metavar="STRUCTURE_INPUT",
         help=(
@@ -84,16 +97,16 @@ def _add_output_arguments(group: Any) -> None:
         "-o",
         "--output-prefix",
         metavar="PREFIX",
-        default=None,
         help=(
             "Prefix for E-path output files in a single-structure run. "
-            "Default: output/<structure>"
+            "Default: <structure>/<structure> under --output-dir, in a "
+            "numbered directory if that one exists."
         ),
     )
     group.add_argument(
         "--output-dir",
         metavar="DIR",
-        default=str(DEFAULT_OUTPUT_DIR),
+        default=DEFAULT_OUTPUT_DIR,
         help=(
             "Directory for default single-run and batch E-path outputs. "
             f"Default: {DEFAULT_OUTPUT_DIR}"
@@ -126,7 +139,6 @@ def _add_output_arguments(group: Any) -> None:
         "--chains",
         metavar="IDS",
         type=chain_list,
-        default=None,
         help=(
             "Comma-separated chain identifiers to keep in the mmCIF outputs, for "
             "example A,B. The analysis itself always covers every chain; this "
@@ -210,10 +222,10 @@ def _add_download_arguments(group: Any) -> None:
     group.add_argument(
         "--download-dir",
         metavar="DIR",
-        default=str(DEFAULT_DOWNLOAD_DIR),
+        default=str(DEFAULT_RCSB_DOWNLOAD_DIR),
         help=(
             "Directory for downloaded RCSB mmCIF files. "
-            f"Default: {DEFAULT_DOWNLOAD_DIR}"
+            f"Default: {DEFAULT_RCSB_DOWNLOAD_DIR}"
         ),
     )
     group.add_argument(
@@ -281,20 +293,26 @@ def _add_bdamage_debug_arguments(group: Any) -> None:
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """Parse command-line arguments.
+    """Parse command-line arguments, taken from `sys.argv` when `argv` is None.
 
     `SystemExit` is raised for the removed `bdamage` subcommand, as well as by
     argparse itself for invalid arguments, `--help` and `--version`.
     """
-    raw_args = list(sys.argv[1:] if argv is None else argv)
-    if raw_args and raw_args[0] == "bdamage":
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == "bdamage":
         raise SystemExit(REMOVED_BDAMAGE_COMMAND_MESSAGE)
 
-    return build_parser().parse_args(raw_args)
+    return build_parser().parse_args(argv)
 
 
 def chain_list(value: str) -> tuple[str, ...]:
-    """Return a tuple of unique chain identifiers from a comma-separated list."""
+    """Return the chain identifiers of a comma-separated list.
+
+    Spaces around an identifier are dropped, and a repeated identifier is kept
+    once, at its first position. An empty identifier, as in `A,,B`, is
+    rejected.
+    """
     chains = tuple(dict.fromkeys(item.strip() for item in value.split(",")))
     if any(not chain for chain in chains):
         raise argparse.ArgumentTypeError(
@@ -314,7 +332,8 @@ def positive_float(value: str) -> float:
 def fraction_float(value: str) -> float:
     """Return a float in the open interval 0 to 1 for argparse."""
     parsed = _float_arg(value)
-    if not math.isfinite(parsed) or not 0.0 < parsed < 1.0:
+    # Written as a negation so that NaN is rejected too.
+    if not 0.0 < parsed < 1.0:
         raise argparse.ArgumentTypeError(
             f"expected a number greater than 0 and less than 1, got {value!r}"
         )
@@ -322,9 +341,10 @@ def fraction_float(value: str) -> float:
 
 
 def percent_float(value: str) -> float:
-    """Return a finite percentage in the closed interval 0 to 100."""
+    """Return a percentage in the closed interval 0 to 100 for argparse."""
     parsed = _float_arg(value)
-    if not math.isfinite(parsed) or not 0.0 <= parsed <= 100.0:
+    # Written as a negation so that NaN is rejected too.
+    if not 0.0 <= parsed <= 100.0:
         raise argparse.ArgumentTypeError(
             f"expected a percentage from 0 to 100, got {value!r}"
         )
@@ -350,7 +370,11 @@ def non_negative_int(value: str) -> int:
 
 
 def single_output_prefix_from_args(args: argparse.Namespace) -> Path | None:
-    """Return the E-path output prefix for a single-structure run."""
+    """Return the `--output-prefix` of a single-structure run, with `~` expanded.
+
+    None means the option was not given, and the caller then derives a prefix
+    under `--output-dir`.
+    """
     if args.output_prefix is not None:
         return Path(args.output_prefix).expanduser()
 
@@ -374,7 +398,12 @@ def epath_pipeline_options_from_args(
     *,
     output_prefix: Path | None,
 ) -> EpathPipelineOptions:
-    """Build full E-path pipeline options from parsed command-line arguments."""
+    """Build full E-path pipeline options from parsed command-line arguments.
+
+    `--no-reports` switches off the cluster, step and run CSVs and the summary
+    report together. No argument sets the path analysis options, which keep
+    their defaults.
+    """
     return EpathPipelineOptions(
         selection=EpathSelectionPipelineOptions(
             percentile=args.percentile,

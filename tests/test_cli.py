@@ -24,7 +24,7 @@ from epath.cli.args import (
     positive_float,
     positive_int,
 )
-from epath.cli.run import batch_output_prefix_path, output_label_for_input
+from epath.cli.run import default_output_prefix, output_label_for_input
 from xtal.resolver import (
     ResolvedStructureInput,
     StructureFileFormat,
@@ -224,6 +224,29 @@ def test_output_groups_can_be_disabled_and_quiet_silences_progress(
     assert code == 0 and not (tmp_path / "none").exists()
 
 
+def test_chain_filter_is_checked_before_anything_is_written(
+    synthetic_pdb: Path, tmp_path: Path
+) -> None:
+    for extra in ([], ["--no-cif"]):
+        prefix = tmp_path / f"bad{len(extra)}" / "run"
+        code, _, err = _run(
+            [str(synthetic_pdb), "-o", str(prefix), "-q", "--chains", "A,Z", *extra]
+        )
+        assert code == 1 and not prefix.parent.exists()
+        assert "not in the model: Z. The model has chains A, B." in err
+
+    # Without coordinate files there is nothing for the filter to apply to.
+    prefix = tmp_path / "nocif" / "run"
+    code, _, err = _run(
+        [str(synthetic_pdb), "-o", str(prefix), "-q", "--chains", "B", "--no-cif"]
+    )
+    assert code == 0, err
+    assert (
+        "Chains in coordinate files"
+        not in (prefix.parent / "run_summary.txt").read_text()
+    )
+
+
 def test_default_output_prefix_uses_the_input_stem(
     synthetic_pdb: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -348,6 +371,17 @@ def test_batch_run_writes_a_cohort_table_with_unique_prefixes(
     assert (out_dir / "synthetic_2" / "synthetic_summary.txt").is_file()
     assert rows[0]["atoms_selected"] == rows[1]["atoms_selected"] == "23"
 
+    # A second batch into the same directory overwrites nothing of the first.
+    first_cohort = (out_dir / "epath_runs.csv").read_text()
+    code, _, _ = _run(
+        [str(synthetic_pdb), str(synthetic_mmcif), "--output-dir", str(out_dir)]
+        + ["-q", "--no-plot", "--no-cif"]
+    )
+    assert code == 0
+    assert (out_dir / "epath_runs.csv").read_text() == first_cohort
+    assert len(_rows(out_dir / "epath_runs_1.csv")) == 2
+    assert (out_dir / "synthetic_4" / "synthetic_run.csv").is_file()
+
 
 def test_batch_continues_past_a_failing_input(
     synthetic_pdb: Path, tmp_path: Path
@@ -411,26 +445,15 @@ def test_output_labels_and_prefixes(tmp_path: Path) -> None:
     # not a name, so the generic label is used.
     assert output_label_for_input(dots) == "structure"
 
-    used: set[Path] = set()
     assert (
-        batch_output_prefix_path(
-            downloaded, output_dir=tmp_path, used_output_prefixes=used
-        )
+        default_output_prefix(downloaded, output_dir=tmp_path)
         == tmp_path / "1ABC" / "1ABC"
     )
-    assert (
-        batch_output_prefix_path(
-            downloaded, output_dir=tmp_path, used_output_prefixes=used
-        )
-        == tmp_path / "1ABC_1" / "1ABC"
-    )
-    # Run directories already on disk are skipped, even outside a batch.
+    # Run directories already on disk are skipped.
     (tmp_path / "1ABC").mkdir()
     (tmp_path / "1ABC_1").mkdir()
     assert (
-        batch_output_prefix_path(
-            downloaded, output_dir=tmp_path, used_output_prefixes=None
-        )
+        default_output_prefix(downloaded, output_dir=tmp_path)
         == tmp_path / "1ABC_2" / "1ABC"
     )
 

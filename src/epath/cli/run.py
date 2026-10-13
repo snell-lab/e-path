@@ -7,7 +7,6 @@ the E-path pipeline. Terminal reporting lives in `epath.cli.report`.
 
 import argparse
 import re
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,16 +41,21 @@ from xtal.resolver import (
 )
 
 # One row per structure in a batch, written alongside the per-structure output.
-BATCH_COHORT_CSV_NAME = "epath_runs.csv"
+BATCH_COHORT_CSV_STEM = "epath_runs"
 
-# Every input, crystal and calculation error in xtal and rabdam derives from
-# ValueError, so it covers them all.
-RABDAM_CLI_ERRORS = (ValueError, OSError)
+# Every input, crystal and calculation error in xtal, rabdam and epath derives
+# from ValueError, so it covers them all. OSError covers files that cannot be
+# read or written.
+CLI_ERRORS = (ValueError, OSError)
 
 
 @dataclass(frozen=True, slots=True)
 class EpathCliResult:
-    """Result returned by a full E-path CLI run."""
+    """Result of one structure's run.
+
+    `local_input` is the input as it was read, after any download, and
+    `output_prefix` is the prefix its output files were written under.
+    """
 
     local_input: ResolvedStructureInput
     output_prefix: Path
@@ -60,49 +64,46 @@ class EpathCliResult:
 
 
 @dataclass(frozen=True, slots=True)
-class EpathBatchItemError:
-    """Failure for one input in a full E-path batch run."""
-
-    structure_input: str
-    error: Exception
-
-
-@dataclass(frozen=True, slots=True)
 class EpathBatchCliResult:
-    """Result returned by a full E-path batch CLI run."""
+    """Result of a batch run.
+
+    `results` holds the runs that succeeded and `failed_inputs` the inputs
+    whose run failed, as given on the command line, each in input order.
+    `elapsed_seconds` covers the whole batch. `cohort_csv` is `None` when no structure succeeded or
+    reports are switched off.
+    """
 
     results: tuple[EpathCliResult, ...]
-    errors: tuple[EpathBatchItemError, ...]
+    failed_inputs: tuple[str, ...]
     output_dir: Path
     elapsed_seconds: float
-    cohort_csv: Path | None = None
+    cohort_csv: Path | None
 
     @property
     def has_errors(self) -> bool:
         """Return whether any batch item failed."""
-        return bool(self.errors)
+        return bool(self.failed_inputs)
 
 
 def run_from_args(
     args: argparse.Namespace,
     *,
-    stdout: TextIO = sys.stdout,
-    stderr: TextIO = sys.stderr,
-    total_runtime_start: float | None = None,
+    stdout: TextIO,
+    stderr: TextIO,
+    total_runtime_start: float,
 ) -> EpathCliResult | EpathBatchCliResult:
     """Run the full E-path pipeline from parsed command-line arguments.
 
-    Raises:
-        ValueError: If no structure input was given, or if `--output-prefix`
-            is combined with several structure inputs.
+    One structure input is a single run and several are a batch. That there is
+    at least one is not checked here: `epath.cli.main` has already rejected an
+    empty list. Progress goes to `stderr` and the summaries to `stdout`.
+    `total_runtime_start` is the `perf_counter` reading that the reported total
+    runtime is measured from.
+
+    A failed single run raises one of `CLI_ERRORS`. A batch raises only
+    for `--output-prefix`, and otherwise records each failure and carries on.
     """
-    if total_runtime_start is None:
-        total_runtime_start = perf_counter()
-
     structure_inputs = tuple(args.structure_inputs)
-    if not structure_inputs:
-        raise ValueError("At least one structure input is required.")
-
     if len(structure_inputs) == 1:
         return run_single_structure(
             args,
@@ -130,9 +131,12 @@ def run_single_structure(
     stdout: TextIO,
     stderr: TextIO,
     total_runtime_start: float,
-    used_batch_output_prefixes: set[Path] | None = None,
 ) -> EpathCliResult:
-    """Run the full E-path pipeline for one structure input."""
+    """Run the full E-path pipeline for one structure input and print its summary.
+
+    Without an `output_prefix` the run gets a directory of its own under
+    `--output-dir`, chosen by `default_output_prefix`.
+    """
 
     # A named generic function rather than a lambda so each pipeline stage
     # callback keeps its return type through PipelineStageRunner.
@@ -146,10 +150,9 @@ def run_single_structure(
     )
 
     if output_prefix is None:
-        output_prefix = batch_output_prefix_path(
+        output_prefix = default_output_prefix(
             local_input,
             output_dir=Path(args.output_dir).expanduser(),
-            used_output_prefixes=used_batch_output_prefixes,
         )
 
     options = epath_pipeline_options_from_args(
@@ -158,7 +161,6 @@ def run_single_structure(
     )
     pipeline_result, output_files = run_epath_pipeline(
         bdamage_result,
-        structure_path=local_input.local_path,
         options=options,
         stage_runner=stage_runner,
     )
@@ -170,11 +172,10 @@ def run_single_structure(
     )
 
     if not args.quiet:
-        total_runtime_seconds = perf_counter() - total_runtime_start
         print_epath_summary(
             cli_result,
             preview_count=args.preview_count,
-            total_runtime_seconds=total_runtime_seconds,
+            total_runtime_seconds=perf_counter() - total_runtime_start,
             stream=stdout,
         )
 
@@ -189,11 +190,17 @@ def run_batch(
     stderr: TextIO,
     total_runtime_start: float,
 ) -> EpathBatchCliResult:
-    """Run the full E-path pipeline for multiple structure inputs.
+    """Run the full E-path pipeline for several structure inputs in turn.
 
-    Raises:
-        ValueError: If `--output-prefix` is combined with several structure
-            inputs, which are written to separate files.
+    Each input is run and summarised as a single structure, in its own
+    directory under `--output-dir`. One that fails with any of
+    `CLI_ERRORS` is reported on `stderr` and the batch carries on. The
+    structures that succeeded then share one cohort CSV, unless `--no-reports`
+    is given. Like the run directories, it is numbered rather than written
+    over the cohort CSV of an earlier batch.
+
+    `--output-prefix` names the files of one structure, so combining it with
+    several inputs raises `ValueError` before anything runs.
     """
     if args.output_prefix is not None:
         raise ValueError(
@@ -203,8 +210,7 @@ def run_batch(
 
     output_dir = Path(args.output_dir).expanduser()
     results: list[EpathCliResult] = []
-    errors: list[EpathBatchItemError] = []
-    used_output_prefixes: set[Path] = set()
+    failed_inputs: list[str] = []
 
     for index, structure_input in enumerate(structure_inputs, start=1):
         if not args.quiet:
@@ -221,34 +227,26 @@ def run_batch(
                 stdout=stdout,
                 stderr=stderr,
                 total_runtime_start=perf_counter(),
-                used_batch_output_prefixes=used_output_prefixes,
             )
-        except RABDAM_CLI_ERRORS as error:
-            errors.append(
-                EpathBatchItemError(
-                    structure_input=structure_input,
-                    error=error,
-                )
-            )
+        except CLI_ERRORS as error:
+            failed_inputs.append(structure_input)
             print_error(f"epath: error: {structure_input}: {error}", stream=stderr)
         else:
             results.append(result)
 
     # One row per structure, so a batch is directly comparable across models.
-    cohort_csv = (
-        write_run_csv(
-            output_dir / BATCH_COHORT_CSV_NAME,
+    cohort_csv = None
+    if results and not args.no_reports:
+        cohort_csv = write_run_csv(
+            _unused_cohort_csv_path(output_dir),
             (result.pipeline_result.run_record for result in results),
         )
-        if results and not args.no_reports
-        else None
-    )
-    elapsed_seconds = perf_counter() - total_runtime_start
+
     batch_result = EpathBatchCliResult(
         results=tuple(results),
-        errors=tuple(errors),
+        failed_inputs=tuple(failed_inputs),
         output_dir=output_dir,
-        elapsed_seconds=elapsed_seconds,
+        elapsed_seconds=perf_counter() - total_runtime_start,
         cohort_csv=cohort_csv,
     )
 
@@ -264,9 +262,11 @@ def calculate_bdamage_from_args(
     structure_input: str,
     stage_runner: PipelineStageRunner,
 ) -> tuple[ResolvedStructureInput, BDamagePipelineResult]:
-    """Resolve one input, read it, and run the RABDAM BDamage stages."""
-    pipeline_options = bdamage_pipeline_options_from_args(args)
+    """Resolve one input, read it, and run the RABDAM BDamage stages.
 
+    An RCSB entry is downloaded first. The input returned is the local file
+    that was read.
+    """
     resolved = stage_runner(
         "Resolving input",
         lambda: resolve_structure_input(structure_input),
@@ -287,45 +287,46 @@ def calculate_bdamage_from_args(
     )
     pipeline_result = run_bdamage_pipeline(
         structure_data,
-        options=pipeline_options,
+        options=bdamage_pipeline_options_from_args(args),
         stage_runner=stage_runner,
     )
 
     return local_input, pipeline_result
 
 
-def batch_output_prefix_path(
+def default_output_prefix(
     local_input: ResolvedStructureInput,
     *,
     output_dir: Path,
-    used_output_prefixes: set[Path] | None,
 ) -> Path:
-    """Return a unique output prefix for one resolved input.
+    """Return the output prefix of a run that was given none.
 
     Each run gets its own directory under `output_dir`, named after the
     structure label. A repeated run of the same structure gets a numbered
-    directory (`3I9V_1`, `3I9V_2`, ...) rather than overwriting the last one:
-    directories already on disk count as used, as do prefixes handed out
-    earlier in the same batch.
+    directory (`3I9V_1`, `3I9V_2`, ...) rather than overwriting the last one.
+    Only directories on disk count as used. That covers the earlier items of
+    a batch too, because each one writes its files before the next prefix is
+    chosen.
     """
     label = output_label_for_input(local_input)
 
-    def prefix_for(run_dir_name: str) -> Path:
-        return output_dir / run_dir_name / label
-
-    def is_used(candidate: Path) -> bool:
-        if used_output_prefixes is not None and candidate in used_output_prefixes:
-            return True
-        return candidate.parent.exists()
-
-    candidate = prefix_for(label)
+    candidate = output_dir / label / label
     suffix = 1
-    while is_used(candidate):
-        candidate = prefix_for(f"{label}_{suffix}")
+    while candidate.parent.exists():
+        candidate = output_dir / f"{label}_{suffix}" / label
         suffix += 1
 
-    if used_output_prefixes is not None:
-        used_output_prefixes.add(candidate)
+    return candidate
+
+
+def _unused_cohort_csv_path(output_dir: Path) -> Path:
+    """Return the cohort CSV path of a batch, numbered if the name is taken."""
+    candidate = output_dir / f"{BATCH_COHORT_CSV_STEM}.csv"
+    suffix = 1
+    while candidate.exists():
+        candidate = output_dir / f"{BATCH_COHORT_CSV_STEM}_{suffix}.csv"
+        suffix += 1
+
     return candidate
 
 
@@ -352,6 +353,8 @@ def output_label_for_input(local_input: ResolvedStructureInput) -> str:
 
 def _label_from_file_name(name: str) -> str:
     stem, suffix = split_structure_file_name(name)
+    # The length is checked because `is_valid_classic_pdb_id` ignores
+    # surrounding whitespace, so `pdb 1abc.ent` would otherwise match.
     if (
         suffix == ".ent"
         and len(stem) == 7
@@ -369,7 +372,11 @@ def run_stage[T](
     stream: TextIO,
     quiet: bool,
 ) -> T:
-    """Run one CLI stage and optionally print elapsed time."""
+    """Run one stage, reporting its label and how long it took on `stream`.
+
+    A stage that raises is reported as failed, with its time, and the exception
+    propagates. With `quiet` nothing is printed.
+    """
     if quiet:
         return callback()
 

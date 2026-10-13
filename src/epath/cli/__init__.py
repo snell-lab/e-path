@@ -13,27 +13,11 @@ from typing import TextIO
 
 from epath.cli.args import parse_args
 from epath.cli.report import (
+    MISSING_STRUCTURE_INPUT_MESSAGE,
     print_citations,
     print_error,
-    print_missing_structure_input_error,
 )
-from epath.cli.run import (
-    RABDAM_CLI_ERRORS,
-    EpathBatchCliResult,
-    EpathBatchItemError,
-    EpathCliResult,
-    run_from_args,
-)
-
-__all__ = [
-    "RABDAM_CLI_ERRORS",
-    "EpathBatchCliResult",
-    "EpathBatchItemError",
-    "EpathCliResult",
-    "main",
-    "parse_args",
-    "run_from_args",
-]
+from epath.cli.run import CLI_ERRORS, EpathBatchCliResult, run_from_args
 
 
 def main(
@@ -42,7 +26,11 @@ def main(
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
-    """Run the E-path command-line interface."""
+    """Run the E-path command-line interface and return its exit status.
+
+    The status is 0 on success, 1 when a run fails or any structure of a batch
+    does, and 2 when no structure input is given.
+    """
     start = perf_counter()
     args = parse_args(argv)
 
@@ -51,7 +39,7 @@ def main(
         return 0
 
     if not args.structure_inputs:
-        print_missing_structure_input_error(stream=stderr)
+        print_error(MISSING_STRUCTURE_INPUT_MESSAGE, stream=stderr)
         return 2
 
     try:
@@ -61,7 +49,7 @@ def main(
             stderr=stderr,
             total_runtime_start=start,
         )
-    except RABDAM_CLI_ERRORS as error:
+    except CLI_ERRORS as error:
         print_error(f"epath: error: {error}", stream=stderr)
         return 1
 
