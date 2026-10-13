@@ -116,7 +116,8 @@ Each run writes into its own directory under `output/`, named after the
 structure (`output/3I9V/3I9V_epath.csv`, ...). Running the same structure again
 gets a numbered directory (`output/3I9V_1/`, `output/3I9V_2/`, ...) instead of
 overwriting the earlier results. A batch run additionally writes
-`epath_runs.csv` in the output directory, with one row per structure.
+`epath_runs.csv` in the output directory, with one row per structure, numbered
+in the same way (`epath_runs_1.csv`, ...) when an earlier batch left one there.
 `--output-dir` chooses another output directory and `--output-prefix` bypasses
 the per-run directory and sets the file prefix directly for a single structure; `--no-csv`,
 `--no-cif`, `--no-plot`, and `--no-reports` disable the corresponding output

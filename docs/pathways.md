@@ -129,9 +129,12 @@ mostly report the shape of the residues rather than a fork in the path.
 Composition assigns each residue exactly one chemistry class, so the reported
 fractions sum to one. Histidine and tyrosine count as aromatic rather than
 polar, because the analysis treats aromatic side chains as the redox-active
-set. A class is enriched when it is at least 1.5 times more common in the path
-than in the scored population of the same model, so enrichment is measured
-against the structure being analysed rather than a fixed reference.
+set. A modified residue is classed with its parent residue, so phosphoserine
+counts as polar. A class is enriched when it is at least 1.5 times more common
+in the path than in the scored population of the same model, so enrichment is
+measured against the structure being analysed rather than a fixed reference.
+An enriched class must also make up at least 7% of the path's residues, so
+that a single residue of a rare class in a long path is not called enrichment.
 
 The topology thresholds and the endpoint and anchor distances are not exposed
 on the command line; they are fields of `PathAnalysisOptions` and can be

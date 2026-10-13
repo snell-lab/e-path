@@ -6,6 +6,8 @@ method and cutoff, scored atom count, atoms selected, the equivalent Z-score
 and BDamage threshold, Bnet and its percentile, the connected-component counts,
 and the geometry of the largest component. A batch run writes the same rows
 combined into `epath_runs.csv`, which is the comparison table for that cohort.
+A later batch into the same output directory writes `epath_runs_1.csv`, then
+`epath_runs_2.csv`, so the table of an earlier batch is never overwritten.
 Rows from separate single-structure runs concatenate to the same thing.
 
 Two of those columns describe components that are never reported as pathways:

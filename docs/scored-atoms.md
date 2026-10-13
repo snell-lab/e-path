@@ -26,7 +26,11 @@ choice the whole analysis rests on:
 
 There is no option anywhere in the program to score anything else.
 
-The default E-path selection is the lowest 2% of BDamage values. Connected
+The default E-path selection is the lowest 2% of BDamage values. The threshold
+is the BDamage at that percentile of the scored atoms, and the atoms at or
+below it are then cut to 2% of the atom count by dropping the highest values.
+The count is rounded to a whole number of atoms, and one that falls exactly
+halfway rounds to the even number. Connected
 components use a 4 A atom-to-atom cutoff and only components containing at least
 eight atoms are reported as clusters. `--minimum-cluster-size` changes that
 reporting threshold. Each reported cluster includes the atom count, MST total
@@ -42,3 +46,5 @@ atom, cleaned model, and per-pathway mmCIF files) to the named chains, after the
 analysis has finished, so figures can focus on one chain while every result
 still reflects the complete model. A pathway with no atoms in the kept chains
 gets no coordinate file, and the CSVs and summary always describe every chain.
+A chain that is not in the model is reported as an error before anything is
+written.

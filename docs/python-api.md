@@ -32,10 +32,12 @@ for report in result.path_reports:
     print(report.endpoint_summary, report.anchor_summary)
 ```
 
-`EpathPipelineResult` holds the scored atoms, the selection, the clusters and
-their statistics, one `PathReport` per reported pathway, the cofactor sites,
-and the run record that becomes `*_run.csv`; `EpathPipelineOutputFiles` lists
-the files written. Every option group has a frozen dataclass with the same
+`EpathPipelineResult` holds the selection, with every scored atom and the ones
+selected from them, the clusters and their statistics, one `PathReport` per
+reported pathway, the cofactor sites, the run record that becomes `*_run.csv`,
+and the BDamage and Bnet results the analysis rests on. A scored atom is the
+atom record from `xtal.reader` and the BDamage result from `rabdam`, with its
+Z-score. `EpathPipelineOutputFiles` lists the files written. Every option group has a frozen dataclass with the same
 defaults as the CLI: `BDamagePipelineOptions` for the calculation,
 `EpathSelectionPipelineOptions` and `EpathClusterPipelineOptions` for the
 selection and clustering, `PathAnalysisOptions` for the topology thresholds
