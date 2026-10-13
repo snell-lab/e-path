@@ -1,7 +1,5 @@
 """Residue chemistry, topology, endpoints, cofactor anchors, and pathway description."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 
 import numpy as np

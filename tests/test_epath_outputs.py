@@ -1,7 +1,5 @@
 """Output files: CSV tables, coordinate subsets, the plot, and the summary."""
 
-from __future__ import annotations
-
 import csv
 from pathlib import Path
 
@@ -9,7 +7,7 @@ import gemmi
 import pytest
 from support import approx, make_scored_atom
 
-from epath.outputs.files import EpathOutputWorkflowOptions, EpathWorkflowOutputFiles
+from epath.outputs.files import EpathOutputPipelineOptions, EpathPipelineOutputFiles
 from epath.outputs.plots import write_z_score_falloff
 from epath.outputs.structures import (
     EpathStructureOutputError,
@@ -33,33 +31,33 @@ from epath.outputs.tables import (
     write_step_csv,
 )
 from epath.outputs.write import write_epath_outputs
-from epath.workflow import (
-    EpathClusterWorkflowOptions,
-    EpathSelectionWorkflowOptions,
-    EpathWorkflowOptions,
-    EpathWorkflowResult,
-    run_epath_workflow,
+from epath.pipeline import (
+    EpathClusterPipelineOptions,
+    EpathPipelineOptions,
+    EpathPipelineResult,
+    EpathSelectionPipelineOptions,
+    run_epath_pipeline,
 )
+from rabdam.pipeline import run_bdamage_pipeline
 from rabdam.structure.models import RemovedAtomCounts
-from rabdam.workflow import calculate_bdamage_for_structure_data
 from xtal.reader import read_structure
 from xtal.resolver import resolve_structure_input
 
 
 @pytest.fixture(scope="module")
-def result(synthetic_pdb: Path) -> EpathWorkflowResult:
+def result(synthetic_pdb: Path) -> EpathPipelineResult:
     """Return an analysed synthetic crystal with reportable pathways."""
-    bdamage = calculate_bdamage_for_structure_data(
+    bdamage = run_bdamage_pipeline(
         read_structure(resolve_structure_input(str(synthetic_pdb)))
     )
-    options = EpathWorkflowOptions(
-        selection=EpathSelectionWorkflowOptions(percentile=30.0),
-        clustering=EpathClusterWorkflowOptions(minimum_cluster_size=3),
+    options = EpathPipelineOptions(
+        selection=EpathSelectionPipelineOptions(percentile=30.0),
+        clustering=EpathClusterPipelineOptions(minimum_cluster_size=3),
     )
-    workflow_result, files = run_epath_workflow(bdamage, options=options)
-    assert files == EpathWorkflowOutputFiles()
-    assert len(workflow_result.path_reports) >= 1
-    return workflow_result
+    pipeline_result, files = run_epath_pipeline(bdamage, options=options)
+    assert files == EpathPipelineOutputFiles()
+    assert len(pipeline_result.path_reports) >= 1
+    return pipeline_result
 
 
 def _rows(path: Path) -> list[dict[str, str]]:
@@ -68,7 +66,7 @@ def _rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def test_combined_atom_csv(tmp_path: Path, result: EpathWorkflowResult) -> None:
+def test_combined_atom_csv(tmp_path: Path, result: EpathPipelineResult) -> None:
     path = write_combined_atom_csv(
         tmp_path / "nested" / "x_epath.csv",
         result.selection_result,
@@ -100,7 +98,7 @@ def test_combined_atom_csv(tmp_path: Path, result: EpathWorkflowResult) -> None:
     assert sum(row["selected"] == "true" for row in rows) == 23
 
 
-def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathWorkflowResult) -> None:
+def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathPipelineResult) -> None:
     clusters = _rows(
         write_cluster_csv(tmp_path / "x_clusters.csv", result.path_reports)
     )
@@ -234,7 +232,7 @@ def test_atom_subset_cif_keeps_fields_that_do_not_fit_pdb_columns(
 
 
 def test_model_cif_marks_unscored_atoms_with_zero_bdamage(
-    tmp_path: Path, result: EpathWorkflowResult
+    tmp_path: Path, result: EpathPipelineResult
 ) -> None:
     cleaned = result.cleaned_atoms
     assert cleaned is not None
@@ -272,7 +270,7 @@ def test_model_cif_marks_unscored_atoms_with_zero_bdamage(
 
 
 def test_path_subset_cifs_are_zero_padded(
-    tmp_path: Path, result: EpathWorkflowResult
+    tmp_path: Path, result: EpathPipelineResult
 ) -> None:
     paths = write_path_subset_cifs(tmp_path / "run", result.path_reports)
 
@@ -295,7 +293,7 @@ def test_path_subset_cifs_are_zero_padded(
 
 
 def test_z_score_plot_is_written_as_png(
-    tmp_path: Path, result: EpathWorkflowResult
+    tmp_path: Path, result: EpathPipelineResult
 ) -> None:
     path = write_z_score_falloff(
         tmp_path / "plots" / "z.png", result.selection_result, dpi=50
@@ -313,9 +311,9 @@ def test_z_score_plot_is_written_as_png(
 
 
 def test_summary_report_lists_results_and_files(
-    tmp_path: Path, result: EpathWorkflowResult
+    tmp_path: Path, result: EpathPipelineResult
 ) -> None:
-    files = EpathWorkflowOutputFiles(
+    files = EpathPipelineOutputFiles(
         combined_csv=tmp_path / "x_epath.csv", path_cifs=(tmp_path / "x_path01.cif",)
     )
     path = write_summary_txt(tmp_path / "summary.txt", result, output_files=files)
@@ -324,7 +322,7 @@ def test_summary_report_lists_results_and_files(
     assert "Selected atoms: 23 / 77" in text
     assert (
         "Atoms removed before scoring: 1 hydrogen, 1 with invalid occupancy, "
-        "1 with a non-positive B-factor, 1 alternate conformer"
+        "1 without a usable B-factor, 1 alternate conformer"
     ) in text
     assert "Window size used: 11 atoms" in text
     assert "Space group: P 1 21 1" in text
@@ -348,7 +346,7 @@ def test_removed_atoms_line_lists_only_non_zero_counts() -> None:
     )
     assert removed_atoms_line(RemovedAtomCounts(0, 2, 0, 5, 0)) == (
         "Atoms removed before scoring: 2 with non-finite coordinates, "
-        "5 with a non-positive B-factor"
+        "5 without a usable B-factor"
     )
     assert removed_atoms_line(RemovedAtomCounts(0, 0, 0, 0, 0)) == (
         "Atoms removed before scoring: none"
@@ -356,15 +354,15 @@ def test_removed_atoms_line_lists_only_non_zero_counts() -> None:
 
 
 def test_write_epath_outputs_honours_every_toggle(
-    tmp_path: Path, result: EpathWorkflowResult
+    tmp_path: Path, result: EpathPipelineResult
 ) -> None:
     assert (
-        write_epath_outputs(result, EpathOutputWorkflowOptions())
-        == EpathWorkflowOutputFiles()
+        write_epath_outputs(result, EpathOutputPipelineOptions())
+        == EpathPipelineOutputFiles()
     )
 
     everything = write_epath_outputs(
-        result, EpathOutputWorkflowOptions(output_prefix=tmp_path / "all" / "run")
+        result, EpathOutputPipelineOptions(output_prefix=tmp_path / "all" / "run")
     )
     for label, path in output_file_entries(everything):
         assert path.is_file(), label
@@ -376,7 +374,7 @@ def test_write_epath_outputs_honours_every_toggle(
 
     minimal = write_epath_outputs(
         result,
-        EpathOutputWorkflowOptions(
+        EpathOutputPipelineOptions(
             output_prefix=tmp_path / "min" / "run",
             write_combined_csv=False,
             write_structure_files=False,
@@ -387,22 +385,22 @@ def test_write_epath_outputs_honours_every_toggle(
             write_summary_report=False,
         ),
     )
-    assert minimal == EpathWorkflowOutputFiles()
+    assert minimal == EpathPipelineOutputFiles()
     assert not (tmp_path / "min").exists()
 
 
 def test_display_chains_only_trim_the_coordinate_files(
-    tmp_path: Path, result: EpathWorkflowResult
+    tmp_path: Path, result: EpathPipelineResult
 ) -> None:
     from epath.outputs.structures import EpathStructureOutputError
 
     assert result.analyzed_chains == ("A", "B")
     everything = write_epath_outputs(
-        result, EpathOutputWorkflowOptions(output_prefix=tmp_path / "all" / "run")
+        result, EpathOutputPipelineOptions(output_prefix=tmp_path / "all" / "run")
     )
     filtered = write_epath_outputs(
         result,
-        EpathOutputWorkflowOptions(
+        EpathOutputPipelineOptions(
             output_prefix=tmp_path / "b" / "run", display_chains=("B",)
         ),
     )
@@ -438,7 +436,7 @@ def test_display_chains_only_trim_the_coordinate_files(
     with pytest.raises(EpathStructureOutputError, match="not in the model: Z"):
         write_epath_outputs(
             result,
-            EpathOutputWorkflowOptions(
+            EpathOutputPipelineOptions(
                 output_prefix=tmp_path / "z" / "run", display_chains=("Z",)
             ),
         )

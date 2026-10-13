@@ -5,8 +5,6 @@
 to the terminal, so both reports stay in step.
 """
 
-from __future__ import annotations
-
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
@@ -16,21 +14,21 @@ from epath.analysis.clustering import ComponentStatistics
 from epath.analysis.endpoints import CofactorSite, cofactor_site_summary
 from epath.analysis.pathways import PathReport
 from epath.analysis.residues import RESIDUE_CLASS_ORDER
-from epath.outputs.files import EpathWorkflowOutputFiles
-from rabdam.bnet.workflow import BnetWorkflowResult
+from epath.outputs.files import EpathPipelineOutputFiles
+from rabdam.bnet.pipeline import BnetPipelineResult
+from rabdam.pipeline import BDamagePipelineResult
 from rabdam.structure.models import RemovedAtomCounts
-from rabdam.workflow import BDamageWorkflowResult
 from xtal.validate import ValidatedCrystal
 
 if TYPE_CHECKING:
-    from epath.workflow import EpathWorkflowResult
+    from epath.pipeline import EpathPipelineResult
 
 
 def write_summary_txt(
     output_path: str | Path,
-    result: EpathWorkflowResult,
+    result: EpathPipelineResult,
     *,
-    output_files: EpathWorkflowOutputFiles,
+    output_files: EpathPipelineOutputFiles,
     display_chains: Sequence[str] | None = None,
 ) -> Path:
     """Write a persistent human-readable E-path analysis summary."""
@@ -104,13 +102,13 @@ def write_summary_txt(
         lines.append("No atoms selected.")
 
     lines.extend(("", "BDamage calculation", "-------------------"))
-    lines.extend(bdamage_summary_lines(result.bdamage_workflow_result))
+    lines.extend(bdamage_summary_lines(result.bdamage_pipeline_result))
 
     lines.extend(("", "Crystal", "-------"))
     lines.extend(crystal_summary_lines(result.crystal))
 
     lines.extend(("", "RABDAM Bnet results", "--------------------"))
-    lines.extend(bnet_summary_lines(result.bnet_workflow_result))
+    lines.extend(bnet_summary_lines(result.bnet_pipeline_result))
 
     lines.extend(
         _pathway_summary_lines(
@@ -254,19 +252,19 @@ def _composition_text(report: PathReport) -> str:
 
 
 def bdamage_summary_lines(
-    workflow_result: BDamageWorkflowResult | None,
+    pipeline_result: BDamagePipelineResult | None,
 ) -> tuple[str, ...]:
     """Return the atoms removed before scoring and the BDamage parameters."""
-    if workflow_result is None:
+    if pipeline_result is None:
         return ("BDamage parameters: not recorded",)
 
-    options = workflow_result.options
+    options = pipeline_result.options
     return (
-        removed_atoms_line(workflow_result.prepared_structure.removed),
+        removed_atoms_line(pipeline_result.prepared_structure.removed),
         f"Packing density threshold: {_number(options.packing_density_threshold)} A",
         f"Window size fraction: {_number(options.window_size_fraction)}",
         f"Minimum window size: {options.minimum_window_size} atoms",
-        f"Window size used: {workflow_result.window_size} atoms",
+        f"Window size used: {pipeline_result.window_size} atoms",
         f"Unit-cell translation range: {options.translation_range}",
     )
 
@@ -277,7 +275,7 @@ def removed_atoms_line(removed: RemovedAtomCounts) -> str:
         (removed.hydrogens, "hydrogen"),
         (removed.non_finite_coordinates, "with non-finite coordinates"),
         (removed.invalid_occupancy, "with invalid occupancy"),
-        (removed.non_positive_b_factor, "with a non-positive B-factor"),
+        (removed.non_positive_b_factor, "without a usable B-factor"),
         (removed.alternate_conformers, "alternate conformer"),
     )
     reported = ", ".join(
@@ -343,27 +341,27 @@ def _content_lines(crystal: ValidatedCrystal) -> tuple[str, ...]:
 
 
 def bnet_summary_lines(
-    workflow_result: BnetWorkflowResult | None,
+    pipeline_result: BnetPipelineResult | None,
 ) -> tuple[str, ...]:
     """Return the RABDAM Bnet results as report lines."""
-    if workflow_result is None:
+    if pipeline_result is None:
         return ("Bnet: not calculated", "Bnet percentile: not calculated")
 
-    bnet_result = workflow_result.bnet_result
+    bnet_result = pipeline_result.bnet_result
     if bnet_result is None:
-        reason = workflow_result.bnet_unavailable_reason or "not calculated"
+        reason = pipeline_result.bnet_unavailable_reason or "not calculated"
         return (
             f"Bnet: unavailable ({reason})",
-            "Bnet percentile: unavailable (raw Bnet is unavailable)",
+            "Bnet percentile: unavailable (Bnet is unavailable)",
         )
 
     lines = [
         f"Protein Bnet sites: {bnet_result.site_count}",
-        f"Raw protein Bnet: {_number(bnet_result.bnet)}",
+        f"Protein Bnet: {_number(bnet_result.bnet)}",
     ]
-    percentile = workflow_result.percentile_result
+    percentile = pipeline_result.percentile_result
     if percentile is None:
-        reason = workflow_result.percentile_unavailable_reason or "not calculated"
+        reason = pipeline_result.percentile_unavailable_reason or "not calculated"
         lines.append(f"Bnet percentile: unavailable ({reason})")
         return tuple(lines)
 
@@ -386,7 +384,7 @@ def bnet_summary_lines(
 
 
 def output_file_entries(
-    output_files: EpathWorkflowOutputFiles,
+    output_files: EpathPipelineOutputFiles,
 ) -> tuple[tuple[str, Path], ...]:
     """Return (label, path) pairs for every output file that was written."""
     entries: tuple[tuple[str, Path | None], ...] = (

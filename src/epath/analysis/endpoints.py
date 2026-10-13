@@ -12,8 +12,6 @@ can also pass a cofactor part-way along its length, so the nearest cofactor to
 any of its atoms is reported separately as its anchor.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal

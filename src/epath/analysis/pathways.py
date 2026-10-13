@@ -10,8 +10,6 @@ These are measurements, reported as the basis for interpreting a path with
 the protein's known chemistry in view.
 """
 
-from __future__ import annotations
-
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass

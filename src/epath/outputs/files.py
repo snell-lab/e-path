@@ -1,13 +1,11 @@
 """Options and path records shared by the E-path output modules."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
-class EpathOutputWorkflowOptions:
+class EpathOutputPipelineOptions:
     """Options controlling E-path output files."""
 
     output_prefix: str | Path | None = None
@@ -24,8 +22,8 @@ class EpathOutputWorkflowOptions:
 
 
 @dataclass(frozen=True, slots=True)
-class EpathWorkflowOutputFiles:
-    """Files written by an E-path workflow run."""
+class EpathPipelineOutputFiles:
+    """Files written by an E-path pipeline run."""
 
     combined_csv: Path | None = None
     selected_cif: Path | None = None

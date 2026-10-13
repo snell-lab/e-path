@@ -1,10 +1,8 @@
 """Build E-path atom records from RABDAM atom-level BDamage output."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
-from rabdam.workflow import BDamageWorkflowResult
+from rabdam.pipeline import BDamagePipelineResult
 
 
 class EpathAtomError(ValueError):
@@ -35,16 +33,16 @@ class EpathAtom:
     bdamage: float
 
 
-def atoms_from_bdamage_workflow(
-    workflow_result: BDamageWorkflowResult,
+def atoms_from_bdamage_pipeline(
+    pipeline_result: BDamagePipelineResult,
 ) -> tuple[EpathAtom, ...]:
-    """Build E-path atom records from a completed RABDAM BDamage workflow.
+    """Build E-path atom records from a completed RABDAM BDamage pipeline.
 
     BDamage results pair with selected atoms by position, so each pair must
     refer to the same source atom.
     """
-    selected_atoms = workflow_result.prepared_structure.selected_atoms
-    bdamage_results = workflow_result.bdamage_score_result.atom_results
+    selected_atoms = pipeline_result.prepared_structure.selected_atoms
+    bdamage_results = pipeline_result.bdamage_results
 
     epath_atoms: list[EpathAtom] = []
     for atom, bdamage_result in zip(selected_atoms, bdamage_results, strict=True):

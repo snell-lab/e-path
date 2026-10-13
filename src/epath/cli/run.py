@@ -2,10 +2,8 @@
 
 This module turns parsed arguments into single or batch runs: resolving and
 reading inputs, running the RABDAM BDamage stages, and handing the result to
-the E-path workflow. Terminal reporting lives in `epath.cli.report`.
+the E-path pipeline. Terminal reporting lives in `epath.cli.report`.
 """
-
-from __future__ import annotations
 
 import argparse
 import re
@@ -14,11 +12,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import TextIO, TypeVar
+from typing import TextIO
 
 from epath.cli.args import (
-    bdamage_workflow_options_from_args,
-    epath_workflow_options_from_args,
+    bdamage_pipeline_options_from_args,
+    epath_pipeline_options_from_args,
     single_output_prefix_from_args,
 )
 from epath.cli.report import (
@@ -26,13 +24,13 @@ from epath.cli.report import (
     print_epath_summary,
     print_error,
 )
-from epath.outputs.files import EpathWorkflowOutputFiles
+from epath.outputs.files import EpathPipelineOutputFiles
 from epath.outputs.tables import write_run_csv
-from epath.workflow import EpathWorkflowResult, run_epath_workflow
-from rabdam.workflow import (
-    BDamageWorkflowResult,
-    WorkflowStageRunner,
-    calculate_bdamage_for_structure_data,
+from epath.pipeline import EpathPipelineResult, run_epath_pipeline
+from rabdam.pipeline import (
+    BDamagePipelineResult,
+    PipelineStageRunner,
+    run_bdamage_pipeline,
 )
 from xtal.rcsb import download_rcsb_mmcif
 from xtal.reader import read_structure
@@ -50,8 +48,6 @@ BATCH_COHORT_CSV_NAME = "epath_runs.csv"
 # ValueError, so it covers them all.
 RABDAM_CLI_ERRORS = (ValueError, OSError)
 
-T = TypeVar("T")
-
 
 @dataclass(frozen=True, slots=True)
 class EpathCliResult:
@@ -59,8 +55,8 @@ class EpathCliResult:
 
     local_input: ResolvedStructureInput
     output_prefix: Path
-    workflow_result: EpathWorkflowResult
-    output_files: EpathWorkflowOutputFiles
+    pipeline_result: EpathPipelineResult
+    output_files: EpathPipelineOutputFiles
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +90,7 @@ def run_from_args(
     stderr: TextIO = sys.stderr,
     total_runtime_start: float | None = None,
 ) -> EpathCliResult | EpathBatchCliResult:
-    """Run the full E-path workflow from parsed command-line arguments.
+    """Run the full E-path pipeline from parsed command-line arguments.
 
     Raises:
         ValueError: If no structure input was given, or if `--output-prefix`
@@ -136,11 +132,11 @@ def run_single_structure(
     total_runtime_start: float,
     used_batch_output_prefixes: set[Path] | None = None,
 ) -> EpathCliResult:
-    """Run the full E-path workflow for one structure input."""
+    """Run the full E-path pipeline for one structure input."""
 
-    # A named generic function rather than a lambda so each workflow stage
-    # callback keeps its return type through WorkflowStageRunner.
-    def stage_runner(label: str, callback: Callable[[], T]) -> T:
+    # A named generic function rather than a lambda so each pipeline stage
+    # callback keeps its return type through PipelineStageRunner.
+    def stage_runner[T](label: str, callback: Callable[[], T]) -> T:
         return run_stage(label, callback, stream=stderr, quiet=args.quiet)
 
     local_input, bdamage_result = calculate_bdamage_from_args(
@@ -156,11 +152,11 @@ def run_single_structure(
             used_output_prefixes=used_batch_output_prefixes,
         )
 
-    options = epath_workflow_options_from_args(
+    options = epath_pipeline_options_from_args(
         args,
         output_prefix=output_prefix,
     )
-    workflow_result, output_files = run_epath_workflow(
+    pipeline_result, output_files = run_epath_pipeline(
         bdamage_result,
         structure_path=local_input.local_path,
         options=options,
@@ -169,7 +165,7 @@ def run_single_structure(
     cli_result = EpathCliResult(
         local_input=local_input,
         output_prefix=output_prefix,
-        workflow_result=workflow_result,
+        pipeline_result=pipeline_result,
         output_files=output_files,
     )
 
@@ -193,7 +189,7 @@ def run_batch(
     stderr: TextIO,
     total_runtime_start: float,
 ) -> EpathBatchCliResult:
-    """Run the full E-path workflow for multiple structure inputs.
+    """Run the full E-path pipeline for multiple structure inputs.
 
     Raises:
         ValueError: If `--output-prefix` is combined with several structure
@@ -242,7 +238,7 @@ def run_batch(
     cohort_csv = (
         write_run_csv(
             output_dir / BATCH_COHORT_CSV_NAME,
-            (result.workflow_result.run_record for result in results),
+            (result.pipeline_result.run_record for result in results),
         )
         if results and not args.no_reports
         else None
@@ -266,10 +262,10 @@ def calculate_bdamage_from_args(
     args: argparse.Namespace,
     *,
     structure_input: str,
-    stage_runner: WorkflowStageRunner,
-) -> tuple[ResolvedStructureInput, BDamageWorkflowResult]:
+    stage_runner: PipelineStageRunner,
+) -> tuple[ResolvedStructureInput, BDamagePipelineResult]:
     """Resolve one input, read it, and run the RABDAM BDamage stages."""
-    workflow_options = bdamage_workflow_options_from_args(args)
+    pipeline_options = bdamage_pipeline_options_from_args(args)
 
     resolved = stage_runner(
         "Resolving input",
@@ -289,13 +285,13 @@ def calculate_bdamage_from_args(
         "Reading structure",
         lambda: read_structure(local_input),
     )
-    workflow_result = calculate_bdamage_for_structure_data(
+    pipeline_result = run_bdamage_pipeline(
         structure_data,
-        workflow_options=workflow_options,
+        options=pipeline_options,
         stage_runner=stage_runner,
     )
 
-    return local_input, workflow_result
+    return local_input, pipeline_result
 
 
 def batch_output_prefix_path(
@@ -366,7 +362,7 @@ def _label_from_file_name(name: str) -> str:
     return stem
 
 
-def run_stage(
+def run_stage[T](
     label: str,
     callback: Callable[[], T],
     *,

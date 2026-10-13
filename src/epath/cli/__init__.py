@@ -1,12 +1,10 @@
 """Command-line interface for E-path, with `main` as its entry point.
 
-- `args` parses arguments into workflow options.
+- `args` parses arguments into pipeline options.
 - `run` resolves inputs and runs the RABDAM and E-path stages.
 - `report` prints the terminal summaries.
 - `style` colours and wraps terminal output.
 """
-
-from __future__ import annotations
 
 import sys
 from collections.abc import Sequence

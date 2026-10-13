@@ -8,8 +8,6 @@ warnings and errors are highlighted when the stream is a colour terminal
 (see `epath.cli.style`).
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING, TextIO
 
@@ -22,11 +20,10 @@ from epath.outputs.summary import (
     output_file_entries,
 )
 from rabdam.bdamage import bdamage_scores_as_tuple
-from rabdam.packing import packing_density_counts_as_tuple
 
 if TYPE_CHECKING:
     from epath.cli.run import EpathBatchCliResult, EpathCliResult
-    from epath.workflow import EpathWorkflowResult
+    from epath.pipeline import EpathPipelineResult
 
 CITATIONS_MESSAGE = """Please cite:
 
@@ -81,9 +78,9 @@ def print_epath_summary(
     stream: TextIO,
 ) -> None:
     """Print a compact full E-path run summary."""
-    workflow_result = result.workflow_result
-    bdamage_result = workflow_result.bdamage_workflow_result
-    # The CLI always runs E-path from its own BDamage workflow.
+    pipeline_result = result.pipeline_result
+    bdamage_result = pipeline_result.bdamage_pipeline_result
+    # The CLI always runs E-path from its own BDamage pipeline.
     assert bdamage_result is not None
     crystal = bdamage_result.crystal
 
@@ -101,15 +98,15 @@ def print_epath_summary(
     )
     _print_section(
         "E-path selection:",
-        _selection_lines(workflow_result),
+        _selection_lines(pipeline_result),
         stream=stream,
     )
     _print_section(
         "RABDAM Bnet results:",
-        bnet_summary_lines(workflow_result.bnet_workflow_result),
+        bnet_summary_lines(pipeline_result.bnet_pipeline_result),
         stream=stream,
     )
-    _print_section("Pathways:", _pathway_lines(workflow_result), stream=stream)
+    _print_section("Pathways:", _pathway_lines(pipeline_result), stream=stream)
     _print_section(
         "Outputs:",
         (
@@ -120,10 +117,8 @@ def print_epath_summary(
     )
 
     if preview_count > 0:
-        packing_density_counts = packing_density_counts_as_tuple(
-            bdamage_result.packing_density_result
-        )[:preview_count]
-        bdamage_scores = bdamage_scores_as_tuple(bdamage_result.bdamage_score_result)[
+        packing_density_counts = bdamage_result.packing_densities[:preview_count]
+        bdamage_scores = bdamage_scores_as_tuple(bdamage_result.bdamage_results)[
             :preview_count
         ]
         _print_section(
@@ -171,10 +166,10 @@ def print_epath_batch_summary(
     _print_section("Batch summary:", lines, stream=stream)
 
 
-def _selection_lines(workflow_result: EpathWorkflowResult) -> tuple[str, ...]:
-    selection_result = workflow_result.selection_result
+def _selection_lines(pipeline_result: EpathPipelineResult) -> tuple[str, ...]:
+    selection_result = pipeline_result.selection_result
     return (
-        "Chains: " + ", ".join(workflow_result.analyzed_chains),
+        "Chains: " + ", ".join(pipeline_result.analyzed_chains),
         f"Method: {selection_result.description}",
         (
             f"Selected atoms: {len(selection_result.selected_atoms)} "
@@ -187,17 +182,17 @@ def _selection_lines(workflow_result: EpathWorkflowResult) -> tuple[str, ...]:
     )
 
 
-def _pathway_lines(workflow_result: EpathWorkflowResult) -> tuple[str, ...]:
-    reports = workflow_result.path_reports
+def _pathway_lines(pipeline_result: EpathPipelineResult) -> tuple[str, ...]:
+    reports = pipeline_result.path_reports
     lines = [
-        f"Connected components: {workflow_result.component_statistics.total_count}",
+        f"Connected components: {pipeline_result.component_statistics.total_count}",
         f"Count: {len(reports)}",
     ]
     if reports:
         anchored = sum(report.is_cofactor_anchored for report in reports)
         lines.append(f"Within range of a cofactor: {anchored}")
     lines.append(
-        f"Cofactor sites: {cofactor_site_summary(workflow_result.cofactor_sites)}"
+        f"Cofactor sites: {cofactor_site_summary(pipeline_result.cofactor_sites)}"
     )
     lines.extend(
         f"Path {report.path_id} "

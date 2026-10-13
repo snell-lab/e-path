@@ -18,8 +18,6 @@ shape of the residues a path runs through. A fork in the path itself is a
 residue in contact with three or more other residues of the same cluster.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal

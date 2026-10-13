@@ -1,7 +1,5 @@
 """Distance geometry, spanning trees, and connectivity clustering."""
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 from support import approx, scored_atoms_from_coordinates

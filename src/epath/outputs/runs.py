@@ -13,15 +13,13 @@ can determine.
 The rows are written by `epath.outputs.tables`, with the other CSV outputs.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from epath.analysis.clustering import ComponentStatistics, EpathCluster
 from epath.analysis.selection import EpathSelectionResult
-from rabdam.bnet.workflow import BnetWorkflowResult
+from rabdam.bnet.pipeline import BnetPipelineResult
 from xtal.resolver import split_structure_file_name
 
 
@@ -59,7 +57,7 @@ def build_run_record(
     statistics: ComponentStatistics,
     minimum_cluster_size: int,
     cutoff_percent: float,
-    bnet_workflow_result: BnetWorkflowResult | None = None,
+    bnet_pipeline_result: BnetPipelineResult | None = None,
 ) -> EpathRunRecord:
     """Collect one structure's run-level results into a single record.
 
@@ -69,7 +67,7 @@ def build_run_record(
     """
     path = Path(structure_path) if structure_path is not None else None
     metrics = statistics.largest_metrics
-    bnet, bnet_percentile = _bnet_values(bnet_workflow_result)
+    bnet, bnet_percentile = _bnet_values(bnet_pipeline_result)
 
     return EpathRunRecord(
         structure=split_structure_file_name(path.name)[0] if path is not None else "",
@@ -98,14 +96,14 @@ def build_run_record(
 
 
 def _bnet_values(
-    workflow_result: BnetWorkflowResult | None,
+    pipeline_result: BnetPipelineResult | None,
 ) -> tuple[float | None, float | None]:
-    if workflow_result is None or workflow_result.bnet_result is None:
+    if pipeline_result is None or pipeline_result.bnet_result is None:
         return None, None
 
-    percentile = workflow_result.percentile_result
+    percentile = pipeline_result.percentile_result
 
     return (
-        workflow_result.bnet_result.bnet,
+        pipeline_result.bnet_result.bnet,
         percentile.percentile_percent if percentile is not None else None,
     )

@@ -1,11 +1,9 @@
 """Command-line argument parsing for E-path.
 
 This module owns the argparse parser, the argument validators, and the
-translation from a parsed namespace into workflow option objects. It does not
+translation from a parsed namespace into pipeline option objects. It does not
 run anything.
 """
-
-from __future__ import annotations
 
 import argparse
 import math
@@ -15,13 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from epath import __version__
-from epath.outputs.files import EpathOutputWorkflowOptions
-from epath.workflow import (
-    EpathClusterWorkflowOptions,
-    EpathSelectionWorkflowOptions,
-    EpathWorkflowOptions,
+from epath.outputs.files import EpathOutputPipelineOptions
+from epath.pipeline import (
+    EpathClusterPipelineOptions,
+    EpathPipelineOptions,
+    EpathSelectionPipelineOptions,
 )
-from rabdam.workflow import BDamageWorkflowOptions
+from rabdam.pipeline import BDamagePipelineOptions
 from xtal.rcsb import DEFAULT_RCSB_DOWNLOAD_DIR
 from xtal.resolver import COMPRESSED_SUFFIX, SUPPORTED_STRUCTURE_SUFFIXES
 
@@ -38,13 +36,13 @@ combined '*_epath.csv' output."""
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the full E-path workflow parser."""
-    bdamage_defaults = BDamageWorkflowOptions()
-    epath_defaults = EpathWorkflowOptions()
+    """Build the full E-path pipeline parser."""
+    bdamage_defaults = BDamagePipelineOptions()
+    epath_defaults = EpathPipelineOptions()
     parser = argparse.ArgumentParser(
         prog="epath",
         usage="%(prog)s STRUCTURE_INPUT [STRUCTURE_INPUT ...] [options]",
-        description="Run the full E-path workflow for structure files or PDB IDs.",
+        description="Run the full E-path pipeline for structure files or PDB IDs.",
         add_help=False,
     )
     input_group = parser.add_argument_group("input")
@@ -140,7 +138,7 @@ def _add_output_arguments(group: Any) -> None:
 def _add_epath_selection_arguments(
     group: Any,
     *,
-    defaults: EpathWorkflowOptions,
+    defaults: EpathPipelineOptions,
 ) -> None:
     group.add_argument(
         "--percentile",
@@ -157,7 +155,7 @@ def _add_epath_selection_arguments(
 def _add_epath_advanced_arguments(
     group: Any,
     *,
-    defaults: EpathWorkflowOptions,
+    defaults: EpathPipelineOptions,
 ) -> None:
     group.add_argument(
         "--cluster-distance",
@@ -228,7 +226,7 @@ def _add_download_arguments(group: Any) -> None:
 def _add_bdamage_calculation_arguments(
     group: Any,
     *,
-    defaults: BDamageWorkflowOptions,
+    defaults: BDamagePipelineOptions,
 ) -> None:
     group.add_argument(
         "--packing-density-threshold",
@@ -273,11 +271,6 @@ def _add_bdamage_calculation_arguments(
 
 
 def _add_bdamage_debug_arguments(group: Any) -> None:
-    group.add_argument(
-        "--materialize-translated-block",
-        action="store_true",
-        help="Build the full translated crystal block for debugging.",
-    )
     group.add_argument(
         "--preview-count",
         metavar="INT",
@@ -364,34 +357,33 @@ def single_output_prefix_from_args(args: argparse.Namespace) -> Path | None:
     return None
 
 
-def bdamage_workflow_options_from_args(
+def bdamage_pipeline_options_from_args(
     args: argparse.Namespace,
-) -> BDamageWorkflowOptions:
-    """Build BDamage workflow options from parsed command-line arguments."""
-    return BDamageWorkflowOptions(
+) -> BDamagePipelineOptions:
+    """Build BDamage pipeline options from parsed command-line arguments."""
+    return BDamagePipelineOptions(
         packing_density_threshold=args.packing_density_threshold,
         window_size_fraction=args.window_size_fraction,
         minimum_window_size=args.minimum_window_size,
         translation_range=args.translation_range,
-        materialize_translated_block=args.materialize_translated_block,
     )
 
 
-def epath_workflow_options_from_args(
+def epath_pipeline_options_from_args(
     args: argparse.Namespace,
     *,
     output_prefix: Path | None,
-) -> EpathWorkflowOptions:
-    """Build full E-path workflow options from parsed command-line arguments."""
-    return EpathWorkflowOptions(
-        selection=EpathSelectionWorkflowOptions(
+) -> EpathPipelineOptions:
+    """Build full E-path pipeline options from parsed command-line arguments."""
+    return EpathPipelineOptions(
+        selection=EpathSelectionPipelineOptions(
             percentile=args.percentile,
         ),
-        clustering=EpathClusterWorkflowOptions(
+        clustering=EpathClusterPipelineOptions(
             distance_cutoff=args.cluster_distance,
             minimum_cluster_size=args.minimum_cluster_size,
         ),
-        output=EpathOutputWorkflowOptions(
+        output=EpathOutputPipelineOptions(
             output_prefix=output_prefix,
             write_combined_csv=not args.no_csv,
             write_structure_files=not args.no_cif,

@@ -5,8 +5,6 @@ multi-character chain identifiers, large atom counts, and residue numbers
 outside the fixed-width PDB columns exactly as they were read.
 """
 
-from __future__ import annotations
-
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass

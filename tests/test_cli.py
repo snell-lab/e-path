@@ -1,11 +1,8 @@
 """The command-line interface: parsing, single runs, batches, and the launcher."""
 
-from __future__ import annotations
-
 import csv
 import gzip
 import io
-import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -19,8 +16,8 @@ from epath import __version__
 from epath.cli import main
 from epath.cli.args import (
     REMOVED_BDAMAGE_COMMAND_MESSAGE,
-    bdamage_workflow_options_from_args,
-    epath_workflow_options_from_args,
+    bdamage_pipeline_options_from_args,
+    epath_pipeline_options_from_args,
     fraction_float,
     parse_args,
     percent_float,
@@ -50,7 +47,7 @@ def _rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
-def test_defaults_mirror_the_workflow_options() -> None:
+def test_defaults_mirror_the_pipeline_options() -> None:
     args = parse_args(["model.pdb"])
 
     assert args.structure_inputs == ["model.pdb"]
@@ -63,7 +60,7 @@ def test_defaults_mirror_the_workflow_options() -> None:
         args.no_csv or args.no_cif or args.no_plot or args.no_reports or args.quiet
     )
 
-    options = epath_workflow_options_from_args(
+    options = epath_pipeline_options_from_args(
         parse_args(
             [
                 "a.pdb",
@@ -92,7 +89,7 @@ def test_defaults_mirror_the_workflow_options() -> None:
         and options.output.write_structure_files
     )
 
-    bdamage = bdamage_workflow_options_from_args(
+    bdamage = bdamage_pipeline_options_from_args(
         parse_args(
             [
                 "a.pdb",
@@ -100,15 +97,10 @@ def test_defaults_mirror_the_workflow_options() -> None:
                 "6.5",
                 "--translation-range",
                 "2",
-                "--materialize-translated-block",
             ]
         )
     )
-    assert (
-        bdamage.packing_density_threshold == 6.5
-        and bdamage.translation_range == 2
-        and bdamage.materialize_translated_block
-    )
+    assert bdamage.packing_density_threshold == 6.5 and bdamage.translation_range == 2
 
     batch = parse_args(["a.pdb", "b.pdb"])
     assert batch.structure_inputs == ["a.pdb", "b.pdb"]
@@ -325,7 +317,7 @@ def test_batch_run_writes_a_cohort_table_with_unique_prefixes(
 ) -> None:
     duplicate = tmp_path / "copy" / "synthetic.pdb"
     duplicate.parent.mkdir()
-    shutil.copy(synthetic_pdb, duplicate)
+    synthetic_pdb.copy(duplicate)
     out_dir = tmp_path / "batch"
 
     code, out, err = _run(

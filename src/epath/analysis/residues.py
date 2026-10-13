@@ -14,8 +14,6 @@ than a fixed reference table, so a class is only called enriched when the path
 is unusual for the structure it came from.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal

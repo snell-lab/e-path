@@ -1,7 +1,5 @@
 """Select candidate E-path atoms from atom-level BDamage records."""
 
-from __future__ import annotations
-
 import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass

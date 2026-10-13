@@ -1,13 +1,11 @@
 """Coordinate the output files written for an E-path run."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from epath.outputs.files import (
-    EpathOutputWorkflowOptions,
-    EpathWorkflowOutputFiles,
+    EpathOutputPipelineOptions,
+    EpathPipelineOutputFiles,
 )
 from epath.outputs.plots import plot_z_falloff
 from epath.outputs.structures import write_structure_outputs
@@ -20,16 +18,16 @@ from epath.outputs.tables import (
 )
 
 if TYPE_CHECKING:
-    from epath.workflow import EpathWorkflowResult
+    from epath.pipeline import EpathPipelineResult
 
 
 def write_epath_outputs(
-    result: EpathWorkflowResult,
-    options: EpathOutputWorkflowOptions,
-) -> EpathWorkflowOutputFiles:
+    result: EpathPipelineResult,
+    options: EpathOutputPipelineOptions,
+) -> EpathPipelineOutputFiles:
     """Write enabled E-path artifacts for a result and return their paths."""
     if options.output_prefix is None:
-        return EpathWorkflowOutputFiles()
+        return EpathPipelineOutputFiles()
 
     prefix = Path(options.output_prefix)
     selection_result = result.selection_result
@@ -85,7 +83,7 @@ def write_epath_outputs(
     summary_report = (
         _output_path(prefix, "summary.txt") if options.write_summary_report else None
     )
-    output_files = EpathWorkflowOutputFiles(
+    output_files = EpathPipelineOutputFiles(
         combined_csv=combined_csv,
         cluster_csv=cluster_csv,
         step_csv=step_csv,

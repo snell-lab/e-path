@@ -4,8 +4,6 @@ The falloff plot ranks atoms by ascending BDamage Z-score and shows the
 negative tail, which is the region E-path selects from.
 """
 
-from __future__ import annotations
-
 import math
 import os
 import tempfile

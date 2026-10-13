@@ -1,7 +1,5 @@
 """Cluster selected E-path atoms by spatial connectivity."""
 
-from __future__ import annotations
-
 import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass

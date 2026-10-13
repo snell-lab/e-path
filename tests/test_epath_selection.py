@@ -1,7 +1,5 @@
 """E-path atom selection: Z-scores and percentiles."""
 
-from __future__ import annotations
-
 import math
 from collections.abc import Sequence
 

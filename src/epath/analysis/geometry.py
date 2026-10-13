@@ -1,7 +1,5 @@
 """Distance and spanning-tree geometry shared by the E-path analysis layers."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 import numpy as np

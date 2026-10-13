@@ -1,6 +1,4 @@
-"""The E-path analysis workflow, with and without a BDamage result behind it."""
-
-from __future__ import annotations
+"""The E-path analysis pipeline, with and without a BDamage result behind it."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -11,15 +9,15 @@ from support import approx, make_epath_atom
 
 from epath.analysis.atoms import EpathAtom
 from epath.analysis.pathways import PathAnalysisOptions
-from epath.workflow import (
-    EpathClusterWorkflowOptions,
-    EpathSelectionWorkflowOptions,
-    EpathWorkflowError,
-    EpathWorkflowOptions,
+from epath.pipeline import (
+    EpathClusterPipelineOptions,
+    EpathPipelineError,
+    EpathPipelineOptions,
+    EpathSelectionPipelineOptions,
     analyze_epath_atoms,
-    run_epath_workflow,
+    run_epath_pipeline,
 )
-from rabdam.workflow import calculate_bdamage_for_structure_data
+from rabdam.pipeline import run_bdamage_pipeline
 from xtal.reader import read_structure
 from xtal.resolver import resolve_structure_input
 
@@ -66,9 +64,9 @@ def _grid_atoms() -> tuple[EpathAtom, ...]:
 
 
 def test_analysis_without_a_bdamage_result_degrades_gracefully() -> None:
-    options = EpathWorkflowOptions(
-        selection=EpathSelectionWorkflowOptions(percentile=90.0),
-        clustering=EpathClusterWorkflowOptions(
+    options = EpathPipelineOptions(
+        selection=EpathSelectionPipelineOptions(percentile=90.0),
+        clustering=EpathClusterPipelineOptions(
             distance_cutoff=3.0, minimum_cluster_size=3
         ),
     )
@@ -88,7 +86,7 @@ def test_analysis_without_a_bdamage_result_degrades_gracefully() -> None:
     assert report.end_endpoint.kind in {"surface", "buried"}
     assert result.cofactor_sites == ()
     assert (
-        result.bnet_workflow_result is None
+        result.bnet_pipeline_result is None
         and result.crystal is None
         and result.cleaned_atoms is None
     )
@@ -116,9 +114,9 @@ def test_analysis_without_a_bdamage_result_degrades_gracefully() -> None:
 
 
 def test_largest_component_is_recorded_even_when_nothing_is_reported() -> None:
-    options = EpathWorkflowOptions(
-        selection=EpathSelectionWorkflowOptions(percentile=90.0),
-        clustering=EpathClusterWorkflowOptions(
+    options = EpathPipelineOptions(
+        selection=EpathSelectionPipelineOptions(percentile=90.0),
+        clustering=EpathClusterPipelineOptions(
             distance_cutoff=3.0, minimum_cluster_size=8
         ),
     )
@@ -133,20 +131,20 @@ def test_largest_component_is_recorded_even_when_nothing_is_reported() -> None:
     assert result.structure_path is None and result.run_record.structure == ""
 
 
-def test_workflow_validation() -> None:
-    with pytest.raises(EpathWorkflowError, match="at least one atom"):
+def test_pipeline_validation() -> None:
+    with pytest.raises(EpathPipelineError, match="at least one atom"):
         analyze_epath_atoms(())
-    with pytest.raises(EpathWorkflowError, match="minimum_cluster_size"):
+    with pytest.raises(EpathPipelineError, match="minimum_cluster_size"):
         analyze_epath_atoms(
             _grid_atoms(),
-            options=EpathWorkflowOptions(
-                clustering=EpathClusterWorkflowOptions(minimum_cluster_size=0)
+            options=EpathPipelineOptions(
+                clustering=EpathClusterPipelineOptions(minimum_cluster_size=0)
             ),
         )
 
 
-def test_workflow_from_a_bdamage_result(synthetic_pdb: Path) -> None:
-    bdamage = calculate_bdamage_for_structure_data(
+def test_pipeline_from_a_bdamage_result(synthetic_pdb: Path) -> None:
+    bdamage = run_bdamage_pipeline(
         read_structure(resolve_structure_input(str(synthetic_pdb)))
     )
     stages: list[str] = []
@@ -155,12 +153,12 @@ def test_workflow_from_a_bdamage_result(synthetic_pdb: Path) -> None:
         stages.append(label)
         return callback()
 
-    options = EpathWorkflowOptions(
-        selection=EpathSelectionWorkflowOptions(percentile=30.0),
-        clustering=EpathClusterWorkflowOptions(minimum_cluster_size=3),
+    options = EpathPipelineOptions(
+        selection=EpathSelectionPipelineOptions(percentile=30.0),
+        clustering=EpathClusterPipelineOptions(minimum_cluster_size=3),
         paths=PathAnalysisOptions(cofactor_proximity_distance=6.0),
     )
-    result, files = run_epath_workflow(
+    result, files = run_epath_pipeline(
         bdamage, options=options, stage_runner=stage_runner
     )
 
@@ -168,16 +166,16 @@ def test_workflow_from_a_bdamage_result(synthetic_pdb: Path) -> None:
     assert files.combined_csv is None
     assert result.analyzed_chains == ("A", "B")
     assert result.selection_result.method == "percentile"
-    assert result.bdamage_workflow_result is bdamage
+    assert result.bdamage_pipeline_result is bdamage
     assert result.crystal is bdamage.crystal
     assert result.cleaned_atoms is not None and len(result.cleaned_atoms) == 84
     assert [site.label for site in result.cofactor_sites] == ["FMN"]
     assert (
-        result.bnet_workflow_result is not None
-        and result.bnet_workflow_result.bnet_result is not None
+        result.bnet_pipeline_result is not None
+        and result.bnet_pipeline_result.bnet_result is not None
     )
     assert result.run_record.bnet == approx(
-        result.bnet_workflow_result.bnet_result.bnet
+        result.bnet_pipeline_result.bnet_result.bnet
     )
     assert result.run_record.structure == "synthetic"
     assert result.run_record.input_path == str(synthetic_pdb.resolve())

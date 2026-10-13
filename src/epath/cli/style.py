@@ -5,8 +5,6 @@ Colour is only emitted when the stream is an interactive terminal and the
 stays plain text.
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import sys

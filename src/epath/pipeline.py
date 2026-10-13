@@ -1,13 +1,10 @@
-"""End-to-end E-path analysis workflow."""
-
-from __future__ import annotations
+"""End-to-end E-path analysis pipeline."""
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypeVar
 
-from epath.analysis.atoms import EpathAtom, atoms_from_bdamage_workflow
+from epath.analysis.atoms import EpathAtom, atoms_from_bdamage_pipeline
 from epath.analysis.clustering import (
     DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
     ComponentStatistics,
@@ -22,32 +19,30 @@ from epath.analysis.selection import (
     select_atoms_by_percentile,
 )
 from epath.outputs.files import (
-    EpathOutputWorkflowOptions,
-    EpathWorkflowOutputFiles,
+    EpathOutputPipelineOptions,
+    EpathPipelineOutputFiles,
 )
 from epath.outputs.runs import EpathRunRecord, build_run_record
 from epath.outputs.write import write_epath_outputs
-from rabdam.bnet.workflow import BnetWorkflowResult, calculate_bnet_workflow
+from rabdam.bnet.pipeline import BnetPipelineResult, run_bnet_pipeline
+from rabdam.pipeline import BDamagePipelineResult, PipelineStageRunner
 from rabdam.structure.models import PreparedAtom
-from rabdam.workflow import BDamageWorkflowResult, WorkflowStageRunner
 from xtal.validate import ValidatedCrystal
 
-T = TypeVar("T")
 
-
-class EpathWorkflowError(ValueError):
-    """Raised when E-path cannot run the analysis workflow."""
+class EpathPipelineError(ValueError):
+    """Raised when E-path cannot run the analysis pipeline."""
 
 
 @dataclass(frozen=True, slots=True)
-class EpathSelectionWorkflowOptions:
+class EpathSelectionPipelineOptions:
     """Options controlling E-path atom selection."""
 
     percentile: float = 2.0
 
 
 @dataclass(frozen=True, slots=True)
-class EpathClusterWorkflowOptions:
+class EpathClusterPipelineOptions:
     """Options controlling E-path cluster construction."""
 
     distance_cutoff: float = DEFAULT_CLUSTER_DISTANCE_ANGSTROM
@@ -55,24 +50,24 @@ class EpathClusterWorkflowOptions:
 
 
 @dataclass(frozen=True, slots=True)
-class EpathWorkflowOptions:
-    """Options for the complete E-path analysis workflow."""
+class EpathPipelineOptions:
+    """Options for the complete E-path analysis pipeline."""
 
-    selection: EpathSelectionWorkflowOptions = field(
-        default_factory=EpathSelectionWorkflowOptions
+    selection: EpathSelectionPipelineOptions = field(
+        default_factory=EpathSelectionPipelineOptions
     )
-    clustering: EpathClusterWorkflowOptions = field(
-        default_factory=EpathClusterWorkflowOptions
+    clustering: EpathClusterPipelineOptions = field(
+        default_factory=EpathClusterPipelineOptions
     )
     paths: PathAnalysisOptions = field(default_factory=PathAnalysisOptions)
-    output: EpathOutputWorkflowOptions = field(
-        default_factory=EpathOutputWorkflowOptions
+    output: EpathOutputPipelineOptions = field(
+        default_factory=EpathOutputPipelineOptions
     )
 
 
 @dataclass(frozen=True, slots=True)
-class EpathWorkflowResult:
-    """Complete result of an E-path analysis workflow."""
+class EpathPipelineResult:
+    """Complete result of an E-path analysis pipeline."""
 
     atoms: tuple[EpathAtom, ...]
     selection_result: EpathSelectionResult
@@ -81,8 +76,8 @@ class EpathWorkflowResult:
     path_reports: tuple[PathReport, ...]
     cofactor_sites: tuple[CofactorSite, ...]
     run_record: EpathRunRecord
-    bdamage_workflow_result: BDamageWorkflowResult | None = None
-    bnet_workflow_result: BnetWorkflowResult | None = None
+    bdamage_pipeline_result: BDamagePipelineResult | None = None
+    bnet_pipeline_result: BnetPipelineResult | None = None
 
     @property
     def analyzed_chains(self) -> tuple[str, ...]:
@@ -96,41 +91,41 @@ class EpathWorkflowResult:
 
     @property
     def crystal(self) -> ValidatedCrystal | None:
-        """Validated crystal from the BDamage workflow, when available."""
-        if self.bdamage_workflow_result is None:
+        """Validated crystal from the BDamage pipeline, when available."""
+        if self.bdamage_pipeline_result is None:
             return None
-        return self.bdamage_workflow_result.crystal
+        return self.bdamage_pipeline_result.crystal
 
     @property
     def cleaned_atoms(self) -> tuple[PreparedAtom, ...] | None:
-        """Cleaned model atoms from the BDamage workflow, when available."""
-        if self.bdamage_workflow_result is None:
+        """Cleaned model atoms from the BDamage pipeline, when available."""
+        if self.bdamage_pipeline_result is None:
             return None
-        return self.bdamage_workflow_result.prepared_structure.cleaned_atoms
+        return self.bdamage_pipeline_result.prepared_structure.cleaned_atoms
 
 
-def run_epath_workflow(
-    bdamage_workflow_result: BDamageWorkflowResult,
+def run_epath_pipeline(
+    bdamage_pipeline_result: BDamagePipelineResult,
     *,
     structure_path: str | Path | None = None,
-    options: EpathWorkflowOptions | None = None,
-    stage_runner: WorkflowStageRunner | None = None,
-) -> tuple[EpathWorkflowResult, EpathWorkflowOutputFiles]:
-    """Run E-path analysis from a completed RABDAM BDamage workflow.
+    options: EpathPipelineOptions | None = None,
+    stage_runner: PipelineStageRunner | None = None,
+) -> tuple[EpathPipelineResult, EpathPipelineOutputFiles]:
+    """Run E-path analysis from a completed RABDAM BDamage pipeline.
 
-    This is the single entry point for callers that hold a BDamage workflow
+    This is the single entry point for callers that hold a BDamage pipeline
     result; the command-line interface uses it too, passing a `stage_runner`
     that reports each named stage as it runs.
     """
-    atoms = atoms_from_bdamage_workflow(bdamage_workflow_result)
+    atoms = atoms_from_bdamage_pipeline(bdamage_pipeline_result)
     if structure_path is None:
-        structure_path = bdamage_workflow_result.prepared_structure.metadata.source_path
+        structure_path = bdamage_pipeline_result.prepared_structure.metadata.source_path
 
     return analyze_epath_atoms(
         atoms,
         structure_path=structure_path,
         options=options,
-        bdamage_workflow_result=bdamage_workflow_result,
+        bdamage_pipeline_result=bdamage_pipeline_result,
         stage_runner=stage_runner,
     )
 
@@ -139,17 +134,17 @@ def analyze_epath_atoms(
     atoms: Iterable[EpathAtom],
     *,
     structure_path: str | Path | None = None,
-    options: EpathWorkflowOptions | None = None,
-    bdamage_workflow_result: BDamageWorkflowResult | None = None,
-    stage_runner: WorkflowStageRunner | None = None,
-) -> tuple[EpathWorkflowResult, EpathWorkflowOutputFiles]:
+    options: EpathPipelineOptions | None = None,
+    bdamage_pipeline_result: BDamagePipelineResult | None = None,
+    stage_runner: PipelineStageRunner | None = None,
+) -> tuple[EpathPipelineResult, EpathPipelineOutputFiles]:
     """Run E-path selection, clustering, MST analysis, and outputs.
 
     Returns the analysis result and, separately, the files written from it.
 
     Selection, clustering, and pathway geometry need only the scored `atoms`.
     Everything that must see the rest of the model depends on
-    `bdamage_workflow_result`, whose cleaned `PreparedAtom`s carry the
+    `bdamage_pipeline_result`, whose cleaned `PreparedAtom`s carry the
     cofactor, solvent, and chain information that E-path atoms do not:
 
     - endpoint classification (cofactor sites, chain interfaces, surface)
@@ -159,20 +154,20 @@ def analyze_epath_atoms(
     Without it those degrade quietly: paths are still reported, but with no
     cofactor or interface detection, and no model PDB or Bnet.
 
-    Bnet is calculated here whenever a BDamage workflow result is available,
+    Bnet is calculated here whenever a BDamage pipeline result is available,
     so every caller sees the same sequence of stages. `stage_runner` wraps
     each named stage for timing or progress reporting; without it the stages
     run silently.
 
     Raises:
-        EpathWorkflowError: If `atoms` is empty.
+        EpathPipelineError: If `atoms` is empty.
     """
     if options is None:
-        options = EpathWorkflowOptions()
+        options = EpathPipelineOptions()
 
     atom_tuple = tuple(atoms)
     if not atom_tuple:
-        raise EpathWorkflowError("E-path analysis requires at least one atom.")
+        raise EpathPipelineError("E-path analysis requires at least one atom.")
 
     selection_result = _run_stage(
         "Selecting E-path atoms",
@@ -199,8 +194,8 @@ def analyze_epath_atoms(
         cluster for cluster in components if cluster.atom_count >= minimum_cluster_size
     )
     cleaned_atoms = (
-        bdamage_workflow_result.prepared_structure.cleaned_atoms
-        if bdamage_workflow_result is not None
+        bdamage_pipeline_result.prepared_structure.cleaned_atoms
+        if bdamage_pipeline_result is not None
         else None
     )
     path_analysis = _run_stage(
@@ -214,13 +209,13 @@ def analyze_epath_atoms(
         ),
         stage_runner=stage_runner,
     )
-    bnet_workflow_result = (
+    bnet_pipeline_result = (
         _run_stage(
             "Calculating Bnet and Bnet percentile",
-            lambda: _calculate_bnet(bdamage_workflow_result),
+            lambda: _calculate_bnet(bdamage_pipeline_result),
             stage_runner=stage_runner,
         )
-        if bdamage_workflow_result is not None
+        if bdamage_pipeline_result is not None
         else None
     )
     run_record = build_run_record(
@@ -230,9 +225,9 @@ def analyze_epath_atoms(
         statistics=statistics,
         minimum_cluster_size=minimum_cluster_size,
         cutoff_percent=options.selection.percentile,
-        bnet_workflow_result=bnet_workflow_result,
+        bnet_pipeline_result=bnet_pipeline_result,
     )
-    result = EpathWorkflowResult(
+    result = EpathPipelineResult(
         atoms=atom_tuple,
         selection_result=selection_result,
         clusters=clusters,
@@ -240,8 +235,8 @@ def analyze_epath_atoms(
         path_reports=path_analysis.reports,
         cofactor_sites=path_analysis.cofactor_sites,
         run_record=run_record,
-        bdamage_workflow_result=bdamage_workflow_result,
-        bnet_workflow_result=bnet_workflow_result,
+        bdamage_pipeline_result=bdamage_pipeline_result,
+        bnet_pipeline_result=bnet_pipeline_result,
     )
     output_files = _run_stage(
         "Writing E-path outputs",
@@ -253,19 +248,19 @@ def analyze_epath_atoms(
 
 
 def _calculate_bnet(
-    bdamage_workflow_result: BDamageWorkflowResult,
-) -> BnetWorkflowResult:
-    return calculate_bnet_workflow(
-        prepared_structure=bdamage_workflow_result.prepared_structure,
-        bdamage_score_result=bdamage_workflow_result.bdamage_score_result,
+    bdamage_pipeline_result: BDamagePipelineResult,
+) -> BnetPipelineResult:
+    return run_bnet_pipeline(
+        prepared_structure=bdamage_pipeline_result.prepared_structure,
+        bdamage_results=bdamage_pipeline_result.bdamage_results,
     )
 
 
-def _run_stage(
+def _run_stage[T](
     label: str,
     callback: Callable[[], T],
     *,
-    stage_runner: WorkflowStageRunner | None,
+    stage_runner: PipelineStageRunner | None,
 ) -> T:
     if stage_runner is None:
         return callback()
@@ -275,12 +270,12 @@ def _run_stage(
 
 def _select_atoms(
     atoms: tuple[EpathAtom, ...],
-    options: EpathSelectionWorkflowOptions,
+    options: EpathSelectionPipelineOptions,
 ) -> EpathSelectionResult:
     return select_atoms_by_percentile(atoms, percentile=options.percentile)
 
 
 def _positive_int(value: int, *, name: str) -> int:
     if value <= 0:
-        raise EpathWorkflowError(f"{name} must be a positive integer, got {value!r}.")
+        raise EpathPipelineError(f"{name} must be a positive integer, got {value!r}.")
     return value
