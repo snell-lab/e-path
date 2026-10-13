@@ -23,6 +23,7 @@ from epath.workflow import (
 )
 from rabdam.workflow import BDamageWorkflowOptions
 from xtal.rcsb import DEFAULT_RCSB_DOWNLOAD_DIR
+from xtal.resolver import COMPRESSED_SUFFIX, SUPPORTED_STRUCTURE_SUFFIXES
 
 DEFAULT_OUTPUT_DIR = Path("output")
 DEFAULT_DOWNLOAD_DIR = DEFAULT_RCSB_DOWNLOAD_DIR
@@ -73,7 +74,8 @@ def _add_structure_input_argument(group: Any) -> None:
         nargs="*",
         metavar="STRUCTURE_INPUT",
         help=(
-            "One or more paths to .pdb/.cif/.mmcif files, or 4-character "
+            f"One or more paths to {'/'.join(SUPPORTED_STRUCTURE_SUFFIXES)} "
+            f"files, optionally gzipped ({COMPRESSED_SUFFIX}), or 4-character "
             "PDB IDs such as 1LYZ."
         ),
     )
@@ -288,27 +290,20 @@ def _add_bdamage_debug_arguments(group: Any) -> None:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments.
 
-    Raises:
-        SystemExit: If the removed `bdamage` subcommand is used, or if argparse
-            rejects the arguments or handles `--help` or `--version`.
+    `SystemExit` is raised for the removed `bdamage` subcommand, as well as by
+    argparse itself for invalid arguments, `--help` and `--version`.
     """
     raw_args = list(sys.argv[1:] if argv is None else argv)
     if raw_args and raw_args[0] == "bdamage":
         raise SystemExit(REMOVED_BDAMAGE_COMMAND_MESSAGE)
 
-    parser = build_parser()
-    args = parser.parse_args(raw_args)
-
-    args.structure_input = (
-        args.structure_inputs[0] if len(args.structure_inputs) == 1 else None
-    )
-    return args
+    return build_parser().parse_args(raw_args)
 
 
 def chain_list(value: str) -> tuple[str, ...]:
     """Return a tuple of unique chain identifiers from a comma-separated list."""
     chains = tuple(dict.fromkeys(item.strip() for item in value.split(",")))
-    if not chains or any(not chain for chain in chains):
+    if any(not chain for chain in chains):
         raise argparse.ArgumentTypeError(
             f"expected comma-separated chain identifiers, got {value!r}"
         )
@@ -359,19 +354,6 @@ def non_negative_int(value: str) -> int:
             f"expected a non-negative integer, got {value!r}"
         )
     return parsed
-
-
-def structure_inputs_from_args(args: argparse.Namespace) -> tuple[str, ...]:
-    """Return one or more structure inputs from parsed CLI arguments."""
-    structure_inputs = tuple(getattr(args, "structure_inputs", ()) or ())
-    if structure_inputs:
-        return structure_inputs
-
-    structure_input = getattr(args, "structure_input", None)
-    if structure_input is None:
-        return ()
-
-    return (structure_input,)
 
 
 def single_output_prefix_from_args(args: argparse.Namespace) -> Path | None:

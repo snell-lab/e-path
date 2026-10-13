@@ -35,15 +35,12 @@ def supports_color(stream: TextIO) -> bool:
         # Windows Terminal and modern consoles understand ANSI sequences once
         # virtual-terminal processing is enabled; ``os.system("")`` does that.
         os.system("")
-    try:
-        return stream.isatty()
-    except (AttributeError, ValueError):
-        return False
+    return stream.isatty()
 
 
 def colorize(text: str, *codes: str, enabled: bool) -> str:
     """Wrap `text` in the given ANSI codes when colour is enabled."""
-    if not enabled or not codes:
+    if not enabled:
         return text
     return "".join(codes) + text + RESET
 
@@ -63,10 +60,7 @@ def style_line(line: str, *, enabled: bool) -> str:
 
 def terminal_width(stream: TextIO) -> int:
     """Return a sensible wrapping width for `stream`."""
-    try:
-        if not stream.isatty():
-            return _DEFAULT_WIDTH
-    except (AttributeError, ValueError):
+    if not stream.isatty():
         return _DEFAULT_WIDTH
     return min(shutil.get_terminal_size((_DEFAULT_WIDTH, 24)).columns, _MAX_WIDTH)
 

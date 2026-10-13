@@ -40,20 +40,11 @@ def atoms_from_bdamage_workflow(
 ) -> tuple[EpathAtom, ...]:
     """Build E-path atom records from a completed RABDAM BDamage workflow.
 
-    Raises:
-        EpathAtomError: If the selected atoms and the BDamage results differ in
-            count, or if a matched pair disagrees on its source atom index or
-            atom serial.
+    BDamage results pair with selected atoms by position, so each pair must
+    refer to the same source atom.
     """
-    selected_atoms = tuple(workflow_result.prepared_structure.selected_atoms)
-    bdamage_results = tuple(workflow_result.bdamage_score_result.atom_results)
-
-    if len(selected_atoms) != len(bdamage_results):
-        raise EpathAtomError(
-            "Selected atom count does not match BDamage result count: "
-            f"{len(selected_atoms)} selected atoms, "
-            f"{len(bdamage_results)} BDamage results."
-        )
+    selected_atoms = workflow_result.prepared_structure.selected_atoms
+    bdamage_results = workflow_result.bdamage_score_result.atom_results
 
     epath_atoms: list[EpathAtom] = []
     for atom, bdamage_result in zip(selected_atoms, bdamage_results, strict=True):
@@ -63,12 +54,6 @@ def atoms_from_bdamage_workflow(
                 "Selected atom and BDamage result refer to different source atoms: "
                 f"{record.source_atom_index!r} != "
                 f"{bdamage_result.source_atom_index!r}."
-            )
-
-        if record.atom_serial != bdamage_result.atom_serial:
-            raise EpathAtomError(
-                "Selected atom and BDamage result refer to different atom serials: "
-                f"{record.atom_serial!r} != {bdamage_result.atom_serial!r}."
             )
 
         epath_atoms.append(
@@ -83,14 +68,14 @@ def atoms_from_bdamage_workflow(
                 insertion_code=record.insertion_code,
                 atom_name=record.atom_name,
                 element=record.element,
-                x=float(record.x),
-                y=float(record.y),
-                z=float(record.z),
-                occupancy=float(record.occupancy),
-                b_factor=float(record.b_factor),
+                x=record.x,
+                y=record.y,
+                z=record.z,
+                occupancy=record.occupancy,
+                b_factor=record.b_factor,
                 packing_density=bdamage_result.packing_density,
-                average_b_factor=float(bdamage_result.average_b_factor),
-                bdamage=float(bdamage_result.bdamage),
+                average_b_factor=bdamage_result.average_b_factor,
+                bdamage=bdamage_result.bdamage,
             )
         )
 

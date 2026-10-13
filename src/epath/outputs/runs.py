@@ -22,6 +22,7 @@ from pathlib import Path
 from epath.analysis.clustering import ComponentStatistics, EpathCluster
 from epath.analysis.selection import EpathSelectionResult
 from rabdam.bnet.workflow import BnetWorkflowResult
+from xtal.resolver import split_structure_file_name
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +72,7 @@ def build_run_record(
     bnet, bnet_percentile = _bnet_values(bnet_workflow_result)
 
     return EpathRunRecord(
-        structure=path.stem if path is not None else "",
+        structure=split_structure_file_name(path.name)[0] if path is not None else "",
         input_path=str(path) if path is not None else "",
         selection_method=selection_result.method,
         cutoff_percent=cutoff_percent,

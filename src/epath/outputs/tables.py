@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import math
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -122,8 +121,7 @@ def write_combined_atom_csv(
 ) -> Path:
     """Write a combined per-atom E-path CSV table."""
     output_file = Path(output_path)
-    if output_file.parent != Path("."):
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     rows = combined_atom_rows(selection_result, clusters=clusters)
     with output_file.open("w", newline="", encoding="utf-8") as file:
@@ -144,8 +142,7 @@ def write_run_csv(
     cohort table for those structures.
     """
     output_file = Path(output_path)
-    if output_file.parent != Path("."):
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     with output_file.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=RUN_FIELDNAMES)
@@ -194,8 +191,7 @@ def write_step_csv(
     sharply with distance and a single long step can limit a whole path.
     """
     output_file = Path(output_path)
-    if output_file.parent != Path("."):
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     with output_file.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=STEP_FIELDNAMES)
@@ -227,8 +223,7 @@ def write_cluster_csv(
 ) -> Path:
     """Write one CSV row per reported E-path pathway."""
     output_file = Path(output_path)
-    if output_file.parent != Path("."):
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     rows = cluster_rows(path_reports)
     with output_file.open("w", newline="", encoding="utf-8") as file:
@@ -369,7 +364,7 @@ def _format_row_for_fields(
     row: Mapping[str, Any],
     fieldnames: Iterable[str],
 ) -> dict[str, str]:
-    return {fieldname: _format_cell(row.get(fieldname)) for fieldname in fieldnames}
+    return {fieldname: _format_cell(row[fieldname]) for fieldname in fieldnames}
 
 
 def _format_cell(value: Any) -> str:
@@ -380,10 +375,6 @@ def _format_cell(value: Any) -> str:
         return "true" if value else "false"
 
     if isinstance(value, float):
-        if math.isnan(value):
-            return "nan"
-        if math.isinf(value):
-            return "inf" if value > 0 else "-inf"
         return f"{value:.12g}"
 
     return str(value)

@@ -8,10 +8,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-class EpathGeometryError(ValueError):
-    """Raised when a coordinate array cannot be used for geometry."""
-
-
 @dataclass(frozen=True, slots=True)
 class MstEdge:
     """One edge of a minimum spanning tree."""
@@ -19,25 +15,6 @@ class MstEdge:
     first_index: int
     second_index: int
     length: float
-
-
-def validated_coordinates(
-    coordinates: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """Return a validated (N, 3) float coordinate array.
-
-    Raises:
-        EpathGeometryError: If the coordinates are not shape (N, 3) or contain
-            non-finite values.
-    """
-    coordinate_array = np.asarray(coordinates, dtype=float)
-    if coordinate_array.ndim != 2 or coordinate_array.shape[1] != 3:
-        raise EpathGeometryError("coordinates must have shape (N, 3).")
-
-    if not np.all(np.isfinite(coordinate_array)):
-        raise EpathGeometryError("coordinates must contain only finite numbers.")
-
-    return coordinate_array
 
 
 def row_norms(differences: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -62,23 +39,19 @@ def minimum_spanning_tree_edges(
     and largest edge lengths derived from them match the reported cluster
     geometry exactly.
     """
-    coordinate_array = validated_coordinates(coordinates)
-    atom_count = int(coordinate_array.shape[0])
+    atom_count = int(coordinates.shape[0])
     if atom_count <= 1:
         return ()
 
     in_tree = np.zeros(atom_count, dtype=bool)
     parents = np.zeros(atom_count, dtype=int)
-    minimum_edges = _distances_from(coordinate_array, 0)
+    minimum_edges = _distances_from(coordinates, 0)
     minimum_edges[0] = np.inf
     in_tree[0] = True
 
     edges: list[MstEdge] = []
     for _ in range(atom_count - 1):
         next_index = int(np.argmin(np.where(in_tree, np.inf, minimum_edges)))
-        if in_tree[next_index]:
-            break
-
         in_tree[next_index] = True
         edges.append(
             MstEdge(
@@ -88,7 +61,7 @@ def minimum_spanning_tree_edges(
             )
         )
 
-        distances = _distances_from(coordinate_array, next_index)
+        distances = _distances_from(coordinates, next_index)
         improved = np.logical_and(~in_tree, distances < minimum_edges)
         parents[improved] = next_index
         minimum_edges[improved] = distances[improved]
@@ -104,8 +77,7 @@ def maximum_pairwise_distance_pair(
     The pair defines the span, which the analysis reports as the straight-line
     end-to-end distance of a path, so these two atoms are also its endpoints.
     """
-    coordinate_array = validated_coordinates(coordinates)
-    atom_count = int(coordinate_array.shape[0])
+    atom_count = int(coordinates.shape[0])
     if atom_count < 2:
         return 0, 0, 0.0
 
@@ -113,9 +85,7 @@ def maximum_pairwise_distance_pair(
     second_endpoint = 0
     maximum_distance = 0.0
     for first_index in range(atom_count - 1):
-        distances = row_norms(
-            coordinate_array[first_index + 1 :] - coordinate_array[first_index]
-        )
+        distances = row_norms(coordinates[first_index + 1 :] - coordinates[first_index])
         offset = int(np.argmax(distances))
         distance = float(distances[offset])
         if distance > maximum_distance:
@@ -132,13 +102,10 @@ def neighbour_pairs(
     distance_cutoff: float,
 ) -> tuple[tuple[int, int], ...]:
     """Return every pair of points within a distance cutoff of each other."""
-    coordinate_array = validated_coordinates(coordinates)
-    point_count = int(coordinate_array.shape[0])
+    point_count = int(coordinates.shape[0])
     pairs: list[tuple[int, int]] = []
     for first_index in range(point_count - 1):
-        distances = row_norms(
-            coordinate_array[first_index + 1 :] - coordinate_array[first_index]
-        )
+        distances = row_norms(coordinates[first_index + 1 :] - coordinates[first_index])
         for offset in np.nonzero(distances <= distance_cutoff)[0]:
             pairs.append((first_index, first_index + 1 + int(offset)))
 

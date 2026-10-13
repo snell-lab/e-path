@@ -87,7 +87,7 @@ def analyze_topology(
         distance_cutoff=distance_cutoff,
     )
     junction_count = sum(1 for degree in degrees if degree >= JUNCTION_RESIDUE_DEGREE)
-    branch_fraction = junction_count / len(degrees) if degrees else 0.0
+    branch_fraction = junction_count / len(degrees)
     linearity = (
         metrics.span / metrics.mst_total_length
         if metrics.mst_total_length > 0.0
@@ -115,13 +115,9 @@ def _residue_degrees(
     distance_cutoff: float,
 ) -> list[int]:
     """Return how many other residues of the cluster each residue contacts."""
-    residue_count = (max(residue_indices) + 1) if residue_indices else 0
-    if residue_count == 0:
-        return []
-
-    contacts: list[set[int]] = [set() for _ in range(residue_count)]
+    contacts: list[set[int]] = [set() for _ in range(max(residue_indices) + 1)]
     for first_index, second_index in neighbour_pairs(
-        np.asarray(coordinates, dtype=float),
+        coordinates,
         distance_cutoff=distance_cutoff,
     ):
         first_residue = residue_indices[first_index]

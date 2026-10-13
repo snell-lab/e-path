@@ -279,7 +279,7 @@ def find_path_anchor(
         The nearest cofactor and the path atom closest to it, or None when the
         model has no cofactor within the proximity range of the path.
     """
-    if not atoms or context.cofactor_coordinates.size == 0:
+    if context.cofactor_coordinates.size == 0:
         return None
 
     best_index = -1
@@ -351,11 +351,7 @@ def _is_interface(
     if context.protein_coordinates.size == 0:
         return False
 
-    try:
-        chain_index = context.chain_ids.index(chain_id)
-    except ValueError:
-        return False
-
+    chain_index = context.chain_ids.index(chain_id)
     differences = context.protein_coordinates - point
     distances = row_norms(differences)
     within_range = distances <= context.interface_distance
@@ -419,7 +415,7 @@ def _cofactor_sites(
         )
         for atom in atoms:
             record = atom.record
-            coordinates.append((float(record.x), float(record.y), float(record.z)))
+            coordinates.append((record.x, record.y, record.z))
             site_indices.append(site_index)
 
     return (
@@ -451,9 +447,7 @@ def _site_labels(
 
 
 def _is_bound_group_atom(atom: PreparedAtom) -> bool:
-    return not (
-        atom.is_protein or atom.is_solvent or atom.is_nucleic_acid or atom.is_hydrogen
-    )
+    return not (atom.is_protein or atom.is_solvent or atom.is_nucleic_acid)
 
 
 def _is_redox_cofactor(residue_name: str, atoms: Sequence[PreparedAtom]) -> bool:
@@ -486,7 +480,7 @@ def _protein_chain_map(
                 continue
 
             record = prepared_atom.record
-            coordinates.append((float(record.x), float(record.y), float(record.z)))
+            coordinates.append((record.x, record.y, record.z))
             chain_indices.append(chain_index(record.chain_id))
     else:
         for atom in scored_atoms:
@@ -508,13 +502,7 @@ def _surface_threshold(
     *,
     percentile: float,
 ) -> float:
-    packing_densities = np.asarray(
-        [atom.packing_density for atom in scored_atoms],
-        dtype=float,
-    )
-    if packing_densities.size == 0:
-        return 0.0
-
+    packing_densities = [atom.packing_density for atom in scored_atoms]
     return float(np.percentile(packing_densities, percentile))
 
 

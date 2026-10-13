@@ -106,7 +106,7 @@ class EpathWorkflowResult:
         """Cleaned model atoms from the BDamage workflow, when available."""
         if self.bdamage_workflow_result is None:
             return None
-        return tuple(self.bdamage_workflow_result.prepared_structure.cleaned_atoms)
+        return self.bdamage_workflow_result.prepared_structure.cleaned_atoms
 
 
 def run_epath_workflow(
@@ -281,6 +281,6 @@ def _select_atoms(
 
 
 def _positive_int(value: int, *, name: str) -> int:
-    if type(value) is not int or value <= 0:
+    if value <= 0:
         raise EpathWorkflowError(f"{name} must be a positive integer, got {value!r}.")
     return value

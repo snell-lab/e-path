@@ -87,7 +87,6 @@ def test_composition_fractions_sum_to_one_and_report_dominance_and_enrichment() 
 
     mixed = analyze_composition(["ALA"] * 5 + ["ASP"] * 6)
     assert mixed.dominant_classes == ("charged", "hydrophobic")  # 5/11 >= 0.8 * 6/11
-    assert analyze_composition([]).dominant_classes == ()
 
 
 def _topology(
@@ -124,15 +123,6 @@ def test_topology_classes() -> None:
     compact = _topology(coil, list(range(40)), cutoff=1.6)
     assert compact.topology == "clustered"
     assert compact.linearity < 0.2 and compact.branch_fraction == 0.0
-
-    empty = analyze_topology(
-        np.zeros((0, 3)), [], mst_length_stats(np.zeros((0, 3))), distance_cutoff=4.0
-    )
-    assert (empty.topology, empty.linearity, empty.branch_fraction) == (
-        "clustered",
-        0.0,
-        0.0,
-    )
 
 
 def _cleaned_model() -> tuple[PreparedAtom, ...]:

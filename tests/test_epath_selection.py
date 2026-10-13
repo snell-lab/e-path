@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Any
 
 import numpy as np
 import pytest
@@ -46,7 +45,6 @@ def test_z_scores_use_the_population_standard_deviation() -> None:
     assert [
         atom.bdamage_z_score for atom in score_bdamage_atoms(_atoms([2.0, 2.0, 2.0]))
     ] == [0.0, 0.0, 0.0]
-    assert score_bdamage_atoms(()) == ()
     with pytest.raises(EpathSelectionError, match="finite"):
         score_bdamage_atoms(_atoms([1.0, float("inf")]))
 
@@ -89,7 +87,7 @@ def test_percentile_extremes() -> None:
     assert len(everything.selected_atoms) == 3 and everything.selected_percent == 100.0
 
 
-@pytest.mark.parametrize("percentile", [-1.0, 100.5, float("nan"), True, "two"])
-def test_invalid_percentiles_are_rejected(percentile: Any) -> None:
+@pytest.mark.parametrize("percentile", [-1.0, 100.5, float("nan"), float("inf")])
+def test_invalid_percentiles_are_rejected(percentile: float) -> None:
     with pytest.raises(EpathSelectionError):
         select_atoms_by_percentile(_atoms([1.0, 2.0]), percentile=percentile)

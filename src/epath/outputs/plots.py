@@ -9,12 +9,10 @@ from __future__ import annotations
 import math
 import os
 import tempfile
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from numpy.typing import NDArray
 
 from epath.analysis.selection import EpathSelectionResult
 
@@ -22,22 +20,15 @@ DEFAULT_PLOT_DPI = 300
 DEFAULT_PLOT_FIGSIZE = (6.0, 4.0)
 
 
-class EpathPlotError(RuntimeError):
-    """Raised when an E-path plot cannot be generated."""
-
-
 def plot_z_falloff(
     prefix: str | Path,
     selection_result: EpathSelectionResult,
-    *,
-    dpi: int = DEFAULT_PLOT_DPI,
-) -> Path | None:
+) -> Path:
     """Write the Z-score falloff plot beside an output prefix."""
     output_prefix = Path(prefix)
     return write_z_score_falloff(
         output_prefix.with_name(f"{output_prefix.name}_zfalloff.png"),
         selection_result,
-        dpi=dpi,
     )
 
 
@@ -46,22 +37,18 @@ def write_z_score_falloff(
     selection_result: EpathSelectionResult,
     *,
     dpi: int = DEFAULT_PLOT_DPI,
-) -> Path | None:
+) -> Path:
     """Write rank-ordered BDamage Z-scores for the negative tail.
 
     The selection threshold is marked, so the plot shows where the cutoff
     falls on the falloff.
     """
-    z_scores = _z_score_array(
-        [scored_atom.bdamage_z_score for scored_atom in selection_result.scored_atoms]
+    z_scores = np.asarray(
+        [scored_atom.bdamage_z_score for scored_atom in selection_result.scored_atoms],
+        dtype=float,
     )
-    if z_scores.size == 0:
-        return None
-
-    dpi = _positive_int(dpi, name="dpi")
     output_file = Path(output_path)
-    if output_file.parent != Path("."):
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     ranked = np.sort(z_scores)
     # The method only ever selects from the negative tail, so plotting the full
@@ -121,36 +108,3 @@ def _ensure_matplotlib_config_dir() -> None:
     config_dir = Path(tempfile.gettempdir()) / "epath-matplotlib"
     config_dir.mkdir(parents=True, exist_ok=True)
     os.environ["MPLCONFIGDIR"] = str(config_dir)
-
-
-def _z_score_array(
-    values: Sequence[float] | NDArray[np.float64],
-) -> NDArray[np.float64]:
-    array = np.asarray(values, dtype=float)
-    if array.ndim != 1:
-        raise EpathPlotError("z_scores must be one-dimensional.")
-
-    if array.size == 0:
-        return array
-
-    if not np.all(np.isfinite(array)):
-        raise EpathPlotError("z_scores must contain only finite numbers.")
-
-    return array
-
-
-def _positive_int(value: int, *, name: str) -> int:
-    if isinstance(value, bool):
-        raise EpathPlotError(f"{name} must be a positive integer, got {value!r}.")
-
-    try:
-        number = int(value)
-    except (TypeError, ValueError) as error:
-        raise EpathPlotError(
-            f"{name} must be a positive integer, got {value!r}."
-        ) from error
-
-    if number <= 0:
-        raise EpathPlotError(f"{name} must be a positive integer, got {number!r}.")
-
-    return number

@@ -447,9 +447,6 @@ def _edge_kind(first: EpathAtom, second: EpathAtom) -> StepKind:
 
 def _format_residue_path(residues: Sequence[PathResidue]) -> str:
     """Return the residue-and-node listing used by the E-path pathway table."""
-    if not residues:
-        return ""
-
     parts: list[str] = []
     current_chain: str | None = None
     for residue in residues:

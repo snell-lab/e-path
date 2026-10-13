@@ -153,9 +153,6 @@ def class_fractions(residue_names: Iterable[str]) -> dict[ResidueClass, float]:
     """Return the fraction of residues in each side-chain chemistry class."""
     counts = class_counts(residue_names)
     total = sum(counts.values())
-    if total == 0:
-        return dict.fromkeys(RESIDUE_CLASS_ORDER, 0.0)
-
     return {name: counts[name] / total for name in RESIDUE_CLASS_ORDER}
 
 
@@ -178,11 +175,9 @@ def analyze_composition(
     """
     counts = class_counts(residue_names)
     total = sum(counts.values())
-    fractions: dict[ResidueClass, float] = (
-        {name: counts[name] / total for name in RESIDUE_CLASS_ORDER}
-        if total
-        else dict.fromkeys(RESIDUE_CLASS_ORDER, 0.0)
-    )
+    fractions: dict[ResidueClass, float] = {
+        name: counts[name] / total for name in RESIDUE_CLASS_ORDER
+    }
 
     return ResidueComposition(
         residue_count=total,
@@ -201,9 +196,6 @@ def _dominant_classes(
         return ()
 
     highest_fraction = fractions[ranked[0]]
-    if highest_fraction <= 0.0:
-        return ()
-
     dominant: list[ResidueClass] = [
         name
         for name in ranked
@@ -224,7 +216,7 @@ def _enriched_classes(
         name
         for name in _ranked_classes(fractions)
         if fractions[name] >= MINIMUM_ENRICHED_FRACTION
-        and fractions[name] >= ENRICHMENT_RATIO * background.get(name, 0.0)
+        and fractions[name] >= ENRICHMENT_RATIO * background[name]
     ]
     return tuple(enriched)
 

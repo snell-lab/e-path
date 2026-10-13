@@ -57,9 +57,6 @@ def score_bdamage_atoms(
 ) -> tuple[EpathScoredAtom, ...]:
     """Return atoms annotated with population BDamage Z-scores."""
     atom_tuple = tuple(atoms)
-    if not atom_tuple:
-        return ()
-
     bdamage_values = _bdamage_values(atom_tuple)
     z_scores = _z_scores(bdamage_values)
 
@@ -75,16 +72,18 @@ def select_atoms_by_percentile(
     percentile: float,
 ) -> EpathSelectionResult:
     """Select the lowest percentile of atoms by BDamage."""
-    percentile = _percentile_value(percentile)
+    # NaN fails every comparison, so the range test rejects it too.
+    if not 0.0 <= percentile <= 100.0:
+        raise EpathSelectionError(
+            f"percentile must be in the range 0 to 100, got {percentile!r}."
+        )
+
     scored_atoms = score_bdamage_atoms(atoms)
     selected_atoms, bdamage_threshold = _select_lowest_percentile(
         scored_atoms,
         percentile=percentile,
     )
-    selected_percent = _selected_percent(
-        selected_count=len(selected_atoms),
-        total_count=len(scored_atoms),
-    )
+    selected_percent = 100.0 * len(selected_atoms) / len(scored_atoms)
     boundary_z_score = max(
         (atom.bdamage_z_score for atom in selected_atoms),
         default=float("nan"),
@@ -120,7 +119,7 @@ def _select_lowest_percentile(
     percentile: float,
 ) -> tuple[tuple[EpathScoredAtom, ...], float]:
     atom_count = len(scored_atoms)
-    if atom_count == 0 or percentile <= 0.0:
+    if percentile <= 0.0:
         return (), float("nan")
 
     if percentile >= 100.0:
@@ -130,19 +129,13 @@ def _select_lowest_percentile(
         [scored_atom.bdamage for scored_atom in scored_atoms],
         dtype=float,
     )
-    bdamage_threshold = float(
-        np.percentile(
-            bdamage_values,
-            min(100.0, percentile),
-        )
-    )
+    bdamage_threshold = float(np.percentile(bdamage_values, percentile))
     selected_atoms = [
         scored_atom
         for scored_atom in scored_atoms
         if scored_atom.bdamage <= bdamage_threshold
     ]
     target_count = round((percentile / 100.0) * atom_count)
-    target_count = max(0, min(atom_count, target_count))
     if len(selected_atoms) > target_count:
         selected_atoms.sort(
             key=lambda scored_atom: (
@@ -163,9 +156,6 @@ def _bdamage_values(atoms: Sequence[EpathAtom]) -> NDArray[np.float64]:
 
 
 def _z_scores(values: NDArray[np.float64]) -> NDArray[np.float64]:
-    if values.size == 0:
-        return values
-
     mean = float(np.mean(values))
     standard_deviation = float(np.std(values))
     if standard_deviation == 0.0:
@@ -185,9 +175,6 @@ def _z_score_for_bdamage_value(
         [scored_atom.bdamage for scored_atom in scored_atoms],
         dtype=float,
     )
-    if values.size == 0:
-        return float("nan")
-
     mean = float(np.mean(values))
     standard_deviation = float(np.std(values))
     if standard_deviation == 0.0:
@@ -208,33 +195,3 @@ def _standard_deviation(scored_atoms: Sequence[EpathScoredAtom]) -> float:
         return float("nan")
 
     return float(np.std([scored_atom.bdamage for scored_atom in scored_atoms]))
-
-
-def _selected_percent(*, selected_count: int, total_count: int) -> float:
-    if total_count == 0:
-        return 0.0
-    return 100.0 * selected_count / total_count
-
-
-def _percentile_value(value: float) -> float:
-    percentile = _finite_float(value, name="percentile")
-    if percentile < 0.0 or percentile > 100.0:
-        raise EpathSelectionError(
-            f"percentile must be in the range 0 to 100, got {percentile!r}."
-        )
-    return percentile
-
-
-def _finite_float(value: float, *, name: str) -> float:
-    if isinstance(value, bool):
-        raise EpathSelectionError(f"{name} must be numeric, got {value!r}.")
-
-    try:
-        number = float(value)
-    except (TypeError, ValueError) as error:
-        raise EpathSelectionError(f"{name} must be numeric, got {value!r}.") from error
-
-    if not math.isfinite(number):
-        raise EpathSelectionError(f"{name} must be finite, got {number!r}.")
-
-    return number

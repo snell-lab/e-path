@@ -18,6 +18,7 @@ from epath.analysis.pathways import PathReport
 from epath.analysis.residues import RESIDUE_CLASS_ORDER
 from epath.outputs.files import EpathWorkflowOutputFiles
 from rabdam.bnet.workflow import BnetWorkflowResult
+from rabdam.structure.models import RemovedAtomCounts
 from rabdam.workflow import BDamageWorkflowResult
 from xtal.validate import ValidatedCrystal
 
@@ -103,7 +104,7 @@ def write_summary_txt(
         lines.append("No atoms selected.")
 
     lines.extend(("", "BDamage calculation", "-------------------"))
-    lines.extend(bdamage_parameter_lines(result.bdamage_workflow_result))
+    lines.extend(bdamage_summary_lines(result.bdamage_workflow_result))
 
     lines.extend(("", "Crystal", "-------"))
     lines.extend(crystal_summary_lines(result.crystal))
@@ -249,24 +250,42 @@ def _composition_text(report: PathReport) -> str:
         for name in RESIDUE_CLASS_ORDER
         if counts[name] > 0
     ]
-    return ", ".join(reported) if reported else "no residues"
+    return ", ".join(reported)
 
 
-def bdamage_parameter_lines(
+def bdamage_summary_lines(
     workflow_result: BDamageWorkflowResult | None,
 ) -> tuple[str, ...]:
-    """Return the BDamage calculation parameters as report lines."""
+    """Return the atoms removed before scoring and the BDamage parameters."""
     if workflow_result is None:
         return ("BDamage parameters: not recorded",)
 
     options = workflow_result.options
     return (
+        removed_atoms_line(workflow_result.prepared_structure.removed),
         f"Packing density threshold: {_number(options.packing_density_threshold)} A",
         f"Window size fraction: {_number(options.window_size_fraction)}",
         f"Minimum window size: {options.minimum_window_size} atoms",
         f"Window size used: {workflow_result.window_size} atoms",
         f"Unit-cell translation range: {options.translation_range}",
     )
+
+
+def removed_atoms_line(removed: RemovedAtomCounts) -> str:
+    """Return the non-zero removal counts from structure preparation as one line."""
+    counts = (
+        (removed.hydrogens, "hydrogen"),
+        (removed.non_finite_coordinates, "with non-finite coordinates"),
+        (removed.invalid_occupancy, "with invalid occupancy"),
+        (removed.non_positive_b_factor, "with a non-positive B-factor"),
+        (removed.alternate_conformers, "alternate conformer"),
+    )
+    reported = ", ".join(
+        f"{count} {label}{'s' if count > 1 and not label.startswith('with') else ''}"
+        for count, label in counts
+        if count > 0
+    )
+    return f"Atoms removed before scoring: {reported or 'none'}"
 
 
 def crystal_summary_lines(
@@ -281,27 +300,45 @@ def crystal_summary_lines(
         f"Asymmetric units per unit cell: {crystal.operation_count}",
         f"Unit-cell volume: {_number(crystal.unit_cell_volume_angstrom3)} A^3",
     ]
+    lines.extend(_content_lines(crystal))
+    lines.extend(f"WARNING: {warning}" for warning in crystal.warnings)
+    return tuple(lines)
+
+
+def _content_lines(crystal: ValidatedCrystal) -> tuple[str, ...]:
+    """Return the macromolecule mass, Matthews coefficient, and solvent content."""
     content = crystal.content
     if content is None:
-        lines.append("Asymmetric-unit content: not calculated")
-        return tuple(lines)
+        return ("Asymmetric-unit content: not calculated",)
 
+    implicit_hydrogens = (
+        f", including {_number(content.implicit_hydrogen_mass_dalton)} Da of "
+        "implicit hydrogens"
+        if content.implicit_hydrogen_mass_dalton > 0.0
+        else ""
+    )
+    lines = [
+        "Macromolecule mass: "
+        f"{_number(content.macromolecule_mass_dalton)} Da "
+        f"({content.macromolecule_atom_count} modelled atoms{implicit_hydrogens})"
+    ]
+    # The split only matters to the solvent estimate when both are present, and
+    # a protein-only line would just repeat the total.
+    if content.nucleic_acid_mass_dalton > 0.0:
+        lines.append(
+            "Protein and nucleic-acid mass: "
+            f"{_number(content.protein_mass_dalton)} Da and "
+            f"{_number(content.nucleic_acid_mass_dalton)} Da"
+        )
     lines.extend(
         (
-            (
-                "Modelled macromolecule mass: "
-                f"{_number(content.macromolecule_mass_dalton)} Da "
-                f"({content.macromolecule_atom_count} atoms"
-                f"{', hydrogens excluded' if content.hydrogens_excluded else ''})"
-            ),
-            (f"Matthews coefficient: {_number(content.matthews_coefficient)} A^3/Da"),
+            f"Matthews coefficient: {_number(content.matthews_coefficient)} A^3/Da",
             (
                 "Estimated solvent content: "
                 f"{_number(100.0 * content.solvent_fraction)}%"
             ),
         )
     )
-    lines.extend(f"WARNING: {warning}" for warning in crystal.warnings)
     return tuple(lines)
 
 
@@ -374,12 +411,11 @@ def _chain_text(chains: Sequence[str]) -> str:
 
 
 def _number(value: float) -> str:
-    return f"{float(value):.6g}"
+    return f"{value:.6g}"
 
 
 def _write_text(output_path: str | Path, lines: Sequence[str]) -> Path:
     output_file = Path(output_path)
-    if output_file.parent != Path("."):
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return output_file

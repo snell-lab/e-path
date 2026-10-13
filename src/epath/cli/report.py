@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, TextIO
 from epath.analysis.endpoints import cofactor_site_summary
 from epath.cli.style import print_lines, style_line, supports_color
 from epath.outputs.summary import (
-    bdamage_parameter_lines,
+    bdamage_summary_lines,
     bnet_summary_lines,
     crystal_summary_lines,
     output_file_entries,
@@ -83,7 +83,9 @@ def print_epath_summary(
     """Print a compact full E-path run summary."""
     workflow_result = result.workflow_result
     bdamage_result = workflow_result.bdamage_workflow_result
-    crystal = bdamage_result.crystal if bdamage_result is not None else None
+    # The CLI always runs E-path from its own BDamage workflow.
+    assert bdamage_result is not None
+    crystal = bdamage_result.crystal
 
     print(file=stream)
     print("Done.", file=stream)
@@ -94,7 +96,7 @@ def print_epath_summary(
     _print_section("Crystal:", crystal_summary_lines(crystal), stream=stream)
     _print_section(
         "BDamage calculation:",
-        bdamage_parameter_lines(bdamage_result),
+        bdamage_summary_lines(bdamage_result),
         stream=stream,
     )
     _print_section(
@@ -117,7 +119,7 @@ def print_epath_summary(
         stream=stream,
     )
 
-    if preview_count > 0 and bdamage_result is not None:
+    if preview_count > 0:
         packing_density_counts = packing_density_counts_as_tuple(
             bdamage_result.packing_density_result
         )[:preview_count]
@@ -135,11 +137,10 @@ def print_epath_summary(
             stream=stream,
         )
 
-    warnings = crystal.warnings if crystal is not None else ()
-    if warnings:
+    if crystal.warnings:
         _print_section(
             "Warnings:",
-            (f"WARNING: {warning}" for warning in warnings),
+            (f"WARNING: {warning}" for warning in crystal.warnings),
             stream=stream,
         )
 
@@ -172,9 +173,8 @@ def print_epath_batch_summary(
 
 def _selection_lines(workflow_result: EpathWorkflowResult) -> tuple[str, ...]:
     selection_result = workflow_result.selection_result
-    analyzed_chains = workflow_result.analyzed_chains
     return (
-        "Chains: " + (", ".join(analyzed_chains) if analyzed_chains else "none"),
+        "Chains: " + ", ".join(workflow_result.analyzed_chains),
         f"Method: {selection_result.description}",
         (
             f"Selected atoms: {len(selection_result.selected_atoms)} "

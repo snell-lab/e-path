@@ -14,7 +14,6 @@ from pathlib import Path
 
 import gemmi
 
-from epath.analysis.atoms import EpathAtom
 from epath.analysis.pathways import PathReport
 from epath.analysis.selection import EpathScoredAtom
 from rabdam.structure.models import PreparedAtom
@@ -60,9 +59,9 @@ def write_structure_outputs(
     output_prefix: str | Path,
     selected_atoms: Iterable[EpathScoredAtom],
     *,
+    bdamage_by_source_index: Mapping[int, float],
     path_reports: Sequence[PathReport] = (),
     cleaned_atoms: Sequence[PreparedAtom] | None = None,
-    bdamage_by_source_index: Mapping[int, float] | None = None,
     bdamage_threshold: float | None = None,
     display_chains: Sequence[str] | None = None,
 ) -> EpathStructureOutputFiles:
@@ -113,7 +112,7 @@ def write_structure_outputs(
         write_model_cif(
             model_cif,
             cleaned_atoms,
-            bdamage_by_source_index=bdamage_by_source_index or {},
+            bdamage_by_source_index=bdamage_by_source_index,
             bdamage_threshold=bdamage_threshold,
             remarks=chain_remarks,
         )
@@ -190,17 +189,17 @@ def write_model_cif(
 
     coordinate_atoms = tuple(
         _CoordinateAtom(
-            is_hetatm=prepared.is_hetatm,
+            is_hetatm=prepared.record.is_hetatm,
             atom_name=prepared.record.atom_name,
             residue_name=prepared.record.residue_name,
             chain_id=prepared.record.chain_id,
             residue_number=prepared.record.residue_number,
             insertion_code=prepared.record.insertion_code,
             element=prepared.record.element,
-            x=float(prepared.record.x),
-            y=float(prepared.record.y),
-            z=float(prepared.record.z),
-            occupancy=float(prepared.record.occupancy),
+            x=prepared.record.x,
+            y=prepared.record.y,
+            z=prepared.record.z,
+            occupancy=prepared.record.occupancy,
             b_factor=bdamage_by_source_index.get(
                 prepared.record.source_atom_index, UNSCORED_BDAMAGE_PLACEHOLDER
             ),
@@ -276,7 +275,7 @@ def write_path_subset_cifs(
 
 def write_atom_subset_cif(
     output_path: str | Path,
-    atoms: Iterable[EpathScoredAtom | EpathAtom],
+    atoms: Iterable[EpathScoredAtom],
     *,
     title: str = "E-path atom subset",
     remarks: Iterable[str] = (),
@@ -306,10 +305,10 @@ def write_atom_subset_cif(
     )
 
 
-def _coordinate_atom(atom_record: EpathScoredAtom | EpathAtom) -> _CoordinateAtom:
-    atom = atom_record.atom if isinstance(atom_record, EpathScoredAtom) else atom_record
+def _coordinate_atom(scored_atom: EpathScoredAtom) -> _CoordinateAtom:
+    atom = scored_atom.atom
     return _CoordinateAtom(
-        is_hetatm=atom.record_type.strip().upper() == "HETATM",
+        is_hetatm=atom.record_type == "HETATM",
         atom_name=atom.atom_name,
         residue_name=atom.residue_name,
         chain_id=atom.chain_id,
@@ -344,8 +343,7 @@ def _write_mmcif(
     notes, all of which viewers ignore.
     """
     output_file = Path(output_path)
-    if output_file.parent != Path("."):
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     structure = gemmi.Structure()
     structure.name = _block_name(output_file)
@@ -392,7 +390,7 @@ def _write_mmcif(
 def _make_residue(atom: _CoordinateAtom) -> gemmi.Residue:
     residue = gemmi.Residue()
     residue.name = atom.residue_name.strip() or "UNK"
-    number = 0 if atom.residue_number is None else int(atom.residue_number)
+    number = 0 if atom.residue_number is None else atom.residue_number
     insertion = atom.insertion_code.strip()[:1] or " "
     residue.seqid = gemmi.SeqId(number, insertion)
     residue.het_flag = "H" if atom.is_hetatm else "A"
@@ -423,17 +421,7 @@ def _block_name(output_file: Path) -> str:
 
 
 def _finite_float(value: float, *, name: str) -> float:
-    if isinstance(value, bool):
-        raise EpathStructureOutputError(f"{name} must be numeric, got {value!r}.")
+    if not math.isfinite(value):
+        raise EpathStructureOutputError(f"{name} must be finite, got {value!r}.")
 
-    try:
-        number = float(value)
-    except (TypeError, ValueError) as error:
-        raise EpathStructureOutputError(
-            f"{name} must be numeric, got {value!r}."
-        ) from error
-
-    if not math.isfinite(number):
-        raise EpathStructureOutputError(f"{name} must be finite, got {number!r}.")
-
-    return number
+    return value

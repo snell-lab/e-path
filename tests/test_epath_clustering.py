@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 import pytest
 from support import approx, scored_atoms_from_coordinates
@@ -16,11 +14,9 @@ from epath.analysis.clustering import (
     mst_length_stats,
 )
 from epath.analysis.geometry import (
-    EpathGeometryError,
     maximum_pairwise_distance_pair,
     minimum_spanning_tree_edges,
     neighbour_pairs,
-    validated_coordinates,
 )
 
 LINE = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (3.0, 0.0, 0.0), (4.5, 0.0, 0.0)]
@@ -57,7 +53,6 @@ def test_cluster_metrics() -> None:
 
     single = cluster_metrics_for_atoms(scored_atoms_from_coordinates(LINE[:1]))
     assert (single.mst_total_length, single.span, single.mean_step) == (0.0, 0.0, 0.0)
-    assert cluster_metrics_for_atoms(()).mst_total_length == 0.0
 
 
 def test_span_endpoints_and_neighbour_pairs() -> None:
@@ -75,12 +70,11 @@ def test_span_endpoints_and_neighbour_pairs() -> None:
     )  # 3.0 is inclusive
 
 
-def test_coordinate_validation() -> None:
-    assert validated_coordinates(np.zeros((0, 3))).shape == (0, 3)
-    with pytest.raises(EpathGeometryError):
-        validated_coordinates(np.zeros((2, 2)))
-    with pytest.raises(EpathGeometryError):
-        validated_coordinates(np.asarray([[0.0, 0.0, np.nan]]))
+def test_non_finite_coordinates_are_rejected() -> None:
+    with pytest.raises(EpathClusteringError, match="finite"):
+        cluster_selected_atoms(
+            scored_atoms_from_coordinates([*LINE, (0.0, 0.0, float("nan"))])
+        )
 
 
 def test_clusters_are_connected_components_ordered_by_size() -> None:
@@ -112,8 +106,8 @@ def test_clusters_are_connected_components_ordered_by_size() -> None:
     assert component_statistics(()).largest_metrics is None
 
 
-@pytest.mark.parametrize("cutoff", [0.0, -1.0, float("nan"), "far", True])
-def test_invalid_cutoffs_are_rejected(cutoff: Any) -> None:
+@pytest.mark.parametrize("cutoff", [0.0, -1.0, float("nan"), float("inf")])
+def test_invalid_cutoffs_are_rejected(cutoff: float) -> None:
     with pytest.raises(EpathClusteringError):
         cluster_selected_atoms(
             scored_atoms_from_coordinates(LINE), distance_cutoff=cutoff

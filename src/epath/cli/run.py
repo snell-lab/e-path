@@ -20,7 +20,6 @@ from epath.cli.args import (
     bdamage_workflow_options_from_args,
     epath_workflow_options_from_args,
     single_output_prefix_from_args,
-    structure_inputs_from_args,
 )
 from epath.cli.report import (
     print_epath_batch_summary,
@@ -28,41 +27,28 @@ from epath.cli.report import (
     print_error,
 )
 from epath.outputs.files import EpathWorkflowOutputFiles
-from epath.outputs.plots import EpathPlotError
 from epath.outputs.tables import write_run_csv
 from epath.workflow import EpathWorkflowResult, run_epath_workflow
-from rabdam.bdamage import BDamageScoreError
-from rabdam.crystal.symmetry import CrystalSymmetryError
-from rabdam.crystal.translate import CrystalTranslationError
-from rabdam.crystal.trim import CrystalTrimError
-from rabdam.packing import PackingDensityError
-from rabdam.structure.models import StructurePreparationOptions
 from rabdam.workflow import (
-    BDamageWorkflowError,
     BDamageWorkflowResult,
     WorkflowStageRunner,
     calculate_bdamage_for_structure_data,
 )
-from xtal.cell import CrystalMetadataError
-from xtal.rcsb import ensure_local_structure_file
+from xtal.rcsb import download_rcsb_mmcif
 from xtal.reader import read_structure
-from xtal.resolver import ResolvedStructureInput, resolve_structure_input
+from xtal.resolver import (
+    ResolvedStructureInput,
+    is_valid_classic_pdb_id,
+    resolve_structure_input,
+    split_structure_file_name,
+)
 
 # One row per structure in a batch, written alongside the per-structure output.
 BATCH_COHORT_CSV_NAME = "epath_runs.csv"
 
-RABDAM_CLI_ERRORS = (
-    BDamageScoreError,
-    BDamageWorkflowError,
-    CrystalMetadataError,
-    CrystalSymmetryError,
-    CrystalTranslationError,
-    CrystalTrimError,
-    OSError,
-    PackingDensityError,
-    EpathPlotError,
-    ValueError,
-)
+# Every input, crystal and calculation error in xtal and rabdam derives from
+# ValueError, so it covers them all.
+RABDAM_CLI_ERRORS = (ValueError, OSError)
 
 T = TypeVar("T")
 
@@ -117,7 +103,7 @@ def run_from_args(
     if total_runtime_start is None:
         total_runtime_start = perf_counter()
 
-    structure_inputs = structure_inputs_from_args(args)
+    structure_inputs = tuple(args.structure_inputs)
     if not structure_inputs:
         raise ValueError("At least one structure input is required.")
 
@@ -284,22 +270,21 @@ def calculate_bdamage_from_args(
 ) -> tuple[ResolvedStructureInput, BDamageWorkflowResult]:
     """Resolve one input, read it, and run the RABDAM BDamage stages."""
     workflow_options = bdamage_workflow_options_from_args(args)
-    # Structure preparation is not configurable: only protein atoms are
-    # scored, so the RABDAM defaults are the E-path population.
-    preparation_options = StructurePreparationOptions()
 
     resolved = stage_runner(
         "Resolving input",
         lambda: resolve_structure_input(structure_input),
     )
-    local_input = stage_runner(
-        "Ensuring local structure file",
-        lambda: ensure_local_structure_file(
-            resolved,
-            download_dir=Path(args.download_dir).expanduser(),
-            overwrite=args.overwrite_download,
-        ),
-    )
+    local_input = resolved
+    if resolved.needs_download:
+        local_input = stage_runner(
+            "Downloading from RCSB",
+            lambda: download_rcsb_mmcif(
+                resolved,
+                download_dir=Path(args.download_dir).expanduser(),
+                overwrite=args.overwrite_download,
+            ),
+        )
     structure_data = stage_runner(
         "Reading structure",
         lambda: read_structure(local_input),
@@ -307,7 +292,6 @@ def calculate_bdamage_from_args(
     workflow_result = calculate_bdamage_for_structure_data(
         structure_data,
         workflow_options=workflow_options,
-        preparation_options=preparation_options,
         stage_runner=stage_runner,
     )
 
@@ -350,17 +334,36 @@ def batch_output_prefix_path(
 
 
 def output_label_for_input(local_input: ResolvedStructureInput) -> str:
-    """Return a filesystem-friendly output label for a resolved input."""
+    """Return a filesystem-friendly output label for a resolved input.
+
+    An RCSB entry is labelled by its upper-case ID. A local file is labelled by
+    its name without `.gz` and the format extension, so `1abc.cif.gz` gives
+    `1abc`. A wwPDB archive name such as `pdb1abc.ent.gz` gives the upper-case
+    ID, `1ABC`, the same label a download of that entry gets. A name with
+    nothing usable left falls back to `structure`.
+    """
     if local_input.structure_id:
         raw_label = local_input.structure_id.upper()
-    elif local_input.local_path is not None:
-        raw_label = local_input.local_path.stem
     else:
-        raw_label = Path(local_input.original_input).stem or "structure"
+        # Without an RCSB ID the input is a local file, which always has a path.
+        assert local_input.local_path is not None
+        raw_label = _label_from_file_name(local_input.local_path.name)
 
-    label = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_label.strip())
+    label = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_label)
     label = label.strip("._-")
     return label or "structure"
+
+
+def _label_from_file_name(name: str) -> str:
+    stem, suffix = split_structure_file_name(name)
+    if (
+        suffix == ".ent"
+        and len(stem) == 7
+        and stem[:3].lower() == "pdb"
+        and is_valid_classic_pdb_id(stem[3:])
+    ):
+        return stem[3:].upper()
+    return stem
 
 
 def run_stage(

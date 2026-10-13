@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import io
 import shutil
 import subprocess
@@ -52,9 +53,7 @@ def _rows(path: Path) -> list[dict[str, str]]:
 def test_defaults_mirror_the_workflow_options() -> None:
     args = parse_args(["model.pdb"])
 
-    assert (
-        args.structure_inputs == ["model.pdb"] and args.structure_input == "model.pdb"
-    )
+    assert args.structure_inputs == ["model.pdb"]
     assert args.percentile == 2.0 and args.chains is None
     assert args.cluster_distance == 4.0 and args.minimum_cluster_size == 8
     assert args.packing_density_threshold == 7.0 and args.window_size_fraction == 0.02
@@ -112,9 +111,7 @@ def test_defaults_mirror_the_workflow_options() -> None:
     )
 
     batch = parse_args(["a.pdb", "b.pdb"])
-    assert (
-        batch.structure_inputs == ["a.pdb", "b.pdb"] and batch.structure_input is None
-    )
+    assert batch.structure_inputs == ["a.pdb", "b.pdb"]
 
 
 @pytest.mark.parametrize(
@@ -277,7 +274,7 @@ def test_invalid_structures_fail_cleanly(tmp_path: Path) -> None:
     )
     code, _, err = _run([str(assembly), "-o", str(tmp_path / "y"), "-q"])
     assert code == 1 and "cannot fit in the unit cell" in err
-    assert not (tmp_path / "y_epath.csv").exists()
+    assert not (tmp_path / "y").exists()
 
 
 def test_pdb_id_is_downloaded_once_and_labelled_by_id(
@@ -418,6 +415,8 @@ def test_output_labels_and_prefixes(tmp_path: Path) -> None:
         StructureFileFormat.PDB,
         local_path=tmp_path / "....pdb",
     )
+    # Only the extension is left once the stem is cleaned, and an extension is
+    # not a name, so the generic label is used.
     assert output_label_for_input(dots) == "structure"
 
     used: set[Path] = set()
@@ -442,6 +441,51 @@ def test_output_labels_and_prefixes(tmp_path: Path) -> None:
         )
         == tmp_path / "1ABC_2" / "1ABC"
     )
+
+
+@pytest.mark.parametrize(
+    ("name", "file_format", "label"),
+    [
+        ("1abc.cif.gz", StructureFileFormat.MMCIF, "1abc"),
+        ("model.v2.pdb.gz", StructureFileFormat.PDB, "model.v2"),
+        ("pdb1abc.ent", StructureFileFormat.PDB, "1ABC"),
+        ("PDB1ABC.ENT.GZ", StructureFileFormat.PDB, "1ABC"),
+        ("pdb1abc.ent.gz", StructureFileFormat.PDB, "1ABC"),
+        ("model.ent", StructureFileFormat.PDB, "model"),
+        ("pdbABCD.ent", StructureFileFormat.PDB, "pdbABCD"),
+        ("pdb1abcd.ent", StructureFileFormat.PDB, "pdb1abcd"),
+    ],
+)
+def test_output_labels_strip_compression_and_format(
+    tmp_path: Path, name: str, file_format: StructureFileFormat, label: str
+) -> None:
+    local = ResolvedStructureInput(
+        name,
+        StructureSourceType.LOCAL_FILE,
+        file_format,
+        local_path=tmp_path / name,
+    )
+
+    assert output_label_for_input(local) == label
+    assert local.structure_id is None
+
+
+def test_gzipped_pdb_runs_like_the_plain_file(tmp_path: Path) -> None:
+    plain = write_synthetic_pdb(tmp_path / "plain.pdb")
+    gzipped = tmp_path / "packed.pdb.gz"
+    gzipped.write_bytes(gzip.compress(plain.read_bytes()))
+    output_dir = tmp_path / "out"
+
+    for path in (plain, gzipped):
+        code, _, err = _run(
+            [str(path), "--output-dir", str(output_dir), "-q", "--no-plot"]
+        )
+        assert code == 0, err
+
+    plain_rows = _rows(output_dir / "plain" / "plain_epath.csv")
+    gzipped_rows = _rows(output_dir / "packed" / "packed_epath.csv")
+    assert plain_rows and gzipped_rows == plain_rows
+    assert _rows(output_dir / "packed" / "packed_run.csv")[0]["structure"] == "packed"
 
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX shell launcher")

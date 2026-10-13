@@ -12,7 +12,6 @@ from numpy.typing import NDArray
 from epath.analysis.geometry import (
     maximum_pairwise_distance_pair,
     minimum_spanning_tree_edges,
-    validated_coordinates,
 )
 from epath.analysis.selection import EpathScoredAtom
 from spatial import radius_neighbour_indices
@@ -97,15 +96,22 @@ def cluster_selected_atoms(
     distance_cutoff: float = DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
 ) -> tuple[EpathCluster, ...]:
     """Find connected components among selected atoms using a distance cutoff."""
-    distance_cutoff = _positive_finite_float(
-        distance_cutoff,
-        name="distance_cutoff",
-    )
+    if not math.isfinite(distance_cutoff) or distance_cutoff <= 0.0:
+        raise EpathClusteringError(
+            "distance_cutoff must be a finite positive number, "
+            f"got {distance_cutoff!r}."
+        )
+
     atom_tuple = tuple(atoms)
     if not atom_tuple:
         return ()
 
     coordinates = coordinates_for_atoms(atom_tuple)
+    # Every later geometry step works on subsets of these atoms, so checking
+    # them once here covers the whole analysis.
+    if not np.all(np.isfinite(coordinates)):
+        raise EpathClusteringError("atom coordinates must be finite.")
+
     neighbours_by_index = _neighbour_indices_by_atom(
         coordinates,
         distance_cutoff=distance_cutoff,
@@ -129,21 +135,12 @@ def cluster_metrics_for_atoms(
     atoms: Sequence[EpathScoredAtom],
 ) -> EpathClusterMetrics:
     """Calculate MST and span metrics for a group of atoms."""
-    if not atoms:
-        return EpathClusterMetrics(
-            mst_total_length=0.0,
-            mst_largest_edge=0.0,
-            span=0.0,
-            mean_step=0.0,
-        )
-
     return mst_length_stats(coordinates_for_atoms(atoms))
 
 
 def mst_length_stats(coordinates: NDArray[np.float64]) -> EpathClusterMetrics:
     """Return Prim-style MST metrics for a coordinate array."""
-    coordinate_array = validated_coordinates(coordinates)
-    atom_count = int(coordinate_array.shape[0])
+    atom_count = int(coordinates.shape[0])
     if atom_count <= 1:
         return EpathClusterMetrics(
             mst_total_length=0.0,
@@ -152,15 +149,15 @@ def mst_length_stats(coordinates: NDArray[np.float64]) -> EpathClusterMetrics:
             mean_step=0.0,
         )
 
-    edges = minimum_spanning_tree_edges(coordinate_array)
+    edges = minimum_spanning_tree_edges(coordinates)
     total_length = 0.0
     largest_edge = 0.0
     for edge in edges:
         total_length += edge.length
         largest_edge = max(largest_edge, edge.length)
 
-    _, _, span = maximum_pairwise_distance_pair(coordinate_array)
-    mean_step = total_length / float(max(atom_count - 1, 1))
+    _, _, span = maximum_pairwise_distance_pair(coordinates)
+    mean_step = total_length / (atom_count - 1)
 
     return EpathClusterMetrics(
         mst_total_length=total_length,
@@ -173,13 +170,8 @@ def mst_length_stats(coordinates: NDArray[np.float64]) -> EpathClusterMetrics:
 def coordinates_for_atoms(
     atoms: Sequence[EpathScoredAtom],
 ) -> NDArray[np.float64]:
-    """Return the coordinate array for a sequence of scored atoms.
-
-    Raises:
-        EpathClusteringError: If the coordinates are not shape (N, 3) or contain
-            non-finite values.
-    """
-    coordinates = np.asarray(
+    """Return the coordinate array for a sequence of scored atoms."""
+    return np.asarray(
         [
             (
                 scored_atom.atom.x,
@@ -190,13 +182,6 @@ def coordinates_for_atoms(
         ],
         dtype=float,
     )
-    if coordinates.ndim != 2 or coordinates.shape[1] != 3:
-        raise EpathClusteringError("atom coordinates must have shape (N, 3).")
-
-    if not np.all(np.isfinite(coordinates)):
-        raise EpathClusteringError("atom coordinates must be finite.")
-
-    return coordinates
 
 
 def _neighbour_indices_by_atom(
@@ -234,20 +219,3 @@ def _connected_components(
         components.append(component)
 
     return components
-
-
-def _positive_finite_float(value: float, *, name: str) -> float:
-    if isinstance(value, bool):
-        raise EpathClusteringError(f"{name} must be numeric, got {value!r}.")
-
-    try:
-        number = float(value)
-    except (TypeError, ValueError) as error:
-        raise EpathClusteringError(f"{name} must be numeric, got {value!r}.") from error
-
-    if not math.isfinite(number) or number <= 0.0:
-        raise EpathClusteringError(
-            f"{name} must be a finite positive number, got {number!r}."
-        )
-
-    return number

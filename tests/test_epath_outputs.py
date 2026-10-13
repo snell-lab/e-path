@@ -7,7 +7,7 @@ from pathlib import Path
 
 import gemmi
 import pytest
-from support import approx, make_epath_atom, make_scored_atom
+from support import approx, make_scored_atom
 
 from epath.outputs.files import EpathOutputWorkflowOptions, EpathWorkflowOutputFiles
 from epath.outputs.plots import write_z_score_falloff
@@ -17,7 +17,11 @@ from epath.outputs.structures import (
     write_model_cif,
     write_path_subset_cifs,
 )
-from epath.outputs.summary import output_file_entries, write_summary_txt
+from epath.outputs.summary import (
+    output_file_entries,
+    removed_atoms_line,
+    write_summary_txt,
+)
 from epath.outputs.tables import (
     CLUSTER_FIELDNAMES,
     COMBINED_ATOM_FIELDNAMES,
@@ -36,6 +40,7 @@ from epath.workflow import (
     EpathWorkflowResult,
     run_epath_workflow,
 )
+from rabdam.structure.models import RemovedAtomCounts
 from rabdam.workflow import calculate_bdamage_for_structure_data
 from xtal.reader import read_structure
 from xtal.resolver import resolve_structure_input
@@ -158,7 +163,7 @@ def test_atom_subset_cif_round_trips_through_gemmi(tmp_path: Path) -> None:
             occupancy=0.5,
             bdamage=0.4321,
         ),
-        make_epath_atom(
+        make_scored_atom(
             source_atom_index=1,
             atom_serial=9,
             record_type="HETATM",
@@ -205,7 +210,7 @@ def test_atom_subset_cif_round_trips_through_gemmi(tmp_path: Path) -> None:
 
     with pytest.raises(EpathStructureOutputError, match="finite"):
         write_atom_subset_cif(
-            tmp_path / "bad.cif", (make_epath_atom(bdamage=float("nan")),)
+            tmp_path / "bad.cif", (make_scored_atom(bdamage=float("nan")),)
         )
 
 
@@ -213,9 +218,9 @@ def test_atom_subset_cif_keeps_fields_that_do_not_fit_pdb_columns(
     tmp_path: Path,
 ) -> None:
     atoms = (
-        make_epath_atom(chain_id="AB", residue_number=12345, atom_name="CA"),
-        make_epath_atom(chain_id="AB", residue_number=12346, atom_name="CA"),
-        make_epath_atom(chain_id="C", residue_number=-1200, atom_name="CA"),
+        make_scored_atom(chain_id="AB", residue_number=12345, atom_name="CA"),
+        make_scored_atom(chain_id="AB", residue_number=12346, atom_name="CA"),
+        make_scored_atom(chain_id="C", residue_number=-1200, atom_name="CA"),
     )
     path = write_atom_subset_cif(tmp_path / "wide.cif", atoms)
     model = gemmi.read_structure(str(path))[0]
@@ -295,20 +300,16 @@ def test_z_score_plot_is_written_as_png(
     path = write_z_score_falloff(
         tmp_path / "plots" / "z.png", result.selection_result, dpi=50
     )
-    assert path is not None and path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    assert path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
     from epath.analysis.selection import select_atoms_by_percentile
-
-    empty = select_atoms_by_percentile((), percentile=2.0)
-    assert write_z_score_falloff(tmp_path / "none.png", empty) is None
 
     # No threshold: nothing to put in a legend, but still a plot.
     unthresholded = select_atoms_by_percentile(
         [a.atom for a in result.selection_result.scored_atoms], percentile=100.0
     )
-    assert (
-        write_z_score_falloff(tmp_path / "full.png", unthresholded, dpi=50) is not None
-    )
+    full = write_z_score_falloff(tmp_path / "full.png", unthresholded, dpi=50)
+    assert full.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
 def test_summary_report_lists_results_and_files(
@@ -321,6 +322,10 @@ def test_summary_report_lists_results_and_files(
     text = path.read_text()
 
     assert "Selected atoms: 23 / 77" in text
+    assert (
+        "Atoms removed before scoring: 1 hydrogen, 1 with invalid occupancy, "
+        "1 with a non-positive B-factor, 1 alternate conformer"
+    ) in text
     assert "Window size used: 11 atoms" in text
     assert "Space group: P 1 21 1" in text
     assert "Protein Bnet sites: 4" in text
@@ -333,6 +338,20 @@ def test_summary_report_lists_results_and_files(
     assert output_file_entries(files) == (
         ("Combined atom CSV", files.combined_csv),
         ("Pathway mmCIF 1", files.path_cifs[0]),
+    )
+
+
+def test_removed_atoms_line_lists_only_non_zero_counts() -> None:
+    assert removed_atoms_line(RemovedAtomCounts(1204, 0, 3, 0, 87)) == (
+        "Atoms removed before scoring: 1204 hydrogens, 3 with invalid occupancy, "
+        "87 alternate conformers"
+    )
+    assert removed_atoms_line(RemovedAtomCounts(0, 2, 0, 5, 0)) == (
+        "Atoms removed before scoring: 2 with non-finite coordinates, "
+        "5 with a non-positive B-factor"
+    )
+    assert removed_atoms_line(RemovedAtomCounts(0, 0, 0, 0, 0)) == (
+        "Atoms removed before scoring: none"
     )
 
 
