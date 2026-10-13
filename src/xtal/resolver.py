@@ -5,7 +5,7 @@ Nothing here touches the network; `xtal.rcsb` does the download.
 
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 
@@ -18,7 +18,7 @@ class StructureInputError(ValueError):
     """
 
 
-class StructureSourceType(str, Enum):
+class StructureSourceType(StrEnum):
     """Say whether an input is a file on disk or an RCSB entry to download.
 
     A downloaded entry becomes `LOCAL_FILE` and keeps its `structure_id`, so
@@ -29,7 +29,7 @@ class StructureSourceType(str, Enum):
     RCSB_ID = "rcsb_id"
 
 
-class StructureFileFormat(str, Enum):
+class StructureFileFormat(StrEnum):
     """Identify a supported coordinate-file format."""
 
     MMCIF = "mmcif"

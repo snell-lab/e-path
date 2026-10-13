@@ -8,6 +8,7 @@ where Gemmi leaves it unset.
 import copy
 import math
 import re
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,6 +53,9 @@ class AtomRecord:
     is None when the serial is missing or unparseable. Gemmi
     reports an unrecognised element as "X". `model_number` counts models from
     1 rather than repeating the file's own MODEL serial.
+
+    `b_factor` is NaN when an mmCIF file gives the atom none, and 0 when the
+    PDB field is blank. Neither is a usable value, so consumers must check it.
     """
 
     source_atom_index: int
@@ -156,7 +160,7 @@ def read_structure(resolved_input: ResolvedStructureInput) -> StructureData:
 
     # An mmCIF file without atoms yields no model at all, while a PDB file
     # without atoms yields one empty model. Both end up here.
-    atoms = _extract_atom_records(structure)
+    atoms = _extract_atom_records(structure, _serials_without_b_factor(document, path))
 
     if not atoms:
         raise StructureReadError(
@@ -176,7 +180,61 @@ def read_structure(resolved_input: ResolvedStructureInput) -> StructureData:
     )
 
 
-def _extract_atom_records(structure: gemmi.Structure) -> list[AtomRecord]:
+def _serials_without_b_factor(
+    document: gemmi.cif.Document, path: Path
+) -> frozenset[int]:
+    """Return the serial numbers of the mmCIF atoms that have no B-factor.
+
+    When an mmCIF file gives an atom no B-factor, Gemmi fills in 20, and the
+    atom then looks like any other. This finds those atoms by reading the
+    B-factor column of the file itself.
+
+    Each atom in the file has an ID, `_atom_site.id`, which Gemmi keeps as the
+    atom's serial number. The serials of the atoms without a B-factor are
+    returned, so the caller can recognize them. Their position in the file
+    would not do, because Gemmi may reorder atoms when it groups them into
+    residues.
+
+    An atom without a B-factor that has no usable ID, or shares its ID with
+    another atom, cannot be recognized, and `StructureReadError` is raised.
+
+    A PDB file needs none of this, because Gemmi reads a blank B-factor there
+    as 0. It gives an empty result.
+    """
+    # Gemmi fills the document only for mmCIF input.
+    if len(document) == 0:
+        return frozenset()
+
+    block = document[0]
+    serial_values = block.find_values("_atom_site.id")
+    b_factor_values = block.find_values("_atom_site.B_iso_or_equiv")
+    # A file with no B-factor column at all lacks one for every atom.
+    rows_without_b_factor = (
+        [row for row, value in enumerate(b_factor_values) if gemmi.cif.is_null(value)]
+        if b_factor_values
+        else list(range(len(serial_values)))
+    )
+    if not rows_without_b_factor:
+        return frozenset()
+
+    serial_counts = Counter(serial_values)
+    serials: set[int] = set()
+    for row in rows_without_b_factor:
+        serial_text = serial_values[row]
+        if not serial_text.isdecimal() or serial_counts[serial_text] > 1:
+            raise StructureReadError(
+                f"Structure file {path!s} has atoms without a B-factor, and "
+                "its _atom_site.id values are missing or repeated, so those "
+                "atoms cannot be identified."
+            )
+        serials.add(int(serial_text))
+
+    return frozenset(serials)
+
+
+def _extract_atom_records(
+    structure: gemmi.Structure, serials_without_b_factor: frozenset[int]
+) -> list[AtomRecord]:
     atom_records: list[AtomRecord] = []
 
     for model_index, model in enumerate(structure, start=1):
@@ -209,7 +267,11 @@ def _extract_atom_records(structure: gemmi.Structure) -> list[AtomRecord]:
                             y=float(position.y),
                             z=float(position.z),
                             occupancy=float(atom.occ),
-                            b_factor=float(atom.b_iso),
+                            b_factor=(
+                                math.nan
+                                if atom.serial in serials_without_b_factor
+                                else float(atom.b_iso)
+                            ),
                             # Gemmi reports a missing or unparseable serial as 0.
                             atom_serial=atom.serial or None,
                             is_hetatm=is_hetatm,

@@ -1,7 +1,6 @@
 """Structure reading: atom records, metadata, and rejection of bad files."""
 
-from __future__ import annotations
-
+import math
 from pathlib import Path
 
 import gemmi
@@ -280,3 +279,77 @@ def test_a_missing_atom_serial_is_none(tmp_path: Path) -> None:
     serials = [record.atom_serial for record in _read(path).atoms]
 
     assert serials == [atoms[0].serial, None, atoms[2].serial]
+
+
+def _write_mmcif_with_b_factors(
+    source: Path, path: Path, replacements: dict[int, str]
+) -> list[int]:
+    """Copy an mmCIF file, replacing the B-factor on the given rows.
+
+    Returns the `_atom_site.id` of every replaced row.
+    """
+    document = gemmi.cif.read(str(source))
+    block = document.sole_block()
+    b_factors = block.find_values("_atom_site.B_iso_or_equiv")
+    serials = block.find_values("_atom_site.id")
+    for row, value in replacements.items():
+        b_factors[row] = value
+    document.write_file(str(path))
+    return [int(serials[row]) for row in replacements]
+
+
+def test_an_absent_mmcif_b_factor_is_nan(synthetic_mmcif: Path, tmp_path: Path) -> None:
+    # Gemmi reports an absent B-factor as 20, which would be scored as if real.
+    expected = {
+        record.atom_serial: record.b_factor for record in _read(synthetic_mmcif).atoms
+    }
+    path = tmp_path / "missing_b.cif"
+    blanked = _write_mmcif_with_b_factors(synthetic_mmcif, path, {0: "?", 3: "."})
+
+    records = _read(path).atoms
+
+    assert len(blanked) == 2
+    for record in records:
+        if record.atom_serial in blanked:
+            assert math.isnan(record.b_factor)
+        else:
+            assert record.b_factor == expected[record.atom_serial]
+
+
+def test_an_mmcif_without_a_b_factor_column_has_no_b_factors(
+    synthetic_mmcif: Path, tmp_path: Path
+) -> None:
+    path = tmp_path / "no_b_column.cif"
+    path.write_text(
+        synthetic_mmcif.read_text().replace(
+            "_atom_site.B_iso_or_equiv", "_atom_site.not_a_b_factor"
+        )
+    )
+
+    records = _read(path).atoms
+
+    assert records and all(math.isnan(record.b_factor) for record in records)
+
+
+def test_absent_b_factors_on_unidentifiable_atoms_are_rejected(
+    synthetic_mmcif: Path, tmp_path: Path
+) -> None:
+    document = gemmi.cif.read(str(synthetic_mmcif))
+    block = document.sole_block()
+    block.find_values("_atom_site.B_iso_or_equiv")[0] = "?"
+    serials = block.find_values("_atom_site.id")
+    serials[0] = serials[1]
+    path = tmp_path / "repeated_ids.cif"
+    document.write_file(str(path))
+
+    with pytest.raises(StructureReadError, match="without a B-factor"):
+        _read(path)
+
+
+def test_a_blank_pdb_b_factor_is_zero(tmp_path: Path) -> None:
+    line = format_pdb_atom(synthetic_atoms()[0])
+    # The B-factor field is columns 61 to 66.
+    path = tmp_path / "blank_b.pdb"
+    path.write_text(f"{line[:60]}      {line[66:]}\nEND\n")
+
+    assert _read(path).atoms[0].b_factor == 0.0

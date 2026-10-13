@@ -1,7 +1,5 @@
 """RCSB download caching, validation and failure handling."""
 
-from __future__ import annotations
-
 import errno
 import io
 from collections.abc import Callable

@@ -7,8 +7,6 @@ crystallography rather than part of any damage calculation, so they live here,
 where `xtal.validate` and `rabdam.crystal` both use them.
 """
 
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass
 from typing import cast

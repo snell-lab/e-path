@@ -23,12 +23,10 @@ advisory warning. A model that passes is not proven complete. Losing one chain
 of four, for example, can leave the coefficient inside the plausible band.
 """
 
-from __future__ import annotations
-
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from functools import cache
 
 import gemmi
@@ -53,7 +51,7 @@ class CrystalValidationError(CrystalMetadataError):
     """
 
 
-class MacromoleculeKind(str, Enum):
+class MacromoleculeKind(StrEnum):
     """Name the macromolecule classes that differ in partial specific volume."""
 
     PROTEIN = "protein"

@@ -1,7 +1,5 @@
 """Unit-cell validation and space-group settings."""
 
-from __future__ import annotations
-
 import math
 from pathlib import Path
 
@@ -19,7 +17,7 @@ from xtal.reader import read_structure
 from xtal.resolver import resolve_structure_input
 from xtal.validate import validate_crystal
 
-CellTuple = tuple[float, float, float, float, float, float]
+type CellTuple = tuple[float, float, float, float, float, float]
 
 
 @pytest.mark.parametrize(

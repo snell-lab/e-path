@@ -1,7 +1,5 @@
 """Input resolution and RCSB download handling."""
 
-from __future__ import annotations
-
 import gzip
 import io
 import sys

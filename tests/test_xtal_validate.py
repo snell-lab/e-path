@@ -1,7 +1,5 @@
 """Asymmetric-unit content checks and the derived fields of a validated crystal."""
 
-from __future__ import annotations
-
 import dataclasses
 import math
 from collections.abc import Callable
@@ -35,7 +33,7 @@ ALANINE_HEAVY_ATOMS = (("N", "N"), ("CA", "C"), ("C", "C"), ("O", "O"), ("CB", "
 # Alanine inside a chain is C3H5NO.
 ALANINE_IN_CHAIN = 3 * CARBON + 5 * HYDROGEN + NITROGEN + OXYGEN
 
-Cell = tuple[float, float, float, float, float, float]
+type Cell = tuple[float, float, float, float, float, float]
 
 
 def _residue(

@@ -1,7 +1,5 @@
 """Unit-cell accessors, space groups, and asymmetric-unit validation."""
 
-from __future__ import annotations
-
 import dataclasses
 import math
 
