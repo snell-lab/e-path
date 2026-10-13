@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import sys
 from pathlib import Path
 from typing import NoReturn
 from urllib.error import HTTPError, URLError
@@ -279,7 +280,10 @@ def test_unlistable_parent_is_a_resolution_error(
     assert isinstance(info.value.__cause__, PermissionError)
 
 
-def test_unknown_home_directory_is_a_resolution_error() -> None:
+# Windows does not fail on an unknown user. It guesses a home directory beside
+# the current user's, so the input is reported as a missing file instead.
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX home lookup")
+def test_unknown_home_directory_is_an_input_error() -> None:
     with pytest.raises(StructureInputError, match="home directory"):
         resolve_structure_input("~no_such_epath_test_user/model.pdb")
 
@@ -288,7 +292,9 @@ def test_tilde_is_expanded_but_environment_variables_are_not(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    # Windows reads the home directory from USERPROFILE rather than HOME.
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("EPATH_TEST_DIR", str(tmp_path))
     path = tmp_path / "model.pdb"
     path.write_text("x")
