@@ -1,9 +1,11 @@
-"""E-path analysis layer.
+"""E-path analysis layer, from scored atoms to described pathways.
 
-These modules turn atom-level BDamage output into described pathways, in
-dependency order: `atoms`, `geometry`, and `residues` hold the primitives;
-`selection` picks candidate atoms from the negative Z-score tail;
-`clustering` groups them by spatial connectivity; and `topology`,
-`endpoints`, and `pathways` describe each cluster as a path.
-Nothing here writes files — that is the `epath.outputs` layer.
+- `atoms` builds E-path atom records from BDamage output.
+- `selection` picks candidate atoms from the negative Z-score tail.
+- `clustering` groups selected atoms by spatial connectivity.
+- `pathways` describes each cluster as a path.
+- `residues` classifies path residues by side-chain chemistry.
+- `topology` measures whether a path is linear, branched, or clustered.
+- `endpoints` relates path ends to cofactors, interfaces, and the surface.
+- `geometry` holds the distance and spanning-tree helpers they share.
 """

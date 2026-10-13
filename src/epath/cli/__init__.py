@@ -1,7 +1,9 @@
-"""Command-line interface for E-path.
+"""Command-line interface for E-path, with `main` as its entry point.
 
-`epath.cli.args` parses arguments, `epath.cli.run` runs the workflow, and
-`epath.cli.report` prints terminal summaries. `main` ties them together.
+- `args` parses arguments into workflow options.
+- `run` resolves inputs and runs the RABDAM and E-path stages.
+- `report` prints the terminal summaries.
+- `style` colours and wraps terminal output.
 """
 
 from __future__ import annotations
