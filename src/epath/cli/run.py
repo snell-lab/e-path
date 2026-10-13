@@ -35,7 +35,6 @@ from xtal.rcsb import download_rcsb_mmcif
 from xtal.reader import read_structure
 from xtal.resolver import (
     ResolvedStructureInput,
-    is_valid_classic_pdb_id,
     resolve_structure_input,
     split_structure_file_name,
 )
@@ -174,7 +173,6 @@ def run_single_structure(
     if not args.quiet:
         print_epath_summary(
             cli_result,
-            preview_count=args.preview_count,
             total_runtime_seconds=perf_counter() - total_runtime_start,
             stream=stdout,
         )
@@ -335,34 +333,18 @@ def output_label_for_input(local_input: ResolvedStructureInput) -> str:
 
     An RCSB entry is labelled by its upper-case ID. A local file is labelled by
     its name without `.gz` and the format extension, so `1abc.cif.gz` gives
-    `1abc`. A wwPDB archive name such as `pdb1abc.ent.gz` gives the upper-case
-    ID, `1ABC`, the same label a download of that entry gets. A name with
-    nothing usable left falls back to `structure`.
+    `1abc`. A name with nothing usable left falls back to `structure`.
     """
     if local_input.structure_id:
         raw_label = local_input.structure_id.upper()
     else:
         # Without an RCSB ID the input is a local file, which always has a path.
         assert local_input.local_path is not None
-        raw_label = _label_from_file_name(local_input.local_path.name)
+        raw_label = split_structure_file_name(local_input.local_path.name)[0]
 
     label = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_label)
     label = label.strip("._-")
     return label or "structure"
-
-
-def _label_from_file_name(name: str) -> str:
-    stem, suffix = split_structure_file_name(name)
-    # The length is checked because `is_valid_classic_pdb_id` ignores
-    # surrounding whitespace, so `pdb 1abc.ent` would otherwise match.
-    if (
-        suffix == ".ent"
-        and len(stem) == 7
-        and stem[:3].lower() == "pdb"
-        and is_valid_classic_pdb_id(stem[3:])
-    ):
-        return stem[3:].upper()
-    return stem
 
 
 def run_stage[T](

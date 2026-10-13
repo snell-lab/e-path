@@ -68,17 +68,14 @@ def print_citations(*, stream: TextIO) -> None:
 def print_epath_summary(
     result: EpathCliResult,
     *,
-    preview_count: int,
     total_runtime_seconds: float,
     stream: TextIO,
 ) -> None:
     """Print the summary of one finished run.
 
     The sections are the crystal, the BDamage calculation, the selection, the
-    Bnet results, the pathways and the files written. A positive
-    `preview_count` adds the packing-density counts and BDamage scores of the
-    first `preview_count` scored atoms, or of all of them when there are
-    fewer. Crystal warnings are part of the crystal section.
+    Bnet results, the pathways and the files written. Crystal warnings are
+    part of the crystal section.
     """
     pipeline_result = result.pipeline_result
     bdamage_result = pipeline_result.bdamage_pipeline_result
@@ -118,20 +115,6 @@ def print_epath_summary(
         ),
         stream=stream,
     )
-
-    if preview_count > 0:
-        counts = bdamage_result.packing_densities[:preview_count]
-        scores = bdamage_result.bdamage_results[:preview_count]
-        _print_section(
-            "BDamage preview:",
-            (
-                f"Packing-density counts, first {len(counts)}:",
-                INDENT + ", ".join(str(count) for count in counts),
-                f"BDamage scores, first {len(scores)}:",
-                INDENT + ", ".join(f"{score.bdamage:.3f}" for score in scores),
-            ),
-            stream=stream,
-        )
 
     print(file=stream)
     print(f"Total runtime: {total_runtime_seconds:.1f}s", file=stream)

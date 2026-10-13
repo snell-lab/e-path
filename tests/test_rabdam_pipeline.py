@@ -57,7 +57,9 @@ def _check_against_references(
         space_group=result.crystal.space_group,
         translation_range=translation_range,
     )
-    assert list(result.packing_densities) == expected_density
+    assert [
+        score.packing_density for score in result.bdamage_results
+    ] == expected_density
 
     selected = prepared.selected_atoms
     expected_bdamage = reference_bdamage(
@@ -120,7 +122,7 @@ def test_translation_range_zero_and_wider_threshold(synthetic_pdb: Path) -> None
         threshold=5.0,
         translation_range=0,
     )
-    assert list(result.packing_densities) == expected
+    assert [score.packing_density for score in result.bdamage_results] == expected
 
 
 def test_file_specific_frame_gives_correct_neighbours(tmp_path: Path) -> None:

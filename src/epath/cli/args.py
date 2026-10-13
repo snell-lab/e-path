@@ -11,7 +11,6 @@ checked: the pipelines take the option objects as they are.
 
 import argparse
 import math
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -28,14 +27,6 @@ from xtal.rcsb import DEFAULT_RCSB_DOWNLOAD_DIR
 from xtal.resolver import COMPRESSED_SUFFIX, SUPPORTED_STRUCTURE_SUFFIXES
 
 DEFAULT_OUTPUT_DIR = "output"
-
-REMOVED_BDAMAGE_COMMAND_MESSAGE = """\
-epath: error: the 'bdamage' subcommand has been removed.
-
-E-path scores protein atoms only, and that population is no longer
-configurable. Run 'epath STRUCTURE_INPUT' instead; per-atom BDamage,
-packing density, and window-averaged B-factors are written to the
-combined '*_epath.csv' output."""
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -59,7 +50,6 @@ def build_parser() -> argparse.ArgumentParser:
     epath_selection = parser.add_argument_group("E-path selection options")
     epath_advanced = parser.add_argument_group("advanced E-path parameters")
     bdamage = parser.add_argument_group("advanced BDamage parameters")
-    bdamage_debug = parser.add_argument_group("advanced BDamage debugging options")
     download = parser.add_argument_group("download options")
     general = parser.add_argument_group("general options")
 
@@ -68,7 +58,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_epath_selection_arguments(epath_selection, defaults=epath_defaults)
     _add_epath_advanced_arguments(epath_advanced, defaults=epath_defaults)
     _add_bdamage_calculation_arguments(bdamage, defaults=bdamage_defaults)
-    _add_bdamage_debug_arguments(bdamage_debug)
     _add_download_arguments(download)
     _add_general_arguments(general)
 
@@ -282,27 +271,12 @@ def _add_bdamage_calculation_arguments(
     )
 
 
-def _add_bdamage_debug_arguments(group: Any) -> None:
-    group.add_argument(
-        "--preview-count",
-        metavar="INT",
-        type=non_negative_int,
-        default=0,
-        help="Number of leading packing-density and BDamage values to print. Default: 0",
-    )
-
-
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments, taken from `sys.argv` when `argv` is None.
 
-    `SystemExit` is raised for the removed `bdamage` subcommand, as well as by
-    argparse itself for invalid arguments, `--help` and `--version`.
+    `SystemExit` is raised by argparse for invalid arguments, `--help` and
+    `--version`.
     """
-    if argv is None:
-        argv = sys.argv[1:]
-    if argv and argv[0] == "bdamage":
-        raise SystemExit(REMOVED_BDAMAGE_COMMAND_MESSAGE)
-
     return build_parser().parse_args(argv)
 
 

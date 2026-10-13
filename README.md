@@ -84,8 +84,6 @@ fetches the file again even when a cached copy exists.
 
 `--version` and `--citations` print the program version and the papers to
 cite, and `-q`/`--quiet` suppresses progress and summary output.
-`--preview-count N` exists only for debugging the BDamage calculation: it
-prints the first N packing-density and BDamage values to the terminal.
 
 ## Output
 

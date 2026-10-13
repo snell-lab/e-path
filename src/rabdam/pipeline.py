@@ -66,14 +66,14 @@ class BDamagePipelineOptions:
 class BDamagePipelineResult:
     """Store the results of the BDamage pipeline.
 
-    `packing_densities` holds the neighbour count of each selected atom and
-    `bdamage_results` its score, both in selected-atom order. `options` holds the settings the run used, defaults
-    included, and `window_size` the odd window size derived from them.
+    `bdamage_results` holds the score and the packing density of each
+    selected atom, in selected-atom order. `options` holds the settings the
+    run used, defaults included, and `window_size` the odd window size derived
+    from them.
     """
 
     prepared_structure: PreparedStructure
     crystal: ValidatedCrystal
-    packing_densities: tuple[int, ...]
     bdamage_results: tuple[BDamageAtomResult, ...]
     options: BDamagePipelineOptions
     window_size: int
@@ -192,7 +192,6 @@ def run_bdamage_pipeline_from_prepared(
     return BDamagePipelineResult(
         prepared_structure=prepared_structure,
         crystal=crystal,
-        packing_densities=packing_densities,
         bdamage_results=bdamage_results,
         options=options,
         window_size=window_size,

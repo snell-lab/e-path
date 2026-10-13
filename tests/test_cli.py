@@ -15,7 +15,6 @@ import xtal.rcsb as rcsb
 from epath import __version__
 from epath.cli import main
 from epath.cli.args import (
-    REMOVED_BDAMAGE_COMMAND_MESSAGE,
     bdamage_pipeline_options_from_args,
     epath_pipeline_options_from_args,
     fraction_float,
@@ -129,9 +128,6 @@ def test_argparse_rejects_bad_values() -> None:
     for chains in ("", "A,,B", " "):
         with pytest.raises(SystemExit):
             parse_args(["a.pdb", "--chains", chains])
-    with pytest.raises(SystemExit) as info:
-        parse_args(["bdamage", "a.pdb"])
-    assert info.value.code == REMOVED_BDAMAGE_COMMAND_MESSAGE
 
 
 def test_informational_invocations(capsys: pytest.CaptureFixture[str]) -> None:
@@ -246,27 +242,19 @@ def test_default_output_prefix_uses_the_input_stem(
     synthetic_pdb: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    code, out, _ = _run([str(synthetic_pdb), "-q", "--no-plot", "--preview-count", "3"])
+    code, _, _ = _run([str(synthetic_pdb), "-q", "--no-plot"])
 
     assert code == 0
     assert (tmp_path / "output" / "synthetic" / "synthetic_summary.txt").is_file()
     assert (tmp_path / "output" / "synthetic" / "synthetic_epath.csv").is_file()
 
-    code, out, _ = _run(
-        [
-            str(synthetic_pdb),
-            "--output-dir",
-            str(tmp_path / "elsewhere"),
-            "--no-plot",
-            "--preview-count",
-            "3",
-        ]
+    code, _, _ = _run(
+        [str(synthetic_pdb), "--output-dir", str(tmp_path / "elsewhere"), "--no-plot"]
     )
     assert (
         code == 0
         and (tmp_path / "elsewhere" / "synthetic" / "synthetic_run.csv").is_file()
     )
-    assert "BDamage preview:" in out and "Packing-density counts, first 3:" in out
 
 
 def test_invalid_structures_fail_cleanly(tmp_path: Path) -> None:
@@ -458,12 +446,8 @@ def test_output_labels_and_prefixes(tmp_path: Path) -> None:
     [
         ("1abc.cif.gz", StructureFileFormat.MMCIF, "1abc"),
         ("model.v2.pdb.gz", StructureFileFormat.PDB, "model.v2"),
-        ("pdb1abc.ent", StructureFileFormat.PDB, "1ABC"),
-        ("PDB1ABC.ENT.GZ", StructureFileFormat.PDB, "1ABC"),
-        ("pdb1abc.ent.gz", StructureFileFormat.PDB, "1ABC"),
+        ("PDB1ABC.ENT.GZ", StructureFileFormat.PDB, "PDB1ABC"),
         ("model.ent", StructureFileFormat.PDB, "model"),
-        ("pdbABCD.ent", StructureFileFormat.PDB, "pdbABCD"),
-        ("pdb1abcd.ent", StructureFileFormat.PDB, "pdb1abcd"),
     ],
 )
 def test_output_labels_strip_compression_and_format(

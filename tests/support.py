@@ -457,7 +457,6 @@ def bdamage_result_from_atoms(
     return BDamagePipelineResult(
         prepared_structure=prepared_structure,
         crystal=validate_crystal_for_prepared_structure(prepared_structure),
-        packing_densities=tuple(atom.bdamage_result.packing_density for atom in atoms),
         bdamage_results=tuple(atom.bdamage_result for atom in atoms),
         options=BDamagePipelineOptions(),
         window_size=BDamagePipelineOptions().minimum_window_size,
