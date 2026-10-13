@@ -159,8 +159,8 @@ and the details of its outputs are in `docs/`:
   what is faster, and what was deliberately dropped.
 - [Package layout](docs/package-layout.md): the `xtal`, `rabdam`, `epath`, and
   `spatial` packages and their dependency direction.
-- [Python API](docs/python-api.md): running the pipeline and overriding
-  thresholds from Python.
+- [Python API](docs/python-api.md): running the pipeline and setting its
+  options from Python.
 
 ## Limits And Assumptions
 

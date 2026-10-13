@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 from support import approx, bdamage_result_from_atoms, make_scored_atom
 
-from epath.analysis.pathways import PathAnalysisOptions
 from epath.analysis.selection import EpathScoredAtom
 from epath.outputs.files import EpathOutputPipelineOptions
 from epath.pipeline import (
@@ -187,7 +186,6 @@ def test_pipeline_from_a_bdamage_result(synthetic_pdb: Path) -> None:
     options = EpathPipelineOptions(
         selection=EpathSelectionPipelineOptions(percentile=30.0),
         clustering=EpathClusterPipelineOptions(minimum_cluster_size=3),
-        paths=PathAnalysisOptions(cofactor_proximity_distance=6.0),
     )
     result, files = run_epath_pipeline(
         bdamage, options=options, stage_runner=stage_runner

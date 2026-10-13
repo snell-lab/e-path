@@ -40,20 +40,20 @@ EndpointKind = Literal[
 ]
 
 # An endpoint this close to a cofactor is in direct contact with it.
-DEFAULT_COFACTOR_CONTACT_ANGSTROM = 4.0
+COFACTOR_CONTACT_ANGSTROM = 4.0
 
 # An endpoint within this range terminates in the cofactor's environment
 # without touching it. Beyond roughly this distance a residue no longer shares
 # the cofactor's first or second shell.
-DEFAULT_COFACTOR_PROXIMITY_ANGSTROM = 8.0
+COFACTOR_PROXIMITY_ANGSTROM = 8.0
 
 # An endpoint this close to another chain sits in a subunit interface.
-DEFAULT_INTERFACE_ANGSTROM = 4.0
+INTERFACE_ANGSTROM = 4.0
 
 # Endpoints in the least densely packed quarter of the scored population are
 # reported as surface sites. Packing density is already calculated for every
 # scored atom, so no separate solvent-accessibility calculation is needed.
-DEFAULT_SURFACE_PERCENTILE = 25.0
+SURFACE_PERCENTILE = 25.0
 
 # Only redox-capable groups are treated as cofactors. Every other bound group
 # (lipids, detergents, sugars, buffer and cryoprotectant molecules, substrates
@@ -179,32 +179,22 @@ class EndpointContext:
     protein_coordinates: NDArray[np.float64]
     protein_chain_ids: NDArray[np.str_]
     surface_packing_density: float
-    cofactor_contact_distance: float
-    cofactor_proximity_distance: float
-    interface_distance: float
 
 
 def build_endpoint_context(
     *,
     scored_atoms: Sequence[EpathScoredAtom],
     cleaned_atoms: Sequence[PreparedAtom],
-    cofactor_contact_distance: float = DEFAULT_COFACTOR_CONTACT_ANGSTROM,
-    cofactor_proximity_distance: float = DEFAULT_COFACTOR_PROXIMITY_ANGSTROM,
-    interface_distance: float = DEFAULT_INTERFACE_ANGSTROM,
-    surface_percentile: float = DEFAULT_SURFACE_PERCENTILE,
 ) -> EndpointContext:
     """Collect the cofactor, chain, and packing context for endpoint labelling.
 
     `scored_atoms` is every atom that received a BDamage score. The surface
-    threshold is the `surface_percentile` percentile of their packing
+    threshold is the `SURFACE_PERCENTILE` percentile of their packing
     densities, so there must be at least one.
 
     `cleaned_atoms` is the complete cleaned model. The cofactor sites are taken
     from it, because cofactors are never scored, and its protein atoms are the
     ones that can mark an interface.
-
-    The three distances are the ranges, in angstroms, that `annotate_endpoint`
-    and `find_path_anchor` test against. Nothing is checked here.
     """
     sites, cofactor_coordinates, site_indices = _cofactor_sites(cleaned_atoms)
     protein_coordinates, protein_chain_ids = _protein_chains(cleaned_atoms)
@@ -218,12 +208,9 @@ def build_endpoint_context(
         surface_packing_density=float(
             np.percentile(
                 [atom.bdamage_result.packing_density for atom in scored_atoms],
-                surface_percentile,
+                SURFACE_PERCENTILE,
             )
         ),
-        cofactor_contact_distance=cofactor_contact_distance,
-        cofactor_proximity_distance=cofactor_proximity_distance,
-        interface_distance=interface_distance,
     )
 
 
@@ -244,7 +231,7 @@ def annotate_endpoint(atom: EpathScoredAtom, context: EndpointContext) -> PathEn
     nearest = _nearest_cofactor(point, context)
     if nearest is not None:
         site, distance = nearest
-        if distance <= context.cofactor_contact_distance:
+        if distance <= COFACTOR_CONTACT_ANGSTROM:
             return _endpoint(record, label=site.label, kind="cofactor")
 
         return _endpoint(record, label=f"{site.label} region", kind="cofactor_region")
@@ -422,7 +409,7 @@ def _nearest_cofactor(
     distances = row_norms(context.cofactor_coordinates - point)
     nearest = np.argmin(distances)
     distance = float(distances[nearest])
-    if distance > context.cofactor_proximity_distance:
+    if distance > COFACTOR_PROXIMITY_ANGSTROM:
         return None
 
     return context.sites[int(context.cofactor_site_indices[nearest])], distance
@@ -453,5 +440,5 @@ def _is_interface(
     interface distance of it, the distance itself included.
     """
     distances = row_norms(context.protein_coordinates - point)
-    within_range = distances <= context.interface_distance
+    within_range = distances <= INTERFACE_ANGSTROM
     return bool(np.any(context.protein_chain_ids[within_range] != chain_id))

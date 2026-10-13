@@ -7,8 +7,11 @@ the input, calculate BDamage, then run the E-path analysis:
 ```python
 from pathlib import Path
 
-from epath.pipeline import EpathPipelineOptions, run_epath_pipeline
-from epath.analysis.pathways import PathAnalysisOptions
+from epath.pipeline import (
+    EpathClusterPipelineOptions,
+    EpathPipelineOptions,
+    run_epath_pipeline,
+)
 from epath.outputs.files import EpathOutputPipelineOptions
 from rabdam.pipeline import run_bdamage_pipeline
 from xtal.rcsb import download_rcsb_mmcif
@@ -23,7 +26,7 @@ structure = read_structure(resolved)
 bdamage = run_bdamage_pipeline(structure)
 
 options = EpathPipelineOptions(
-    paths=PathAnalysisOptions(linear_ratio=0.25),
+    clustering=EpathClusterPipelineOptions(minimum_cluster_size=10),
     output=EpathOutputPipelineOptions(output_prefix=Path("output") / "1LYZ"),
 )
 result, files = run_epath_pipeline(bdamage, options=options)
@@ -37,9 +40,8 @@ selected from them, the clusters and their statistics, one `PathReport` per
 reported pathway, the cofactor sites, the run record that becomes `*_run.csv`,
 and the BDamage and Bnet results the analysis rests on. A scored atom is the
 atom record from `xtal.reader` and the BDamage result from `rabdam`, with its
-Z-score. `EpathPipelineOutputFiles` lists the files written. Every option group has a frozen dataclass with the same
-defaults as the CLI: `BDamagePipelineOptions` for the calculation,
-`EpathSelectionPipelineOptions` and `EpathClusterPipelineOptions` for the
-selection and clustering, `PathAnalysisOptions` for the topology thresholds
-and the endpoint and anchor distances, and `EpathOutputPipelineOptions` for
-which files to write.
+Z-score. `EpathPipelineOutputFiles` lists the files written. Every option
+group has a frozen dataclass with the same defaults as the CLI:
+`BDamagePipelineOptions` for the calculation, `EpathSelectionPipelineOptions`
+and `EpathClusterPipelineOptions` for the selection and clustering, and
+`EpathOutputPipelineOptions` for which files to write.

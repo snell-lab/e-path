@@ -18,7 +18,7 @@ from epath.analysis.clustering import (
     component_statistics,
 )
 from epath.analysis.endpoints import CofactorSite
-from epath.analysis.pathways import PathAnalysisOptions, PathReport, analyze_paths
+from epath.analysis.pathways import PathReport, analyze_paths
 from epath.analysis.selection import (
     EpathSelectionResult,
     select_atoms_by_percentile,
@@ -75,7 +75,6 @@ class EpathPipelineOptions:
     clustering: EpathClusterPipelineOptions = field(
         default_factory=EpathClusterPipelineOptions
     )
-    paths: PathAnalysisOptions = field(default_factory=PathAnalysisOptions)
     output: EpathOutputPipelineOptions = field(
         default_factory=EpathOutputPipelineOptions
     )
@@ -201,7 +200,6 @@ def run_epath_pipeline(
             scored_atoms=selection_result.scored_atoms,
             cleaned_atoms=cleaned_atoms,
             distance_cutoff=options.clustering.distance_cutoff,
-            options=options.paths,
         ),
         stage_runner=stage_runner,
     )

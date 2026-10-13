@@ -136,9 +136,8 @@ measured against the structure being analysed rather than a fixed reference.
 An enriched class must also make up at least 7% of the path's residues, so
 that a single residue of a rare class in a long path is not called enrichment.
 
-The topology thresholds and the endpoint and anchor distances are not exposed
-on the command line; they are fields of `PathAnalysisOptions` and can be
-overridden from Python, as shown in [python-api.md](python-api.md).
+The topology thresholds and the endpoint and anchor distances are fixed. They
+are constants in `epath.analysis.topology` and `epath.analysis.endpoints`.
 
 Structural descriptors are generated from the same measurements, naming what
 the path is mostly made of, its topology, and the classes it is enriched in,

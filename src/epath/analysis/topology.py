@@ -35,11 +35,11 @@ TopologyClass = Literal["linear", "branched", "clustered"]
 
 # A path this elongated relative to its own length reads as a corridor rather
 # than a compact region.
-DEFAULT_LINEAR_RATIO = 0.20
+LINEAR_RATIO = 0.20
 
 # At or above this fraction of junction residues the cluster spreads through a
 # volume by branching instead of carrying a single route through it.
-DEFAULT_BRANCHED_NODE_FRACTION = 0.25
+BRANCHED_NODE_FRACTION = 0.25
 
 # Residues in contact with at least this many other residues of the cluster are
 # junctions, because the path can leave them by more than one route.
@@ -66,8 +66,6 @@ def analyze_topology(
     metrics: EpathClusterMetrics,
     *,
     distance_cutoff: float,
-    linear_ratio: float = DEFAULT_LINEAR_RATIO,
-    branched_node_fraction: float = DEFAULT_BRANCHED_NODE_FRACTION,
 ) -> PathTopology:
     """Classify a cluster as a linear, branched, or clustered network.
 
@@ -83,8 +81,8 @@ def analyze_topology(
     contact exactly when their atoms were connected in the path.
 
     A cluster whose junction-residue fraction is at least
-    `branched_node_fraction` is branched, whatever its linearity. Any other
-    cluster is linear when its linearity is at least `linear_ratio` and
+    `BRANCHED_NODE_FRACTION` is branched, whatever its linearity. Any other
+    cluster is linear when its linearity is at least `LINEAR_RATIO` and
     clustered when it is not.
     """
     degrees = _residue_degrees(
@@ -101,9 +99,9 @@ def analyze_topology(
         else 0.0
     )
 
-    if branch_fraction >= branched_node_fraction:
+    if branch_fraction >= BRANCHED_NODE_FRACTION:
         topology: TopologyClass = "branched"
-    elif linearity >= linear_ratio:
+    elif linearity >= LINEAR_RATIO:
         topology = "linear"
     else:
         topology = "clustered"

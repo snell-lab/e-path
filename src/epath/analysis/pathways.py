@@ -32,10 +32,6 @@ from epath.analysis.clustering import (
     coordinates_for_atoms,
 )
 from epath.analysis.endpoints import (
-    DEFAULT_COFACTOR_CONTACT_ANGSTROM,
-    DEFAULT_COFACTOR_PROXIMITY_ANGSTROM,
-    DEFAULT_INTERFACE_ANGSTROM,
-    DEFAULT_SURFACE_PERCENTILE,
     CofactorSite,
     EndpointContext,
     PathAnchor,
@@ -61,13 +57,7 @@ from epath.analysis.residues import (
     class_fractions,
 )
 from epath.analysis.selection import EpathScoredAtom
-from epath.analysis.topology import (
-    DEFAULT_BRANCHED_NODE_FRACTION,
-    DEFAULT_LINEAR_RATIO,
-    PathTopology,
-    TopologyClass,
-    analyze_topology,
-)
+from epath.analysis.topology import PathTopology, TopologyClass, analyze_topology
 from rabdam.structure.models import PreparedAtom
 from xtal.reader import AtomRecord
 
@@ -76,28 +66,6 @@ _TOPOLOGY_NOUNS: dict[TopologyClass, str] = {
     "branched": "network",
     "clustered": "cluster",
 }
-
-
-@dataclass(frozen=True, slots=True)
-class PathAnalysisOptions:
-    """Thresholds used to describe E-path clusters.
-
-    `linear_ratio` and `branched_node_fraction` are the topology thresholds of
-    `epath.analysis.topology.analyze_topology`. The three distances, in
-    angstroms, and `surface_percentile`, a percentile of packing density, are
-    the endpoint and anchor ranges of
-    `epath.analysis.endpoints.build_endpoint_context`.
-
-    The command line has no flags for these, so it always runs with the
-    defaults. Nothing is checked here or in `analyze_paths`.
-    """
-
-    linear_ratio: float = DEFAULT_LINEAR_RATIO
-    branched_node_fraction: float = DEFAULT_BRANCHED_NODE_FRACTION
-    cofactor_contact_distance: float = DEFAULT_COFACTOR_CONTACT_ANGSTROM
-    cofactor_proximity_distance: float = DEFAULT_COFACTOR_PROXIMITY_ANGSTROM
-    interface_distance: float = DEFAULT_INTERFACE_ANGSTROM
-    surface_percentile: float = DEFAULT_SURFACE_PERCENTILE
 
 
 StepKind = Literal["intra_residue", "peptide", "tertiary", "interchain"]
@@ -263,23 +231,15 @@ def analyze_paths(
     scored_atoms: Sequence[EpathScoredAtom],
     cleaned_atoms: Sequence[PreparedAtom],
     distance_cutoff: float = DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
-    options: PathAnalysisOptions | None = None,
 ) -> PathAnalysisResult:
     """Describe every reported cluster as a pathway.
 
     The reports are in the order of `clusters`. `distance_cutoff` must be the
     cutoff the clusters were built with, in angstroms.
     """
-    if options is None:
-        options = PathAnalysisOptions()
-
     context = build_endpoint_context(
         scored_atoms=scored_atoms,
         cleaned_atoms=cleaned_atoms,
-        cofactor_contact_distance=options.cofactor_contact_distance,
-        cofactor_proximity_distance=options.cofactor_proximity_distance,
-        interface_distance=options.interface_distance,
-        surface_percentile=options.surface_percentile,
     )
     background = class_fractions(
         record.residue_name
@@ -293,7 +253,6 @@ def analyze_paths(
                 context=context,
                 background=background,
                 distance_cutoff=distance_cutoff,
-                options=options,
             )
             for cluster in clusters
         ),
@@ -307,7 +266,6 @@ def _build_path_report(
     context: EndpointContext,
     background: dict[ResidueClass, float],
     distance_cutoff: float,
-    options: PathAnalysisOptions,
 ) -> PathReport:
     """Describe one cluster as a pathway.
 
@@ -326,8 +284,6 @@ def _build_path_report(
         residue_indices,
         cluster.metrics,
         distance_cutoff=distance_cutoff,
-        linear_ratio=options.linear_ratio,
-        branched_node_fraction=options.branched_node_fraction,
     )
     first_index, second_index, _ = maximum_pairwise_distance_pair(coordinates)
     start_endpoint = annotate_endpoint(cluster.atoms[first_index], context)

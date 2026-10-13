@@ -401,8 +401,7 @@ def epath_pipeline_options_from_args(
     """Build full E-path pipeline options from parsed command-line arguments.
 
     `--no-reports` switches off the cluster, step and run CSVs and the summary
-    report together. No argument sets the path analysis options, which keep
-    their defaults.
+    report together.
     """
     return EpathPipelineOptions(
         selection=EpathSelectionPipelineOptions(
