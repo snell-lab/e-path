@@ -416,10 +416,7 @@ def epath_pipeline_options_from_args(
             write_combined_csv=not args.no_csv,
             write_structure_files=not args.no_cif,
             write_z_score_plot=not args.no_plot,
-            write_cluster_csv=not args.no_reports,
-            write_step_csv=not args.no_reports,
-            write_run_csv=not args.no_reports,
-            write_summary_report=not args.no_reports,
+            write_reports=not args.no_reports,
             display_chains=args.chains,
         ),
     )

@@ -16,7 +16,6 @@ checked again here.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
 from itertools import groupby
 from pathlib import Path
 
@@ -32,19 +31,6 @@ from xtal.reader import AtomRecord
 UNSCORED_BDAMAGE_PLACEHOLDER = 0.0
 
 
-@dataclass(frozen=True, slots=True)
-class EpathStructureOutputFiles:
-    """Paths of the coordinate files written for an E-path run.
-
-    `path_cifs` holds the file of each pathway that was written, by path
-    number and in pathway order.
-    """
-
-    selected_cif: Path
-    model_cif: Path
-    path_cifs: dict[int, Path]
-
-
 def write_structure_outputs(
     output_prefix: str | Path,
     selected_atoms: Iterable[EpathScoredAtom],
@@ -54,7 +40,7 @@ def write_structure_outputs(
     cleaned_atoms: Sequence[PreparedAtom],
     bdamage_threshold: float,
     display_chains: Sequence[str] | None,
-) -> EpathStructureOutputFiles:
+) -> tuple[Path, Path, dict[int, Path]]:
     """Write the E-path coordinate outputs and return their paths.
 
     Three kinds of file are written: the selected-atom subset, one subset per
@@ -62,7 +48,9 @@ def write_structure_outputs(
     so that solvent, ions, and cofactors can be inspected alongside the E-path
     results even though they were not scored. The file names are
     `output_prefix` followed by `_selected.cif`, `_pathNN.cif`, and
-    `_model.cif`.
+    `_model.cif`. The paths come back as the selected-atom file, the model
+    file, and the file of each pathway that was written, by path number and
+    in pathway order.
 
     `display_chains` restricts every coordinate file to those chains, and None
     keeps them all. It is a display filter only: the atoms and pathways were
@@ -84,23 +72,21 @@ def write_structure_outputs(
             atom for atom in cleaned_atoms if atom.record.chain_id in display_chains
         )
 
-    return EpathStructureOutputFiles(
-        selected_cif=write_atom_subset_cif(
+    return (
+        write_atom_subset_cif(
             prefix.with_name(f"{prefix.name}_selected.cif"),
             selected_atom_tuple,
             title="E-path selected atoms",
             remarks=chain_remarks,
         ),
-        model_cif=write_model_cif(
+        write_model_cif(
             prefix.with_name(f"{prefix.name}_model.cif"),
             cleaned_atoms,
             bdamage_by_source_index=bdamage_by_source_index,
             bdamage_threshold=bdamage_threshold,
             remarks=chain_remarks,
         ),
-        path_cifs=write_path_subset_cifs(
-            prefix, path_reports, display_chains=display_chains
-        ),
+        write_path_subset_cifs(prefix, path_reports, display_chains=display_chains),
     )
 
 

@@ -19,6 +19,8 @@ class EpathOutputPipelineOptions:
     component of `output_prefix`. Without a prefix nothing is written, whatever
     the `write_*` flags say. `write_structure_files` covers every mmCIF file:
     the selected atoms, the cleaned model, and one file per pathway.
+    `write_reports` covers the cluster, step and run CSVs and the summary
+    report.
 
     `display_chains` limits the mmCIF files to those chains. The analysis
     always runs over every chain, so the tables and the plot are the same with
@@ -30,10 +32,7 @@ class EpathOutputPipelineOptions:
     write_combined_csv: bool = True
     write_structure_files: bool = True
     write_z_score_plot: bool = True
-    write_cluster_csv: bool = True
-    write_step_csv: bool = True
-    write_run_csv: bool = True
-    write_summary_report: bool = True
+    write_reports: bool = True
     display_chains: tuple[str, ...] | None = None
 
 

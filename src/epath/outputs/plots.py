@@ -5,24 +5,19 @@ negative tail, which is the region E-path selects from. `epath.outputs.write`
 calls `write_z_score_falloff` when the run asks for the plot.
 """
 
-import os
-import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
 from epath.analysis.selection import EpathSelectionResult
 
-DEFAULT_PLOT_DPI = 300
+PLOT_DPI = 300
 # Width and height, in inches.
-DEFAULT_PLOT_FIGSIZE = (6.0, 4.0)
+PLOT_FIGSIZE = (6.0, 4.0)
 
 
 def write_z_score_falloff(
     output_path: str | Path,
     selection_result: EpathSelectionResult,
-    *,
-    dpi: int = DEFAULT_PLOT_DPI,
 ) -> Path:
     """Write rank-ordered BDamage Z-scores for the negative tail.
 
@@ -47,7 +42,7 @@ def write_z_score_falloff(
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     pyplot = _pyplot()
-    figure = pyplot.figure(figsize=DEFAULT_PLOT_FIGSIZE)
+    figure = pyplot.figure(figsize=PLOT_FIGSIZE)
     try:
         pyplot.plot(range(1, len(tail) + 1), tail, color="black", linewidth=1.0)
         pyplot.axhline(
@@ -62,7 +57,7 @@ def write_z_score_falloff(
         pyplot.ylabel("BDamage Z-score")
         pyplot.title("BDamage Z-score falloff")
         figure.tight_layout()
-        figure.savefig(output_file, dpi=dpi)
+        figure.savefig(output_file, dpi=PLOT_DPI)
     finally:
         pyplot.close(figure)
 
@@ -70,31 +65,14 @@ def write_z_score_falloff(
 
 
 def _pyplot() -> Any:
-    # Imported here rather than at module level so the config directory and
-    # the non-interactive backend are set before matplotlib initialises, and
-    # so importing the E-path package does not pay matplotlib's import cost.
-    # Older matplotlib releases ship no type information, so pyplot is
-    # returned as `Any` and the type checks pass with any release.
-    _ensure_matplotlib_config_dir()
+    # Imported here rather than at module level so the non-interactive backend
+    # is set before pyplot initialises, and so importing the E-path package
+    # does not pay matplotlib's import cost. Older matplotlib releases ship no
+    # type information, so pyplot is returned as `Any` and the type checks
+    # pass with any release.
     import matplotlib  # pyright: ignore[reportMissingTypeStubs]
 
     matplotlib.use("Agg")  # pyright: ignore[reportUnknownMemberType]
     from matplotlib import pyplot  # pyright: ignore[reportMissingTypeStubs]
 
     return pyplot
-
-
-def _ensure_matplotlib_config_dir() -> None:
-    """Keep matplotlib's cache out of the home directory, unless told where."""
-    if "MPLCONFIGDIR" in os.environ:
-        return
-
-    # The directory is named after the user, because one shared between the
-    # users of a machine is writable only by whoever created it. Windows
-    # already gives each user a temporary directory of their own.
-    name = "epath-matplotlib"
-    if sys.platform != "win32":
-        name += f"-{os.getuid()}"
-    config_dir = Path(tempfile.gettempdir()) / name
-    config_dir.mkdir(parents=True, exist_ok=True)
-    os.environ["MPLCONFIGDIR"] = str(config_dir)

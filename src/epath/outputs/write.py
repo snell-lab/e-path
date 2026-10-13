@@ -58,17 +58,17 @@ def write_epath_outputs(
     )
     cluster_csv = (
         write_cluster_csv(_output_path(prefix, "clusters.csv"), path_reports)
-        if options.write_cluster_csv
+        if options.write_reports
         else None
     )
     step_csv = (
         write_step_csv(_output_path(prefix, "steps.csv"), path_reports)
-        if options.write_step_csv
+        if options.write_reports
         else None
     )
     run_csv = (
         write_run_csv(_output_path(prefix, "run.csv"), (result.run_record,))
-        if options.write_run_csv
+        if options.write_reports
         else None
     )
 
@@ -77,7 +77,7 @@ def write_epath_outputs(
     path_cifs: dict[int, Path] = {}
     if options.write_structure_files:
         bdamage_pipeline_result = result.bdamage_pipeline_result
-        structure_files = write_structure_outputs(
+        selected_cif, model_cif, path_cifs = write_structure_outputs(
             prefix,
             selection_result.selected_atoms,
             path_reports=path_reports,
@@ -89,9 +89,6 @@ def write_epath_outputs(
             bdamage_threshold=selection_result.bdamage_threshold,
             display_chains=options.display_chains,
         )
-        selected_cif = structure_files.selected_cif
-        model_cif = structure_files.model_cif
-        path_cifs = structure_files.path_cifs
 
     z_score_falloff = (
         write_z_score_falloff(_output_path(prefix, "zfalloff.png"), selection_result)
@@ -101,7 +98,7 @@ def write_epath_outputs(
     # The report lists every file of the run, itself included, so its path is
     # set before the record is built and it is written last.
     summary_report = (
-        _output_path(prefix, "summary.txt") if options.write_summary_report else None
+        _output_path(prefix, "summary.txt") if options.write_reports else None
     )
     output_files = EpathPipelineOutputFiles(
         combined_csv=combined_csv,

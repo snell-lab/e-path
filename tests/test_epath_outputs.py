@@ -293,9 +293,7 @@ def test_path_subset_cifs_are_zero_padded(
 def test_z_score_plot_is_written_as_png(
     tmp_path: Path, result: EpathPipelineResult
 ) -> None:
-    path = write_z_score_falloff(
-        tmp_path / "plots" / "z.png", result.selection_result, dpi=50
-    )
+    path = write_z_score_falloff(tmp_path / "plots" / "z.png", result.selection_result)
     assert path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
@@ -373,10 +371,7 @@ def test_write_epath_outputs_honours_every_toggle(
             write_combined_csv=False,
             write_structure_files=False,
             write_z_score_plot=False,
-            write_cluster_csv=False,
-            write_step_csv=False,
-            write_run_csv=False,
-            write_summary_report=False,
+            write_reports=False,
         ),
     )
     assert minimal == EpathPipelineOutputFiles()

@@ -77,12 +77,7 @@ def test_defaults_mirror_the_pipeline_options() -> None:
     assert options.selection.percentile == 5.0
     assert options.output.display_chains == ("B", "A")
     assert options.output.output_prefix == Path("x")
-    assert not (
-        options.output.write_cluster_csv
-        or options.output.write_step_csv
-        or options.output.write_run_csv
-        or options.output.write_summary_report
-    )
+    assert not options.output.write_reports
     assert (
         not options.output.write_z_score_plot
         and options.output.write_combined_csv
