@@ -1,17 +1,22 @@
 """Radius neighbour searches backed by SciPy's KD-tree.
 
 A KD-tree finds the points near each query without measuring the distance to
-every point, which a crystal's worth of atoms is too many for.
+every point, which would be too slow for the atoms of a whole crystal.
 
 SciPy ships no type stubs, so this is the one module that talks to
-`scipy.spatial` directly. Callers get typed functions and never see the tree.
+`scipy.spatial` directly. The two protocols below describe the part of its
+tree that is used here. Callers get typed functions and never see the tree.
 """
 
+from collections.abc import Iterable
 from typing import Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial import cKDTree  # type: ignore[import-untyped]
+from scipy.spatial import KDTree  # type: ignore[import-untyped]
+
+# Passed to SciPy as `workers`, this runs a search on every processor core.
+_ALL_CORES = -1
 
 
 class _KDTree(Protocol):
@@ -19,7 +24,6 @@ class _KDTree(Protocol):
         self,
         x: NDArray[np.float64],
         r: float,
-        p: float = 2.0,
         *,
         return_length: bool = False,
         workers: int = 1,
@@ -30,27 +34,23 @@ class _KDTreeFactory(Protocol):
     def __call__(self, data: NDArray[np.float64]) -> _KDTree: ...
 
 
-_build_tree = cast(_KDTreeFactory, cKDTree)
+_build_tree = cast(_KDTreeFactory, KDTree)
 
 
 def radius_neighbour_indices(
     points: NDArray[np.float64],
     radius: float,
-    *,
-    minkowski_p: float = 2.0,
 ) -> tuple[tuple[int, ...], ...]:
     """Return, for each point, the indices of all points within `radius`.
 
-    Each point's own index is included, since it lies at distance zero.
+    A point at exactly `radius` is included, and so is each point's own index,
+    since it lies at distance zero.
     """
-    tree = _build_tree(points)
-    raw_neighbours = cast(
-        list[list[int]],
-        tree.query_ball_point(points, radius, minkowski_p, workers=-1),
+    neighbours = cast(
+        Iterable[list[int]],
+        _build_tree(points).query_ball_point(points, radius, workers=_ALL_CORES),
     )
-    return tuple(
-        tuple(int(index) for index in neighbours) for neighbours in raw_neighbours
-    )
+    return tuple(tuple(indices) for indices in neighbours)
 
 
 def radius_neighbour_counts(
@@ -62,11 +62,10 @@ def radius_neighbour_counts(
 
     A point at exactly `radius` is counted.
     """
-    tree = _build_tree(tree_points)
-    raw_counts = tree.query_ball_point(
+    counts = _build_tree(tree_points).query_ball_point(
         query_points,
         radius,
         return_length=True,
-        workers=-1,
+        workers=_ALL_CORES,
     )
-    return np.reshape(np.asarray(raw_counts, dtype=np.int64), (-1,))
+    return np.asarray(counts, dtype=np.int64)
