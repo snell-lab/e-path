@@ -1,7 +1,7 @@
 # Lint configuration for E-path. The rule set is curated deliberately; do not
 # replace it with `select = ["ALL"]`.
 
-target-version = "py310"
+target-version = "py314"
 
 [lint]
 select = [
@@ -22,8 +22,6 @@ ignore = [
     # Context-manager conversion is not always appropriate for resources whose
     # lifetime crosses scopes.
     "SIM115",
-    # Preserve existing enum behavior instead of converting to `StrEnum`.
-    "UP042",
 ]
 
 [lint.per-file-ignores]

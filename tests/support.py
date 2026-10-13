@@ -11,8 +11,6 @@ symmetry and cell handling and brute-force distance loops, so they share no
 code with the implementation they check.
 """
 
-from __future__ import annotations
-
 import itertools
 import math
 from collections.abc import Iterable, Sequence

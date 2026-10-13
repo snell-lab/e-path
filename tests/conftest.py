@@ -1,7 +1,5 @@
 """Shared fixtures for the E-path test suite."""
 
-from __future__ import annotations
-
 import os
 from collections.abc import Iterator
 from pathlib import Path

@@ -7,5 +7,6 @@
     "src",
     "tests"
   ],
+  "pythonVersion": "3.14",
   "typeCheckingMode": "strict"
 }
