@@ -187,9 +187,7 @@ def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
                     f"{report.edges.peptide} peptide, "
                     f"{report.edges.tertiary} tertiary, "
                     f"{report.edges.interchain} interchain "
-                    f"(peptide share of the "
-                    f"{report.edges.between_residues} between-residue steps: "
-                    f"{_number(report.edges.peptide_fraction)})"
+                    f"({_peptide_share_text(report)})"
                 ),
                 f"  Composition: {_composition_text(report)}",
                 f"  Path: {report.residue_path}",
@@ -226,6 +224,17 @@ def _nearby_cofactor_text(report: PathReport) -> str:
         f"{cofactor.label} at {_number(cofactor.distance)} A from "
         f"{cofactor.atom_token} ({cofactor.residue})"
         for cofactor in report.nearby_cofactors
+    )
+
+
+def _peptide_share_text(report: PathReport) -> str:
+    edges = report.edges
+    if edges.peptide_fraction is None:
+        return "no between-residue steps, so no peptide share"
+
+    return (
+        f"peptide share of the {edges.between_residues} between-residue steps: "
+        f"{_number(edges.peptide_fraction)}"
     )
 
 

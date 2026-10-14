@@ -99,9 +99,13 @@ class EdgeProvenance:
         return self.peptide + self.tertiary + self.interchain
 
     @property
-    def peptide_fraction(self) -> float:
-        """Return the share of between-residue steps that follow the sequence."""
-        return self.peptide / self.between_residues if self.between_residues else 0.0
+    def peptide_fraction(self) -> float | None:
+        """Return the share of between-residue steps that follow the sequence.
+
+        A path that never leaves one residue has no such steps, so the share
+        is undefined and None.
+        """
+        return self.peptide / self.between_residues if self.between_residues else None
 
 
 @dataclass(frozen=True, slots=True)

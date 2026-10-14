@@ -444,7 +444,8 @@ def test_single_residue_path() -> None:
 
     assert report.residue_path.startswith("Chain A - Phe9 (CG, ")
     assert set(report.residues[0].atom_names) == {"CG", "CD1", "CE1"}
-    assert report.edges.between_residues == 0 and report.edges.peptide_fraction == 0.0
+    assert report.edges.between_residues == 0
+    assert report.edges.peptide_fraction is None
 
 
 def _backbone_bonds(

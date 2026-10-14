@@ -124,6 +124,13 @@ def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathPipelineResult) 
     ]
     assert sum(fractions) <= 1.0 + 1e-9
 
+    # A path that never leaves one residue has no peptide share to report.
+    within_one_residue = replace(report, steps=report.steps[:0])
+    rows = read_csv_rows(
+        write_cluster_csv(tmp_path / "y_clusters.csv", (within_one_residue,))
+    )
+    assert rows[0]["peptide_edge_fraction"] == ""
+
     steps = read_csv_rows(write_step_csv(tmp_path / "x_steps.csv", result.path_reports))
     assert list(steps[0]) == STEP_FIELDNAMES
     assert (
