@@ -171,8 +171,9 @@ threshold is marked, so the plot shows where the cutoff falls on the falloff.
 ### Coordinate Files
 
 Every coordinate file is mmCIF. Run notes are written as an `_epath_remark`
-loop and machine-readable values (atom counts, the threshold, the pathway
-number and its cofactors) as an `_epath` category; viewers ignore both. Every
+loop and machine-readable values (the E-path version as `_epath.version`, atom
+counts, the threshold, the pathway number and its cofactors) as an `_epath`
+category; viewers ignore both. Every
 file carries the unit cell and space group of the input, so a viewer can
 generate symmetry mates around a pathway. E-path works in the asymmetric unit,
 so this is how to check whether a pathway sits at a crystal contact.

@@ -13,6 +13,7 @@ from support import (
     read_csv_rows,
 )
 
+from epath import __version__
 from epath.outputs.files import EpathOutputPipelineOptions, EpathPipelineOutputFiles
 from epath.outputs.plots import write_z_score_falloff
 from epath.outputs.structures import (
@@ -144,6 +145,7 @@ def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathPipelineResult) 
     assert runs[0]["largest_component_reported"] == "true"
     assert float(runs[0]["bnet"]) > 0 and 0 <= float(runs[0]["bnet_percentile"]) <= 100
     assert runs[0]["clusters_reported"] == str(len(result.path_reports))
+    assert runs[0]["epath_version"] == __version__
 
 
 def test_atom_subset_cif_round_trips_through_gemmi(tmp_path: Path) -> None:
@@ -321,6 +323,19 @@ def test_path_subset_cifs_write_atoms_in_input_order(
     assert len(asym_ids) == len(set(asym_ids))
 
 
+def test_coordinate_files_carry_the_epath_version(
+    tmp_path: Path, result: EpathPipelineResult
+) -> None:
+    files = write_epath_outputs(
+        result, EpathOutputPipelineOptions(output_prefix=tmp_path / "run")
+    )
+    paths = [files.selected_cif, files.model_cif, *files.path_cifs.values()]
+    for path in paths:
+        assert path is not None
+        block = gemmi.cif.read_file(str(path)).sole_block()
+        assert block.find_value("_epath.version") == __version__
+
+
 def test_coordinate_files_carry_the_input_cell_and_space_group(
     tmp_path: Path, result: EpathPipelineResult
 ) -> None:
@@ -385,6 +400,7 @@ def test_summary_report_lists_results_and_files(
     path = write_summary_txt(tmp_path / "summary.txt", result, output_files=files)
     text = path.read_text()
 
+    assert f"\nE-path version: {__version__}\n" in text
     assert "Selected atoms: 23 / 77" in text
     assert (
         "Atoms removed before scoring: 1 hydrogen, 1 with invalid occupancy, "

@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from epath import __version__
 from epath.analysis.clustering import ComponentStatistics
 from epath.analysis.cofactors import cofactor_site_summary
 from epath.analysis.pathways import PathReport
@@ -51,6 +52,7 @@ def write_summary_txt(
         "E-path Analysis Summary",
         "=======================",
         "",
+        f"E-path version: {__version__}",
         f"Input structure: {result.run_record.input_path}",
         f"Chains analyzed: {_chain_text(result.analyzed_chains)}",
     ]

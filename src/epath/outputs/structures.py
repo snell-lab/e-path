@@ -24,6 +24,7 @@ from pathlib import Path
 
 import gemmi
 
+from epath import __version__
 from epath.analysis.pathways import PathReport
 from epath.analysis.selection import EpathScoredAtom
 from rabdam.structure.models import PreparedAtom
@@ -283,8 +284,8 @@ def _write_mmcif(
     read in.
 
     The run metadata goes into `_struct.title`, an `_epath` category of
-    machine-readable values, and an `_epath_remark` loop of human-readable
-    notes, all of which viewers ignore. The data block is named after the file
+    machine-readable values led by the E-path version, and an `_epath_remark`
+    loop of human-readable notes, all of which viewers ignore. The data block is named after the file
     stem. The output directory is created if it is missing.
     """
     output_file = Path(output_path)
@@ -325,6 +326,7 @@ def _write_mmcif(
     block = document.sole_block()
     block.set_pair("_struct.entry_id", gemmi.cif.quote(structure.name))
     block.set_pair("_struct.title", gemmi.cif.quote(title))
+    block.set_pair("_epath.version", gemmi.cif.quote(__version__))
     for name, value in values.items():
         block.set_pair(f"_epath.{name}", value)
     loop = block.init_loop("_epath_remark.", ["id", "text"])

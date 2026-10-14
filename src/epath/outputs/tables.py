@@ -56,6 +56,7 @@ COMBINED_ATOM_FIELDNAMES = [
 RUN_FIELDNAMES = [
     "structure",
     "input_path",
+    "epath_version",
     "cutoff_percent",
     "total_atoms",
     "atoms_selected",

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from support import StageRecorder, approx, bdamage_result_from_atoms, make_scored_atom
 
+from epath import __version__
 from epath.analysis.selection import EpathScoredAtom
 from epath.outputs.files import EpathOutputPipelineOptions
 from epath.pipeline import (
@@ -96,6 +97,7 @@ def test_components_are_found_filtered_and_recorded() -> None:
     )
     assert record.bnet is None and record.bnet_percentile is None
     assert record.cutoff_percent == 90.0 and record.minimum_cluster_size == 3
+    assert record.epath_version == __version__
     assert files.combined_csv is None
 
 

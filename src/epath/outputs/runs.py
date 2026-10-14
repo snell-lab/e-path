@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from epath import __version__
 from epath.analysis.clustering import ComponentStatistics, EpathCluster
 from epath.analysis.selection import EpathSelectionResult
 from rabdam.bnet.pipeline import BnetPipelineResult
@@ -28,7 +29,8 @@ class EpathRunRecord:
     """Run-level results for one structure, one field per column of the run CSV.
 
     `structure` is the input file's name without its format extension and
-    `input_path` the file's full path. `cutoff_percent` is the percentile
+    `input_path` the file's full path. `epath_version` is the version of
+    E-path that made the record. `cutoff_percent` is the percentile
     asked for and `selected_percent` the share of the scored atoms that was
     selected. `equivalent_z_score` is `bdamage_threshold` as a
     Z-score among the scored atoms.
@@ -43,6 +45,7 @@ class EpathRunRecord:
 
     structure: str
     input_path: str
+    epath_version: str
     cutoff_percent: float
     total_atoms: int
     atoms_selected: int
@@ -89,6 +92,7 @@ def build_run_record(
     return EpathRunRecord(
         structure=split_structure_file_name(structure_path.name)[0],
         input_path=str(structure_path),
+        epath_version=__version__,
         cutoff_percent=cutoff_percent,
         total_atoms=len(selection_result.scored_atoms),
         atoms_selected=len(selection_result.selected_atoms),
