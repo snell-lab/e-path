@@ -11,7 +11,7 @@ the protein's known chemistry in view.
 `epath.analysis.clustering` supplies the clusters and their geometry. The
 chemistry comes from `epath.analysis.residues`, and the endpoints and the
 anchor from `epath.analysis.endpoints`. This module gathers them into one report for each
-cluster and adds the residue listing, the steps, and the descriptor.
+cluster and adds the residue listing and the steps.
 `epath.pipeline` calls `analyze_paths` once for a model, and `epath.outputs`
 and `epath.cli.report` write the reports out.
 """
@@ -44,12 +44,7 @@ from epath.analysis.labels import (
     residue_key,
     residue_label,
 )
-from epath.analysis.residues import (
-    ResidueClass,
-    ResidueComposition,
-    analyze_composition,
-    class_fractions,
-)
+from epath.analysis.residues import ResidueComposition, analyze_composition
 from epath.analysis.selection import EpathScoredAtom
 from rabdam.structure.models import PreparedAtom
 from xtal.reader import AtomRecord
@@ -149,7 +144,6 @@ class PathReport:
     anchor: PathAnchor | None
     composition: ResidueComposition
     steps: tuple[PathStep, ...]
-    structural_descriptor: str
 
     @property
     def is_cofactor_anchored(self) -> bool:
@@ -224,19 +218,10 @@ def analyze_paths(
         scored_atoms=scored_atoms,
         cleaned_atoms=cleaned_atoms,
     )
-    background = class_fractions(
-        record.residue_name
-        for record in _unique_residue_atoms([atom.record for atom in scored_atoms])
-    )
 
     return PathAnalysisResult(
         reports=tuple(
-            _build_path_report(
-                cluster,
-                context=context,
-                background=background,
-            )
-            for cluster in clusters
+            _build_path_report(cluster, context=context) for cluster in clusters
         ),
         cofactor_sites=context.sites,
     )
@@ -246,20 +231,16 @@ def _build_path_report(
     cluster: EpathCluster,
     *,
     context: EndpointContext,
-    background: dict[ResidueClass, float],
 ) -> PathReport:
     """Describe one cluster as a pathway.
 
-    `context` and `background` describe the whole model, not the cluster, so
-    `analyze_paths` builds each once and passes it to every cluster.
+    `context` describes the whole model, not the cluster, so `analyze_paths`
+    builds it once and passes it to every cluster.
     """
     atoms = [scored_atom.record for scored_atom in cluster.atoms]
     coordinates = coordinates_for_atoms(cluster.atoms)
     residues = _path_residues(atoms)
-    composition = analyze_composition(
-        (residue.residue_name for residue in residues),
-        background=background,
-    )
+    composition = analyze_composition(residue.residue_name for residue in residues)
     first_index, second_index, _ = maximum_pairwise_distance_pair(coordinates)
     start_endpoint = annotate_endpoint(cluster.atoms[first_index], context)
     end_endpoint = annotate_endpoint(cluster.atoms[second_index], context)
@@ -274,11 +255,6 @@ def _build_path_report(
         anchor=find_path_anchor(atoms, context),
         composition=composition,
         steps=_path_steps(atoms, coordinates),
-        structural_descriptor=_structural_descriptor(
-            composition=composition,
-            endpoints=(start_endpoint, end_endpoint),
-            residue_count=len(residues),
-        ),
     )
 
 
@@ -385,54 +361,6 @@ def _format_residue_path(residues: Sequence[PathResidue]) -> str:
         parts.append(f"{prefix}{residue.label} ({atom_names})")
 
     return " -> ".join(parts)
-
-
-def _structural_descriptor(
-    *,
-    composition: ResidueComposition,
-    endpoints: Sequence[PathEndpoint],
-    residue_count: int,
-) -> str:
-    """Name a path by its dominant chemistry, its setting, and its enrichment.
-
-    A path with no dominant class, which is one made only of residues outside
-    the named classes, is an "Unassigned cluster". A path within one residue
-    is a hotspot. Any other is an interface motif when either endpoint lies at
-    an interface, and otherwise a path. The classes
-    it is enriched in are added unless they are already named as dominant.
-    """
-    dominant = composition.dominant_classes
-    if not dominant:
-        return "Unassigned cluster"
-
-    # A class name reads as an adjective as it is, except "sulfur". The
-    # "other" class is never dominant or enriched, so it needs no wording.
-    adjective = "-".join(
-        "sulfur-rich" if name == "sulfur" else name for name in dominant
-    )
-    if residue_count <= 1:
-        return f"Single {adjective} hotspot"
-
-    if any(endpoint.kind == "interface" for endpoint in endpoints):
-        noun = "interface motif"
-    else:
-        noun = "path"
-
-    enriched = [name for name in composition.enriched_classes if name not in dominant]
-    descriptor = f"{adjective.capitalize()} {noun}"
-    if not enriched:
-        return descriptor
-
-    return f"{descriptor} with {'/'.join(enriched)} enrichment"
-
-
-def _unique_residue_atoms(atoms: Sequence[AtomRecord]) -> list[AtomRecord]:
-    """Return the first atom of each residue, in the order the residues appear."""
-    seen: dict[tuple[str, int | None, str], AtomRecord] = {}
-    for atom in atoms:
-        seen.setdefault(residue_key(atom), atom)
-
-    return list(seen.values())
 
 
 def _sort_number(residue_number: int | None) -> int:

@@ -86,10 +86,9 @@ STEP_FIELDNAMES = [
     "second_residue",
 ]
 
-# The leading columns, up to `structural_descriptor`, are the E-path pathway
-# table: the path, where it starts and ends, the cofactor it comes nearest to,
-# and what it is made of. The columns after them are the geometry and the
-# measurements behind the descriptor.
+# The leading columns, up to `anchor_atom`, are the E-path pathway table: the
+# path, where it starts and ends, and the cofactor it comes nearest to. The
+# columns after them are its geometry, steps, and composition.
 CLUSTER_FIELDNAMES = [
     "cluster_id",
     "endpoint_start",
@@ -101,7 +100,6 @@ CLUSTER_FIELDNAMES = [
     "anchor_cofactor",
     "anchor_distance",
     "anchor_atom",
-    "structural_descriptor",
     "chains",
     "mean_step",
     "largest_edge",
@@ -225,7 +223,6 @@ def _cluster_row(report: PathReport) -> dict[str, object]:
         "anchor_cofactor": anchor.label if anchor is not None else None,
         "anchor_distance": anchor.distance if anchor is not None else None,
         "anchor_atom": anchor.atom_token if anchor is not None else None,
-        "structural_descriptor": report.structural_descriptor,
         "chains": "/".join(report.chains),
         "mean_step": metrics.mean_step,
         "largest_edge": metrics.mst_largest_edge,

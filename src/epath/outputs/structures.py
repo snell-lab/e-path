@@ -182,7 +182,6 @@ def write_path_subset_cifs(
         atoms = report.cluster.atoms
         remarks = [
             f"Pathway {report.path_id}.",
-            f"{report.structural_descriptor}.",
             (
                 f"{report.residue_count} residues, {report.node_count} nodes, "
                 f"{report.total_length:.2f} A."

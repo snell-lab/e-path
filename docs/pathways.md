@@ -13,8 +13,7 @@ published. Each pathway is reported with:
 - the residue count, the node (atom) count, and the total path length.
 - the environments the two ends of the path terminate in.
 - the cofactor nearest to any atom of the path, and its distance.
-- the step provenance and residue-chemistry measurements, and a structural
-  descriptor that summarizes them.
+- the step provenance and residue-chemistry measurements.
 
 These measurements are the basis for interpreting a path with the protein's
 known chemistry in view.
@@ -113,7 +112,7 @@ which is deterministic but is not a walk from one end of a path to the other.
 `*_selected.cif` holds every selected atom, including those in components too
 small to be reported as pathways. Alongside it, one file per reported pathway
 is written as `*_path01.cif`, `*_path02.cif`, and so on, each holding only that
-pathway's atoms, with its descriptor, size, endpoints, and nearest cofactor
+pathway's atoms, with its size, endpoints, and nearest cofactor
 recorded in an `_epath_remark` loop and `_epath.path_id` /
 `_epath.anchor_cofactor` values.
 
@@ -130,23 +129,20 @@ both of which already carry real values. Path numbers are zero padded so the
 files sort in path order, and they are suppressed by `--no-cif` along with the
 other coordinate outputs.
 
-## Composition and Descriptor
+## Composition
 
 Composition assigns each residue exactly one chemistry class, so the reported
 fractions sum to one. Histidine and tyrosine count as aromatic rather than
 polar. A modified residue is classed with its parent residue, so phosphoserine
-counts as polar. A class is enriched when it is at least 1.5 times more common
-in the path than in the scored population of the same model, so enrichment is
-measured against the structure being analysed rather than a fixed reference.
-An enriched class must also make up at least 7% of the path's residues, so
-that a single residue of a rare class in a long path is not called enrichment.
+counts as polar.
+
+Paths are often only a few residues long, so the fractions of one path move in
+large steps: a single tryptophan in a four-residue path makes it 25% aromatic.
+They are counts, reported as they are. No class is named as dominant or as
+enriched, because in paths this small neither says more than the counts do.
 
 The endpoint and anchor distances are fixed. They are constants in
 `epath.analysis.endpoints`.
 
-Structural descriptors are generated from the same measurements, naming what
-the path is mostly made of, whether it ends at a chain interface, and the
-classes it is enriched in, which gives phrasings such as `Hydrophobic path with
-aromatic/sulfur enrichment`, `Polar interface motif`, or `Single aromatic
-hotspot`. The shape of a path is not classified. Each pathway has its own
-coordinate file, described above, so its shape is best judged by eye.
+The shape of a path is not classified. Each pathway has its own coordinate
+file, described above, so its shape is best judged by eye.

@@ -196,7 +196,6 @@ def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
                     f"{_number(report.edges.peptide_fraction)})"
                 ),
                 f"  Composition: {_composition_text(report)}",
-                f"  Descriptor: {report.structural_descriptor}",
                 f"  Path: {report.residue_path}",
             )
         )

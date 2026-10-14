@@ -176,8 +176,7 @@ def _pathway_lines(pipeline_result: EpathPipelineResult) -> tuple[str, ...]:
     lines.extend(
         f"Path {report.path_id} {report.endpoint_summary}: "
         f"{report.residue_count} residues, {report.node_count} nodes, "
-        f"{report.total_length:.2f} A, nearest cofactor {report.anchor_summary}, "
-        f"{report.structural_descriptor}"
+        f"{report.total_length:.2f} A, nearest cofactor {report.anchor_summary}"
         for report in reports
     )
     return tuple(lines)

@@ -21,7 +21,6 @@ from epath.analysis.endpoints import (
 from epath.analysis.labels import atom_token, format_residue_label, residue_label
 from epath.analysis.pathways import PathReport, analyze_paths
 from epath.analysis.residues import (
-    ResidueClass,
     analyze_composition,
     class_counts,
     class_fractions,
@@ -50,7 +49,7 @@ def test_residue_classes(name: str, expected: str) -> None:
     assert residue_class(name) == expected
 
 
-def test_composition_fractions_sum_to_one_and_report_dominance_and_enrichment() -> None:
+def test_composition_counts_and_fractions_sum_to_one() -> None:
     names = ["TRP", "TYR", "CYS", "ALA", "ALA", "GLY", "LYS", "SER", "HOH", "ALA"]
     counts = class_counts(names)
     assert counts == {
@@ -63,27 +62,11 @@ def test_composition_fractions_sum_to_one_and_report_dominance_and_enrichment() 
     }
     assert sum(class_fractions(names).values()) == approx(1.0)
 
-    background: dict[ResidueClass, float] = {
-        "aromatic": 0.08,
-        "sulfur": 0.03,
-        "charged": 0.25,
-        "polar": 0.25,
-        "hydrophobic": 0.39,
-        "other": 0.0,
-    }
-    composition = analyze_composition(names, background=background)
+    composition = analyze_composition(names)
 
     assert composition.counts == counts
     assert composition.fractions["aromatic"] == approx(0.2)
     assert composition.fractions["charged"] == approx(0.1)
-    assert composition.dominant_classes == ("hydrophobic",)
-    assert composition.enriched_classes == (
-        "aromatic",
-        "sulfur",
-    )  # 0.2 >= 1.5*0.08, 0.1 >= 1.5*0.03
-
-    mixed = analyze_composition(["ALA"] * 5 + ["ASP"] * 6, background=background)
-    assert mixed.dominant_classes == ("charged", "hydrophobic")  # 5/11 >= 0.8 * 6/11
 
 
 def _cleaned_model() -> tuple[PreparedAtom, ...]:
@@ -342,7 +325,6 @@ def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
     assert unanchored.anchor is None
     assert unanchored.anchor_summary == "no cofactor in range"
     assert unanchored.start_endpoint.kind == "low_packing"
-    assert unanchored.structural_descriptor == "Hydrophobic path"
 
 
 def test_residue_path_listing_and_step_provenance() -> None:
@@ -399,7 +381,7 @@ def test_residue_path_listing_and_step_provenance() -> None:
     assert report.start_endpoint.atom_token in {"A:76:CA", "B:5:CA"}
 
 
-def test_single_residue_hotspot_descriptor() -> None:
+def test_single_residue_path() -> None:
     scored = scored_atoms_from_coordinates(
         [(0, 0, 0), (1.4, 0, 0), (2.8, 0, 0)],
         residue_names=["PHE"] * 3,
@@ -412,7 +394,6 @@ def test_single_residue_hotspot_descriptor() -> None:
         cleaned_atoms=(),
     ).reports[0]
 
-    assert report.structural_descriptor == "Single aromatic hotspot"
     assert report.residue_path.startswith("Chain A - Phe9 (CG, ")
     assert set(report.residues[0].atom_names) == {"CG", "CD1", "CE1"}
     assert report.edges.between_residues == 0 and report.edges.peptide_fraction == 0.0
