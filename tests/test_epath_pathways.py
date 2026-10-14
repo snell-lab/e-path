@@ -160,10 +160,71 @@ def test_only_redox_capable_groups_are_cofactors() -> None:
         group(7, "U10", "C"),  # a quinone, listed by name
         group(8, "CU", "CU"),  # a redox-active metal ion
         group(9, "XYZ", "FE"),  # an unfamiliar name that holds iron
+        group(10, "VO4", "V"),  # free oxyanions
+        group(11, "MOO", "MO"),
+        group(12, "WO4", "W"),
+        group(13, "NCO", "CO"),  # cobalt hexammine
+        group(14, "NI", "NI"),  # a lone nickel ion that no sulfur holds
+        group(15, "CO", "CO"),  # a lone cobalt ion
+        group(16, "MO", "MO"),  # the metal of a molybdenum cofactor
+        group(17, "F43", "NI"),  # nickel in a larger group, as in F430
+        group(17, "F43", "C"),
     )
     context = build_cofactor_context(cleaned)
 
-    assert [site.label for site in context.sites] == ["ZNH", "U10", "CU", "XYZ"]
+    assert [site.label for site in context.sites] == [
+        "ZNH",
+        "U10",
+        "CU",
+        "XYZ",
+        "MO",
+        "F43",
+    ]
+
+
+def test_a_lone_nickel_ion_is_a_cofactor_only_when_sulfur_holds_it() -> None:
+    def atom(
+        index: int, name: str, atom_name: str, element: str, x: float, y: float
+    ) -> PreparedAtom:
+        return make_prepared_atom(
+            source_atom_index=index,
+            residue_name=name,
+            residue_number=index,
+            atom_name=atom_name,
+            element=element,
+            is_hetatm=name not in {"CYS", "HIS"},
+            x=x,
+            y=y,
+        )
+
+    def nickel(index: int, x: float) -> PreparedAtom:
+        return atom(index, "NI", "NI", "NI", x, 0.0)
+
+    cleaned = (
+        # Two cysteine thiolates, as in nickel superoxide dismutase.
+        nickel(1, 0.0),
+        atom(2, "CYS", "SG", "S", 0.0, 2.2),
+        atom(3, "CYS", "SG", "S", 0.0, -2.3),
+        # One thiolate and a cluster sulfide, as in the C-cluster.
+        nickel(4, 100.0),
+        atom(5, "CYS", "SG", "S", 100.0, 2.2),
+        atom(6, "S", "S", "S", 100.0, -2.3),
+        # A single thiolate.
+        nickel(7, 200.0),
+        atom(8, "CYS", "SG", "S", 200.0, 2.2),
+        # Two sulfur atoms beyond bonding distance.
+        nickel(9, 300.0),
+        atom(10, "CYS", "SG", "S", 300.0, 2.8),
+        atom(11, "CYS", "SG", "S", 300.0, -2.8),
+        # Histidine, as in urease or a His-tag.
+        nickel(12, 400.0),
+        atom(13, "HIS", "NE2", "N", 400.0, 2.1),
+        atom(14, "HIS", "NE2", "N", 400.0, -2.1),
+    )
+
+    sites = build_cofactor_context(cleaned).sites
+
+    assert [site.residue_number for site in sites] == [1, 4]
 
 
 def test_cofactor_sites_follow_the_chain_order_of_the_model() -> None:

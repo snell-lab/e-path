@@ -84,6 +84,25 @@ ORGANIC_REDOX_COFACTORS = frozenset(
     }
 )
 
+# These hold a redox-active metal but are not redox cofactors: the free
+# vanadate, molybdate and tungstate oxyanions, which bind as phosphate
+# analogues or as transported substrates, and cobalt hexammine, a
+# crystallization additive.
+NON_COFACTOR_METAL_COMPONENTS = frozenset({"MOO", "NCO", "VO4", "WO4"})
+
+# Nickel and cobalt are redox-active inside a cofactor, as in F430, cobalamin
+# or a nickel-iron cluster. A lone cobalt ion never is, because it stands in
+# for another metal or, as in nitrile hydratase, acts as a Lewis acid. A lone
+# nickel ion is redox-active only when sulfur holds it, as the cysteine
+# thiolates of nickel superoxide dismutase and nickel-iron hydrogenase and the
+# sulfides of the carbon monoxide dehydrogenase cluster do. Nickel held by
+# histidine, carboxylates or water, as in urease, glyoxalase I or a His-tag,
+# is not. A sulfur atom within the first distance of the nickel counts as a
+# ligand, which covers Ni-S bonds of 2.2 to 2.3 A with room for modelling
+# error, and the second is how many such ligands the nickel needs.
+NICKEL_SULFUR_LIGAND_ANGSTROM = 2.7
+NICKEL_MINIMUM_SULFUR_LIGANDS = 2
+
 
 @dataclass(frozen=True, slots=True)
 class CofactorSite:
@@ -209,9 +228,12 @@ def _cofactor_sites(
     the chains in the order they first appear in the model.
     """
     chain_order: dict[str, int] = {}
+    sulfur_coordinates: list[tuple[float, float, float]] = []
     bound_groups: dict[tuple[str, str, int | None, str], list[AtomRecord]] = {}
     for atom in cleaned_atoms:
         chain_order.setdefault(atom.record.chain_id, len(chain_order))
+        if atom.record.element.strip().upper() == "S":
+            sulfur_coordinates.append((atom.record.x, atom.record.y, atom.record.z))
         # A bound group is whatever is neither polymer nor solvent.
         if atom.is_protein or atom.is_nucleic_acid or atom.is_solvent:
             continue
@@ -225,12 +247,18 @@ def _cofactor_sites(
         )
         bound_groups.setdefault(key, []).append(record)
 
+    # The reshape keeps the `(n, 3)` shape when the model has no sulfur.
+    sulfur_array = np.asarray(sulfur_coordinates, dtype=float).reshape(-1, 3)
     # A residue with no number sorts as residue 0 of its chain.
     ordered_keys = sorted(
         (
             key
             for key, records in bound_groups.items()
-            if _is_redox_cofactor(key[1], records)
+            if _is_redox_cofactor(
+                key[1],
+                records,
+                sulfur_coordinates=sulfur_array,
+            )
         ),
         key=lambda key: (
             chain_order[key[0]],
@@ -266,13 +294,36 @@ def _cofactor_sites(
     )
 
 
-def _is_redox_cofactor(residue_name: str, records: Sequence[AtomRecord]) -> bool:
+def _is_redox_cofactor(
+    residue_name: str,
+    records: Sequence[AtomRecord],
+    *,
+    sulfur_coordinates: NDArray[np.float64],
+) -> bool:
+    """Return whether a bound group is a redox cofactor.
+
+    `sulfur_coordinates` holds every sulfur atom of the model, with shape
+    `(n, 3)`, which decides whether a lone nickel ion is sulfur-ligated.
+    """
     if residue_name in ORGANIC_REDOX_COFACTORS:
         return True
 
-    return any(
-        record.element.strip().upper() in REDOX_ACTIVE_METALS for record in records
-    )
+    if residue_name in NON_COFACTOR_METAL_COMPONENTS:
+        return False
+
+    elements = [record.element.strip().upper() for record in records]
+    if len(elements) == 1 and elements[0] == "CO":
+        return False
+
+    if len(elements) == 1 and elements[0] == "NI":
+        nickel = records[0]
+        distances = row_norms(
+            sulfur_coordinates - np.asarray((nickel.x, nickel.y, nickel.z))
+        )
+        ligands = int(np.count_nonzero(distances <= NICKEL_SULFUR_LIGAND_ANGSTROM))
+        return ligands >= NICKEL_MINIMUM_SULFUR_LIGANDS
+
+    return any(element in REDOX_ACTIVE_METALS for element in elements)
 
 
 def _site_labels(residue_names: Sequence[str]) -> list[str]:

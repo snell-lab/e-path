@@ -90,9 +90,23 @@ chlorophyll, pheophytin, metal-free or zinc porphyrin, or pterin. Everything
 else bound to the protein, including lipids, detergents, sugars, buffer and
 cryoprotectant molecules, substrates and inhibitors, and redox-inert ions such
 as Na, K, Mg, Ca, and Zn, is still in the model and still contributes to
-packing density, but is not reported as a cofactor a path lies near. The rule
-cannot tell a functional metal from the same metal added for crystallization,
-so a manganese or nickel ion from the mother liquor is still listed as a
+packing density, but is not reported as a cofactor a path lies near.
+
+Some groups hold one of those metals without being redox cofactors, and are
+left out too: the free vanadate, molybdate, and tungstate oxyanions (`VO4`,
+`MOO`, `WO4`), cobalt hexammine (`NCO`), and a lone cobalt ion, which stands in
+for another metal or acts as a Lewis acid. Cobalt still counts inside
+cobalamin.
+
+A lone nickel ion counts only when at least two sulfur atoms lie within 2.7 Å
+of it, as cysteine thiolates or cluster sulfides. Redox-active nickel is held
+by sulfur, as in nickel superoxide dismutase, nickel-iron hydrogenase, acetyl-CoA
+synthase, and carbon monoxide dehydrogenase, while nickel held by histidine,
+carboxylates, or water, as in urease, glyoxalase I, or a His-tag site, is not
+redox-active. Nickel inside a larger cofactor such as F430 always counts.
+
+Otherwise the rule cannot tell a functional metal from the same metal added for
+crystallization, so a manganese ion from the mother liquor is still listed as a
 cofactor and should be discounted by eye.
 
 Sites sharing a residue name are numbered by chain, with the chains in the
