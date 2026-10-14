@@ -34,7 +34,12 @@ The default E-path selection is the lowest 2% of BDamage values. The threshold
 is the BDamage at that percentile of the scored atoms, and the atoms at or
 below it are then cut to 2% of the atom count by dropping the highest values.
 The count is rounded to a whole number of atoms, and one that falls exactly
-halfway rounds to the even number.
+halfway rounds to the even number. When atoms share the BDamage value at the
+cut, the ones later in the input file are dropped first.
+
+Each atom's Z-score is its BDamage minus the mean BDamage of the scored atoms,
+divided by their population standard deviation (dividing by the atom count,
+not by one less).
 
 `--percentile` takes several comma-separated values, such as `1,2,3`. BDamage
 and Bnet are calculated once, and the selection, clustering, and pathway
@@ -151,7 +156,6 @@ numbered, and neither is a step to a residue whose backbone C or N is not
 modelled. Residues joined across a jump in numbering or an insertion code are
 peptide steps as long as the bond is there.
 
-
 `*_steps.csv` lists every step individually, with its length, its kind, and the
 two atoms it joins. Steps are listed in the order the spanning tree was built,
 which is deterministic but is not a walk from one end of a path to the other.
@@ -173,9 +177,9 @@ The files a run writes are listed in the [README](../README.md#output).
 
 ### Summaries and Plot
 
-The terminal and persistent summaries report the mean and standard deviation of
-BDamage for the whole model, which are the values the Z-scores are derived
-from, and again for the selected atoms alone. They record the BDamage
+The terminal and persistent summaries report the mean and population standard
+deviation of BDamage for the whole model, which are the values the Z-scores are
+derived from, and again for the selected atoms alone. They record the BDamage
 calculation parameters actually used, so a run made with non-default values is
 identifiable from its output alone. The window size is reported as well as the
 fraction it came from, since it is derived from the scored atom count rather

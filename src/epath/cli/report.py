@@ -172,7 +172,7 @@ def _selection_lines(pipeline_result: EpathPipelineResult) -> tuple[str, ...]:
         ),
         (
             f"BDamage mean: {selection_result.bdamage_mean:.4f}, "
-            f"SD: {selection_result.bdamage_standard_deviation:.4f}"
+            f"population SD: {selection_result.bdamage_standard_deviation:.4f}"
         ),
     )
 

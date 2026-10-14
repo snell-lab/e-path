@@ -2,7 +2,8 @@
 
 `rabdam.pipeline` supplies the scored atoms and their BDamage results, which
 are used as they are. Each atom is given a Z-score against all of them here,
-and the lowest percentile by BDamage is selected. `epath.analysis.clustering` then groups the selected
+using their population standard deviation, and the lowest percentile by
+BDamage is selected. `epath.analysis.clustering` then groups the selected
 atoms, and `epath.outputs` reports the statistics kept on the result.
 """
 

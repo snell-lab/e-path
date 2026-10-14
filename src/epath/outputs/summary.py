@@ -78,7 +78,7 @@ def write_summary_txt(
             ),
             f"BDamage mean: {_number(selection_result.bdamage_mean)}",
             (
-                "BDamage standard deviation: "
+                "BDamage standard deviation (population): "
                 f"{_number(selection_result.bdamage_standard_deviation)}"
             ),
             f"Z threshold: {_number(selection_result.z_threshold)}",
@@ -99,7 +99,7 @@ def write_summary_txt(
                     f"{_number(selection_result.selected_bdamage_mean)}"
                 ),
                 (
-                    "Selected BDamage standard deviation: "
+                    "Selected BDamage standard deviation (population): "
                     f"{_number(selection_result.selected_bdamage_standard_deviation)}"
                 ),
             )
