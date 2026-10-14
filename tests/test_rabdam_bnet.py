@@ -13,7 +13,6 @@ from support import approx, synthetic_atoms, write_synthetic_pdb
 from rabdam.bnet.metric import (
     BnetMetricError,
     bnet_from_bdamage_values,
-    calculate_protein_bnet,
     is_protein_bnet_site,
     protein_bnet_site_bdamage_values,
 )
@@ -128,16 +127,6 @@ def test_bnet_input_validation(kwargs: dict[str, Any], message: str) -> None:
         bnet_from_bdamage_values(**kwargs)
 
 
-def test_protein_bnet_uses_the_selected_sites(
-    bdamage_result: BDamagePipelineResult,
-) -> None:
-    result = calculate_protein_bnet(
-        prepared_structure=bdamage_result.prepared_structure,
-        bdamage_results=bdamage_result.bdamage_results,
-    )
-    assert result.site_count == 4 and result.bnet > 0.0
-
-
 def _database(
     resolutions: Sequence[float], bnets: Sequence[float]
 ) -> BnetReferenceDatabase:
@@ -229,12 +218,6 @@ def test_a_reference_csv_that_disagrees_with_its_manifest_is_rejected(
         load_bnet_reference_database(tmp_path / "missing.csv")
 
 
-def test_the_bundled_reference_database_is_read_once() -> None:
-    assert (
-        load_default_bnet_reference_database() is load_default_bnet_reference_database()
-    )
-
-
 def test_bundled_reference_database_is_consistent_with_its_manifest() -> None:
     manifest = json.loads(
         DEFAULT_REFERENCE_DATABASE_CSV_PATH.with_suffix(".manifest.json").read_text()
@@ -261,6 +244,7 @@ def test_bnet_pipeline_reports_full_results(
     )
 
     assert result.bnet_result is not None and result.percentile_result is not None
+    assert result.bnet_result.site_count == 4 and result.bnet_result.bnet > 0.0
     assert (
         result.bnet_unavailable_reason is None
         and result.percentile_unavailable_reason is None

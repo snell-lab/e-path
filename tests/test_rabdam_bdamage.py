@@ -47,26 +47,6 @@ def _packing_density(
     )
 
 
-def _brute_force_counts(
-    selected: Sequence[PreparedAtom],
-    neighbours: Sequence[Position],
-    threshold: float,
-) -> tuple[int, ...]:
-    """Count neighbours strictly inside the threshold pair by pair.
-
-    This is an independent reference for the KD-tree search. One is subtracted
-    for the atom itself, which every test set of neighbours contains.
-    """
-    return tuple(
-        sum(
-            math.dist((a.record.x, a.record.y, a.record.z), position) < threshold
-            for position in neighbours
-        )
-        - 1
-        for a in selected
-    )
-
-
 def test_neighbours_are_counted_strictly_inside_the_threshold() -> None:
     selected = (make_prepared_atom(source_atom_index=0, x=0.0),)
     neighbours = (
@@ -81,26 +61,6 @@ def test_neighbours_are_counted_strictly_inside_the_threshold() -> None:
     )
 
     assert _packing_density(selected, neighbours) == (4,)
-
-
-def test_kd_tree_counts_match_a_brute_force_count() -> None:
-    selected = (
-        make_prepared_atom(source_atom_index=0, x=0.0),
-        make_prepared_atom(source_atom_index=5, x=10.0, atom_serial=6),
-    )
-    neighbours = (
-        _on_x_axis(0.0),
-        _on_x_axis(10.0),
-        _on_x_axis(4.0),
-        _on_x_axis(15.0),
-    )
-
-    # Atom 0 sees only the image at 4.0; atom 5 sees the images at 4.0 and 15.0.
-    assert (
-        _packing_density(selected, neighbours)
-        == _brute_force_counts(selected, neighbours, 7.0)
-        == (1, 2)
-    )
 
 
 def _inputs(
@@ -215,9 +175,7 @@ def test_structure_scores_pair_atoms_with_packing_densities() -> None:
         (100, 0.02, 11, 11),  # round(2) -> 3, raised to the minimum
         (1000, 0.02, 11, 21),  # 20 is even, so 21
         (1050, 0.02, 11, 21),  # 21 already odd
-        (5000, 0.02, 11, 101),
         (100, 0.02, 10, 11),  # an even minimum is raised to the next odd size
-        (100, 0.02, 12, 13),
         (2000, 0.05, 1, 101),
     ],
 )

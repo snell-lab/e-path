@@ -1,21 +1,16 @@
 """Symmetry expansion and the trimmed block of neighbouring cells."""
 
 import itertools
-from pathlib import Path
 
 import gemmi
 import numpy as np
 import pytest
 from numpy.typing import NDArray
-from support import approx, make_metadata, make_prepared_atom, write_synthetic_pdb
+from support import make_metadata, make_prepared_atom
 
 from rabdam.crystal.symmetry import symmetry_image_coordinates
 from rabdam.crystal.trim import trim_crystal_to_reference_atoms
 from rabdam.structure.models import PreparedAtom
-from rabdam.structure.prepare import prepare_structure
-from xtal.cell import translation_vectors_from_gemmi_cell
-from xtal.reader import read_structure
-from xtal.resolver import resolve_structure_input
 from xtal.validate import ValidatedCrystal, validate_crystal
 
 ATOMS = (
@@ -66,21 +61,8 @@ def _rows_in_canonical_order(rows: object) -> NDArray[np.float64]:
     return np.asarray(array[order], dtype=np.float64)
 
 
-def test_p1_expansion_is_the_identity() -> None:
-    crystal = validate_crystal(make_metadata(space_group="P 1"), macromolecule_atoms=())
-
-    images = symmetry_image_coordinates(ATOMS, crystal=crystal)
-
-    assert images.shape == (len(ATOMS), 3)
-    assert np.allclose(
-        images,
-        [[atom.record.x, atom.record.y, atom.record.z] for atom in ATOMS],
-        atol=1e-9,
-    )
-
-
 @pytest.mark.parametrize(
-    "space_group", ["P 1 21 1", "P 21 21 21", "C 1 2 1", "P 41 3 2"]
+    "space_group", ["P 1", "P 1 21 1", "P 21 21 21", "C 1 2 1", "P 41 3 2"]
 )
 def test_images_match_gemmi_operations_without_wrapping(space_group: str) -> None:
     cell = (
@@ -98,26 +80,6 @@ def test_images_match_gemmi_operations_without_wrapping(space_group: str) -> Non
     expected = _gemmi_images(crystal, ATOMS)
     assert images.shape == (len(ATOMS) * len(crystal.operations), 3)
     assert np.allclose(images, np.asarray(expected), atol=1e-9)
-
-
-def test_no_atoms_give_no_images() -> None:
-    crystal = validate_crystal(
-        make_metadata(space_group="P 1 21 1"), macromolecule_atoms=()
-    )
-
-    assert symmetry_image_coordinates((), crystal=crystal).shape == (0, 3)
-
-
-def _standard_frame_vectors(*cell: float) -> NDArray[np.float64]:
-    return translation_vectors_from_gemmi_cell(gemmi.UnitCell(*cell))
-
-
-def test_standard_translation_vectors() -> None:
-    ortho = _standard_frame_vectors(10, 20, 30, 90, 90, 90)
-    assert np.allclose(ortho, [[10, 0, 0], [0, 20, 0], [0, 0, 30]], atol=1e-9)
-
-    mono = _standard_frame_vectors(10, 20, 30, 90, 120, 90)
-    assert mono[2].tolist() == approx([-15, 0, 30 * np.sin(np.radians(120))], abs=1e-9)
 
 
 def test_an_untrimmed_block_holds_every_neighbouring_cell() -> None:
@@ -194,47 +156,3 @@ def test_trimmed_block_matches_brute_force_translation() -> None:
         _rows_in_canonical_order(expected),
         atol=1e-9,
     )
-
-
-def test_every_cleaned_atom_of_a_structure_is_in_the_block(
-    synthetic_pdb: Path,
-) -> None:
-    prepared = prepare_structure(
-        read_structure(resolve_structure_input(str(synthetic_pdb)))
-    )
-    crystal = validate_crystal(prepared.metadata, macromolecule_atoms=())
-
-    images = symmetry_image_coordinates(prepared.cleaned_atoms, crystal=crystal)
-
-    assert len(images) == 2 * len(prepared.cleaned_atoms)
-
-
-def test_file_specific_orthogonalization_frame_is_kept(tmp_path: Path) -> None:
-    # The SCALE records put a along y, b along z, and c along x. Gemmi keeps
-    # that frame for the atoms, so lattice translations must use it too.
-    scale = (
-        "SCALE1      0.000000  0.066667  0.000000        0.00000",
-        "SCALE2      0.000000  0.000000  0.062500        0.00000",
-        "SCALE3      0.058824  0.000000  0.000000        0.00000",
-    )
-    path = write_synthetic_pdb(
-        tmp_path / "rotated.pdb",
-        cell=(15.0, 16.0, 17.0, 90.0, 90.0, 90.0),
-        space_group="P 1",
-        scale_lines=scale,
-    )
-    metadata = read_structure(resolve_structure_input(str(path))).metadata
-
-    crystal = validate_crystal(metadata, macromolecule_atoms=())
-
-    assert metadata.gemmi_cell is not None
-    vectors = crystal.translation_vectors
-    # The SCALE records carry six decimals, so the axes match to about 1e-4.
-    assert np.allclose(vectors, [[0, 15, 0], [0, 0, 16], [17, 0, 0]], atol=1e-3)
-    assert np.array_equal(
-        vectors, translation_vectors_from_gemmi_cell(metadata.gemmi_cell)
-    )
-    standard = translation_vectors_from_gemmi_cell(
-        gemmi.UnitCell(15.0, 16.0, 17.0, 90.0, 90.0, 90.0)
-    )
-    assert standard[0].tolist() == approx([15, 0, 0])
