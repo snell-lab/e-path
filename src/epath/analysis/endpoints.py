@@ -76,6 +76,7 @@ ORGANIC_REDOX_COFACTORS = frozenset(
         "BPB",
         "BPH",
         "CHL",
+        "CL0",
         "CLA",
         "DCQ",
         "F42",
