@@ -18,6 +18,7 @@ the coordinates, occupancies, and BDamage values are finite and are not
 checked again here.
 """
 
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from itertools import groupby
 from pathlib import Path
@@ -195,11 +196,16 @@ def write_path_subset_cifs(
     path order, and keep their numbering when `display_chains` drops a pathway
     with no atoms in the kept chains. The files written are returned in the
     order of `path_reports`.
+
+    The pathway files of an earlier run under the same prefix are removed
+    first, so a run that reports fewer pathways leaves none of the old ones
+    behind to be read as its own.
     """
+    prefix = Path(output_prefix)
+    _remove_path_subset_cifs(prefix)
     if not path_reports:
         return {}
 
-    prefix = Path(output_prefix)
     width = max(2, len(str(max(report.path_id for report in path_reports))))
     written: dict[int, Path] = {}
     for report in path_reports:
@@ -379,3 +385,14 @@ def _make_atom(record: AtomRecord, b_factor: float) -> gemmi.Atom:
     atom.occ = record.occupancy
     atom.b_iso = b_factor
     return atom
+
+
+def _remove_path_subset_cifs(prefix: Path) -> None:
+    """Remove every `<prefix>_pathNN.cif` file, whatever its number of digits."""
+    if not prefix.parent.is_dir():
+        return
+
+    pattern = re.compile(rf"{re.escape(prefix.name)}_path\d+\.cif")
+    for path in prefix.parent.iterdir():
+        if pattern.fullmatch(path.name) and path.is_file():
+            path.unlink()

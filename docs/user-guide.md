@@ -219,3 +219,5 @@ each hold one pathway's atoms, with `_epath.path_id`,
 `_epath.nearby_cofactors` (the nearby sites separated by `/`, or `none`), and
 `_epath.cluster_distance` (the `--cluster-distance` the atoms were connected
 within, in angstroms) recorded. Loading them separately is how to colour by pathway.
+A run removes the pathway files an earlier run left under the same prefix, so
+rerunning with `-o` never leaves stale pathways beside the new ones.

@@ -311,6 +311,29 @@ def test_path_subset_cifs_are_zero_padded(
     )
 
 
+def test_path_subset_cifs_replace_those_of_an_earlier_run(
+    tmp_path: Path, result: EpathPipelineResult
+) -> None:
+    crystal = result.bdamage_pipeline_result.crystal
+    earlier = ["run_path01.cif", "run_path07.cif", "run_path123.cif"]
+    unrelated = ["run_path01.cif.bak", "run_path01_notes.cif", "other_path01.cif"]
+    for name in earlier + unrelated:
+        (tmp_path / name).write_text("old")
+
+    paths = write_path_subset_cifs(
+        tmp_path / "run", result.path_reports[:1], crystal=crystal, cluster_distance=4.0
+    )
+
+    assert sorted(path.name for path in tmp_path.iterdir()) == sorted(
+        ["run_path01.cif", *unrelated]
+    )
+    assert paths[1].read_text() != "old"
+
+    # A run that reports no pathway leaves none behind.
+    write_path_subset_cifs(tmp_path / "run", (), crystal=crystal, cluster_distance=4.0)
+    assert sorted(path.name for path in tmp_path.iterdir()) == sorted(unrelated)
+
+
 def test_path_subset_cifs_write_atoms_in_input_order(
     tmp_path: Path, result: EpathPipelineResult
 ) -> None:
