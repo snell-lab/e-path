@@ -168,7 +168,7 @@ def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
             (
                 "",
                 f"Path {report.path_id}",
-                f"  Nearest cofactor: {_anchor_text(report)}",
+                f"  Cofactors in range: {_anchor_text(report)}",
                 f"  Chains: {_chain_text(report.chains)}",
                 (
                     f"  Residues: {report.residue_count}   "
@@ -216,13 +216,13 @@ def _unreported_component_lines(
 
 
 def _anchor_text(report: PathReport) -> str:
-    anchor = report.anchor
-    if anchor is None:
-        return "none in range"
+    if not report.anchors:
+        return "none"
 
-    return (
-        f"{anchor.label} at {_number(anchor.distance)} A from "
-        f"{anchor.atom_token} ({anchor.residue})"
+    return ", ".join(
+        f"{cofactor.label} at {_number(cofactor.distance)} A from "
+        f"{cofactor.atom_token} ({cofactor.residue})"
+        for cofactor in report.anchors
     )
 
 

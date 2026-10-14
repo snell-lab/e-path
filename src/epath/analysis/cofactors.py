@@ -1,10 +1,10 @@
-"""Find a model's redox cofactors and the one nearest to each E-path cluster.
+"""Find a model's redox cofactors and those within reach of each E-path cluster.
 
 Cofactors are excluded from the connectivity graph, so a path never runs
-through one, but a path can still lie within reach of one. The cofactor
-nearest to any atom of a path is reported as its anchor.
+through one, but a path can still lie within reach of one or more. Every
+cofactor within range of a path is reported as one of its anchors.
 
-`pathways` builds one `CofactorContext` per model and finds the anchor of
+`pathways` builds one `CofactorContext` per model and finds the anchors of
 every path against it. The cofactor sites come from the cleaned model that
 `rabdam.structure` prepared. Distances are in angstroms.
 """
@@ -102,7 +102,7 @@ class CofactorSite:
 
 @dataclass(frozen=True, slots=True)
 class PathAnchor:
-    """The cofactor nearest to any atom of a path, when one is within range.
+    """One cofactor within range of a path.
 
     `label` is the label of the cofactor site. `distance` is measured between
     the closest pair of atoms, one of the site and one of the path, and
@@ -117,7 +117,7 @@ class PathAnchor:
 
 @dataclass(frozen=True, slots=True)
 class CofactorContext:
-    """The cofactor sites of a model, used to find the anchor of each path.
+    """The cofactor sites of a model, used to find the anchors of each path.
 
     `cofactor_coordinates` holds every atom of every site, with shape
     `(n, 3)`, and `cofactor_site_indices` gives, for each of those rows, the
@@ -144,33 +144,46 @@ def build_cofactor_context(cleaned_atoms: Sequence[PreparedAtom]) -> CofactorCon
     )
 
 
-def find_path_anchor(
+def find_path_anchors(
     atoms: Sequence[AtomRecord],
     context: CofactorContext,
-) -> PathAnchor | None:
-    """Return the cofactor nearest to any atom of a path, if one is in range.
+) -> tuple[PathAnchor, ...]:
+    """Return every cofactor within range of a path, the nearest first.
 
-    The anchor names the path atom closest to the cofactor, and the first such
-    atom in path order when several are equally close. None is returned when
-    no cofactor atom lies within the proximity range of any atom of the path.
+    A cofactor is in range when one of its atoms lies within the proximity
+    range of an atom of the path, the range itself included. Each anchor names
+    the path atom closest to its cofactor, and the first such atom in path
+    order when several are equally close. Cofactors equally near are in site
+    order. The result is empty when no cofactor is in range.
     """
-    anchor: PathAnchor | None = None
-    for atom in atoms:
-        point = np.asarray((atom.x, atom.y, atom.z), dtype=float)
-        nearest = _nearest_cofactor(point, context)
-        if nearest is None:
+    if not context.sites or not atoms:
+        return ()
+
+    # One row per path atom, one column per site.
+    distances = np.vstack(
+        [
+            _site_distances(np.asarray((atom.x, atom.y, atom.z), dtype=float), context)
+            for atom in atoms
+        ]
+    )
+    nearby: list[PathAnchor] = []
+    for site_index, site in enumerate(context.sites):
+        nearest = int(np.argmin(distances[:, site_index]))
+        distance = float(distances[nearest, site_index])
+        if distance > COFACTOR_PROXIMITY_ANGSTROM:
             continue
 
-        site, distance = nearest
-        if anchor is None or distance < anchor.distance:
-            anchor = PathAnchor(
+        nearby.append(
+            PathAnchor(
                 label=site.label,
                 distance=distance,
-                atom_token=atom_token(atom),
-                residue=residue_label(atom),
+                atom_token=atom_token(atoms[nearest]),
+                residue=residue_label(atoms[nearest]),
             )
+        )
 
-    return anchor
+    # The sort is stable, so cofactors equally near keep their site order.
+    return tuple(sorted(nearby, key=lambda cofactor: cofactor.distance))
 
 
 def cofactor_site_summary(sites: Sequence[CofactorSite]) -> str:
@@ -274,22 +287,15 @@ def _site_labels(residue_names: Sequence[str]) -> list[str]:
     return labels
 
 
-def _nearest_cofactor(
+def _site_distances(
     point: NDArray[np.float64],
     context: CofactorContext,
-) -> tuple[CofactorSite, float] | None:
-    """Return the site with the atom nearest to a point, and that distance.
-
-    None is returned when the model has no cofactor, or when the nearest one
-    is beyond the proximity range.
-    """
-    if not context.sites:
-        return None
-
-    distances = row_norms(context.cofactor_coordinates - point)
-    nearest = np.argmin(distances)
-    distance = float(distances[nearest])
-    if distance > COFACTOR_PROXIMITY_ANGSTROM:
-        return None
-
-    return context.sites[int(context.cofactor_site_indices[nearest])], distance
+) -> NDArray[np.float64]:
+    """Return the distance from a point to the nearest atom of each site."""
+    distances = np.full(len(context.sites), np.inf)
+    np.minimum.at(
+        distances,
+        context.cofactor_site_indices,
+        row_norms(context.cofactor_coordinates - point),
+    )
+    return distances

@@ -186,18 +186,16 @@ def test_labels_and_tokens() -> None:
 def _path(
     residue_names: Sequence[str],
     *,
-    cofactor_at_start: bool,
-    cofactor_position: tuple[float, float, float] = (-3.0, 0.0, 0.0),
-    spacing: float = 3.5,
-    extra_atoms: Sequence[tuple[float, float, float]] = (),
+    cofactors: Sequence[tuple[str, str, tuple[float, float, float]]] = (),
 ) -> PathReport:
-    """A straight path with one residue per atom, optionally with an FMN beside it."""
-    count = len(residue_names)
-    coordinates = [(spacing * i, 0.0, 0.0) for i in range(count)] + list(extra_atoms)
+    """A straight path with one residue per atom, 3.5 A apart along x.
+
+    Each cofactor is one atom, given as its residue name, element and position.
+    """
     scored = scored_atoms_from_coordinates(
-        coordinates,
-        residue_names=list(residue_names) + ["ALA"] * len(extra_atoms),
-        residue_numbers=list(range(1, count + 1)) + [count] * len(extra_atoms),
+        [(3.5 * i, 0.0, 0.0) for i in range(len(residue_names))],
+        residue_names=list(residue_names),
+        residue_numbers=list(range(1, len(residue_names) + 1)),
     )
     cleaned = [
         make_prepared_atom(
@@ -205,18 +203,18 @@ def _path(
         )
         for i in range(4)
     ]
-    if cofactor_at_start:
+    for index, (name, element, (x, y, z)) in enumerate(cofactors):
         cleaned.append(
             make_prepared_atom(
-                source_atom_index=300,
-                residue_name="FMN",
-                residue_number=201,
-                atom_name="N1",
-                element="N",
+                source_atom_index=300 + index,
+                residue_name=name,
+                residue_number=201 + 100 * index,
+                atom_name=element,
+                element=element,
                 is_hetatm=True,
-                x=cofactor_position[0],
-                y=cofactor_position[1],
-                z=cofactor_position[2],
+                x=x,
+                y=y,
+                z=z,
             )
         )
     clusters = cluster_selected_atoms(scored, distance_cutoff=4.0)
@@ -224,30 +222,54 @@ def _path(
     return analyze_paths(clusters, cleaned_atoms=cleaned).reports[0]
 
 
-def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
-    at_start = _path(["TRP", "ALA", "LEU", "TYR", "VAL", "GLY"], cofactor_at_start=True)
-    assert at_start.anchor is not None and at_start.is_cofactor_anchored
-    assert (at_start.anchor.label, at_start.anchor.residue) == ("FMN", "Trp1")
-    assert at_start.anchor.distance == approx(3.0)
+def test_path_anchor_is_a_cofactor_in_range_of_any_atom() -> None:
+    names = ["TRP", "ALA", "LEU", "TYR", "VAL", "GLY"]
+    at_start = _path(names, cofactors=[("FMN", "N", (-3.0, 0.0, 0.0))])
+    assert at_start.is_cofactor_anchored and len(at_start.anchors) == 1
+    cofactor = at_start.anchors[0]
+    assert (cofactor.label, cofactor.residue, cofactor.atom_token) == (
+        "FMN",
+        "Trp1",
+        "A:1:CA",
+    )
+    assert cofactor.distance == approx(3.0)
     assert at_start.anchor_summary == "FMN at 3.0 A"
 
     # A cofactor beside the middle of a long path, out of range of both ends,
-    # still anchors it.
+    # still anchors it. Gly4 and Trp5 are equally near, and Gly4 comes first.
     names = ["ALA", "LEU", "VAL", "GLY", "TRP", "ILE", "PRO", "ALA"]
-    midway = _path(names, cofactor_at_start=True, cofactor_position=(12.25, 3.0, 0.0))
-    assert midway.anchor is not None and midway.anchor.label == "FMN"
-    assert midway.anchor.distance == approx(np.hypot(1.75, 3.0))
-    assert midway.anchor.residue in {"Gly4", "Trp5"}
+    midway = _path(names, cofactors=[("FMN", "N", (12.25, 3.0, 0.0))])
+    assert [cofactor.label for cofactor in midway.anchors] == ["FMN"]
+    assert midway.anchors[0].distance == approx(np.hypot(1.75, 3.0))
+    assert midway.anchors[0].residue == "Gly4"
 
     # Just beyond the proximity range of every atom.
-    distant = _path(names, cofactor_at_start=True, cofactor_position=(12.25, 8.5, 0.0))
-    assert distant.anchor is None and not distant.is_cofactor_anchored
+    distant = _path(names, cofactors=[("FMN", "N", (12.25, 8.5, 0.0))])
+    assert distant.anchors == () and not distant.is_cofactor_anchored
+    assert distant.anchor_summary == "none"
 
-    unanchored = _path(
-        ["ALA", "LEU", "VAL", "GLY", "ILE", "PRO"], cofactor_at_start=False
+    assert _path(names).anchors == ()
+
+
+def test_a_path_between_two_cofactors_is_anchored_to_both() -> None:
+    names = ["ALA", "LEU", "VAL", "GLY", "TRP", "ILE", "PRO", "ALA"]
+    bridging = _path(
+        names,
+        cofactors=[
+            ("FMN", "N", (-3.0, 0.0, 0.0)),  # 3.0 A from Ala1
+            ("SF4", "FE", (27.0, 0.0, 0.0)),  # 2.5 A from Ala8
+            ("HEM", "FE", (12.25, 9.0, 0.0)),  # out of range
+        ],
     )
-    assert unanchored.anchor is None
-    assert unanchored.anchor_summary == "no cofactor in range"
+
+    # The nearest comes first, whatever the site order.
+    assert [cofactor.label for cofactor in bridging.anchors] == ["SF4", "FMN"]
+    assert [cofactor.distance for cofactor in bridging.anchors] == approx([2.5, 3.0])
+    assert [cofactor.residue for cofactor in bridging.anchors] == [
+        "Ala8",
+        "Ala1",
+    ]
+    assert bridging.anchor_summary == "SF4 at 2.5 A, FMN at 3.0 A"
 
 
 def test_residue_path_listing_and_step_provenance() -> None:

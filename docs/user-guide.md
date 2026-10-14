@@ -66,7 +66,7 @@ Each pathway is reported with:
   number, and atoms in the order the connectivity graph reached them.
 - The residue count, the node (atom) count, and the total path length.
 - The chains the path runs through.
-- The cofactor nearest to any atom of the path, and its distance.
+- The cofactors within reach of the path, and their distances.
 - The step provenance and residue-chemistry measurements.
 
 A path that crosses between chains lists each of them in `chains`, and its
@@ -79,7 +79,7 @@ count suggests an atom near the surface and a typical one an atom inside the
 protein, but packing density is not a solvent-accessibility calculation; use a
 dedicated tool when the distinction matters.
 
-### Cofactors and Anchors
+### Cofactor Anchors
 
 Only redox-capable groups are treated as cofactors. A bound group qualifies if
 it contains a redox-active transition metal (V, Mn, Fe, Co, Ni, Cu, Mo, or W),
@@ -98,11 +98,13 @@ cofactor and should be discounted by eye.
 Sites sharing a residue name are numbered by chain and residue number, which is
 what produces `SF4-1` to `SF4-7`.
 
-Each path is given an anchor, the cofactor nearest to any of its atoms when one
-lies within 8.0 Å, wherever along the path that atom is. `anchor_cofactor`,
-`anchor_distance`, and `anchor_atom` in `*_clusters.csv` record the site, the
-distance, and the path atom closest to it, and are empty when no cofactor is in
-range. The summaries list every cofactor site found, so a path that reports no
+A path is anchored to every cofactor that lies within 8.0 Å of any of its
+atoms, wherever along the path that atom is, so a path running between two
+cofactors is anchored to both. `anchor_cofactors`, `anchor_distances`, and
+`anchor_atoms` in `*_clusters.csv` list the sites, their distances, and the path
+atom closest to each, nearest first. Each column separates its entries with
+`/`, in the same order in all three, and all three are empty when no cofactor
+is in range. The summaries list every cofactor site found, so a path with no
 anchor can be told apart from a model that has no cofactors.
 
 ### Step Provenance
@@ -166,7 +168,7 @@ threshold is marked, so the plot shows where the cutoff falls on the falloff.
 
 Every coordinate file is mmCIF. Run notes are written as an `_epath_remark`
 loop and machine-readable values (atom counts, the threshold, the pathway
-number and its nearest cofactor) as an `_epath` category; viewers ignore both.
+number and its cofactors) as an `_epath` category; viewers ignore both.
 
 `*_model.cif` holds every atom that survived cleaning, so solvent, ions,
 ligands, and cofactors are retained for inspection alongside the E-path results
@@ -182,5 +184,5 @@ whole number of atoms, so `*_selected.cif` and the `selected` column of
 `*_selected.cif` holds every selected atom, including those in components too
 small to be reported as pathways. `*_path01.cif`, `*_path02.cif`, and so on
 each hold one pathway's atoms, with `_epath.path_id` and
-`_epath.anchor_cofactor` recorded. Loading them separately is how to colour by
-pathway.
+`_epath.anchor_cofactors` (the anchoring sites separated by `/`, or `none`)
+recorded. Loading them separately is how to colour by pathway.

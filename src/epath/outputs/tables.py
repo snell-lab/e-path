@@ -85,8 +85,8 @@ STEP_FIELDNAMES = [
     "second_residue",
 ]
 
-# The leading columns, up to `anchor_atom`, are the E-path pathway table: the
-# path, its size, and the cofactor it comes nearest to. The columns after them
+# The leading columns, up to `anchor_atoms`, are the E-path pathway table: the
+# path, its size, and the cofactors within reach of it. The columns after them
 # are its geometry, steps, and composition.
 CLUSTER_FIELDNAMES = [
     "cluster_id",
@@ -94,9 +94,9 @@ CLUSTER_FIELDNAMES = [
     "residue_count",
     "atom_count",
     "mst_total_length",
-    "anchor_cofactor",
-    "anchor_distance",
-    "anchor_atom",
+    "anchor_cofactors",
+    "anchor_distances",
+    "anchor_atoms",
     "chains",
     "mean_step",
     "largest_edge",
@@ -190,7 +190,9 @@ def write_cluster_csv(
 ) -> Path:
     """Write one CSV row per reported pathway, in the order of `path_reports`.
 
-    The three anchor columns are blank for a pathway with no cofactor in range.
+    The three anchor columns list the cofactors in range, the nearest first,
+    separated by "/" and in the same order in each column. They are blank for
+    a pathway with no cofactor in range.
     """
     return _write_csv(
         output_path,
@@ -202,7 +204,7 @@ def write_cluster_csv(
 def _cluster_row(report: PathReport) -> dict[str, object]:
     metrics = report.cluster.metrics
     fractions = report.composition.fractions
-    anchor = report.anchor
+    nearby = report.anchors
 
     return {
         "cluster_id": report.path_id,
@@ -210,9 +212,11 @@ def _cluster_row(report: PathReport) -> dict[str, object]:
         "residue_count": report.residue_count,
         "atom_count": report.node_count,
         "mst_total_length": metrics.mst_total_length,
-        "anchor_cofactor": anchor.label if anchor is not None else None,
-        "anchor_distance": anchor.distance if anchor is not None else None,
-        "anchor_atom": anchor.atom_token if anchor is not None else None,
+        "anchor_cofactors": "/".join(cofactor.label for cofactor in nearby),
+        "anchor_distances": "/".join(
+            _format_cell(cofactor.distance) for cofactor in nearby
+        ),
+        "anchor_atoms": "/".join(cofactor.atom_token for cofactor in nearby),
         "chains": "/".join(report.chains),
         "mean_step": metrics.mean_step,
         "largest_edge": metrics.mst_largest_edge,

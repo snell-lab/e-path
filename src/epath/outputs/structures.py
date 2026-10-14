@@ -180,13 +180,14 @@ def write_path_subset_cifs(
     written: dict[int, Path] = {}
     for report in path_reports:
         atoms = report.cluster.atoms
+        anchor_labels = "/".join(cofactor.label for cofactor in report.anchors)
         remarks = [
             f"Pathway {report.path_id}.",
             (
                 f"{report.residue_count} residues, {report.node_count} nodes, "
                 f"{report.total_length:.2f} A."
             ),
-            f"Nearest cofactor: {report.anchor_summary}.",
+            f"Cofactors in range: {report.anchor_summary}.",
         ]
         if display_chains is not None:
             atoms = tuple(
@@ -204,9 +205,7 @@ def write_path_subset_cifs(
             remarks=remarks,
             values={
                 "path_id": str(report.path_id),
-                "anchor_cofactor": (
-                    report.anchor.label if report.anchor is not None else "none"
-                ),
+                "anchor_cofactors": anchor_labels or "none",
             },
         )
 
