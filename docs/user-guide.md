@@ -208,7 +208,8 @@ even though they are never scored. Scored atoms carry their BDamage value in
 `_atom_site.B_iso_or_equiv` and unscored atoms carry `0.00`, so colouring by
 B-factor shows the BDamage landscape without the excluded atoms distorting the
 scale. Every selected atom has a B-factor above zero and at or below the
-BDamage threshold, which the file records as `_epath.bdamage_threshold`. A few
+BDamage threshold, which the file records as `_epath.bdamage_threshold`,
+written to the same precision as the B-factor column. A few
 unselected atoms can lie in that range too, because the selection is cut to a
 whole number of atoms, so `*_selected.cif` and the `selected` column of
 `*_epath.csv` are what identify the selection exactly.

@@ -245,24 +245,30 @@ def test_model_cif_marks_unscored_atoms_with_zero_bdamage(
         a.record.source_atom_index: a.bdamage_result.bdamage
         for a in result.selection_result.scored_atoms
     }
+    # An atom exactly at a threshold that four decimals would round down.
+    threshold = 0.77344449
+    at_threshold = next(iter(scores))
+    scores[at_threshold] = threshold
 
     path = write_model_cif(
         tmp_path / "model.cif",
         cleaned,
         crystal=result.bdamage_pipeline_result.crystal,
         bdamage_by_source_index=scores,
-        bdamage_threshold=0.7734,
+        bdamage_threshold=threshold,
     )
     block = gemmi.cif.read_file(str(path)).sole_block()
     assert block.find_value("_epath.atom_count") == str(len(cleaned))
     assert block.find_value("_epath.scored_atom_count") == str(len(scores))
-    assert block.find_value("_epath.bdamage_threshold") == "0.7734"
+    # Written as the B-factor column writes it, single precision to six
+    # significant figures, so the atom at the threshold reads as at it.
+    assert block.find_value("_epath.bdamage_threshold") == "0.773444"
     remarks = [
         gemmi.cif.as_string(r[1]) for r in block.find("_epath_remark.", ["id", "text"])
     ]
     assert f"{len(scores)} of {len(cleaned)} atoms were scored." in remarks
     assert (
-        "Selected atoms are among those with 0.00 < B_iso_or_equiv <= 0.7734."
+        "Selected atoms are among those with 0.00 < B_iso_or_equiv <= 0.773444."
         in remarks
     )
 
@@ -276,6 +282,8 @@ def test_model_cif_marks_unscored_atoms_with_zero_bdamage(
     assert {row[2] for row in unscored} == {"FMN", "GOL", "HOH"}
     assert [int(row[1]) for row in rows] == list(range(1, 85))
     assert all(row[0] == "HETATM" for row in rows if row[2] in {"MSE", "FMN", "HOH"})
+    source_indices = [atom.record.source_atom_index for atom in cleaned]
+    assert rows[source_indices.index(at_threshold)][3] == "0.773444"
 
 
 def test_path_subset_cifs_are_zero_padded(

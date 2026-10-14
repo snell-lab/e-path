@@ -24,6 +24,7 @@ from itertools import groupby
 from pathlib import Path
 
 import gemmi
+import numpy as np
 
 from epath import __version__
 from epath.analysis.pathways import PathReport
@@ -128,7 +129,9 @@ def write_model_cif(
     `bdamage_threshold` is the threshold of the selection and is recorded
     with the run metadata. Every selected atom is at or below it, but so can a
     few unselected atoms be, because the selection is cut to a whole number of
-    atoms. The remark written here says only the first.
+    atoms. The remark written here says only the first. The threshold is
+    written as the B-factor column writes a value, so no selected atom reads
+    as above it.
     """
     scored_count = sum(
         1
@@ -144,14 +147,14 @@ def write_model_cif(
         "Unscored atoms still add to the packing density of scored atoms.",
         (
             "Selected atoms are among those with "
-            f"0.00 < B_iso_or_equiv <= {bdamage_threshold:.4f}."
+            f"0.00 < B_iso_or_equiv <= {_b_iso_text(bdamage_threshold)}."
         ),
         *remarks,
     ]
     values = {
         "atom_count": str(len(cleaned_atoms)),
         "scored_atom_count": str(scored_count),
-        "bdamage_threshold": f"{bdamage_threshold:.4f}",
+        "bdamage_threshold": _b_iso_text(bdamage_threshold),
     }
 
     atoms = [
@@ -278,6 +281,16 @@ def write_atom_subset_cif(
         remarks=remark_lines,
         values=values or {},
     )
+
+
+def _b_iso_text(value: float) -> str:
+    """Return a value as Gemmi writes it in `_atom_site.B_iso_or_equiv`.
+
+    Gemmi stores a B-factor in single precision and writes it to six
+    significant figures. Both roundings are monotonic, so a value written this
+    way keeps its order against every B-factor in the file.
+    """
+    return format(float(np.float32(value)), ".6g")
 
 
 def _write_mmcif(
