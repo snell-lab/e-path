@@ -37,7 +37,7 @@ from rabdam.structure.models import (
 )
 from rabdam.structure.prepare import classify_atom
 from xtal.reader import AtomRecord, StructureMetadata
-from xtal.validate import MacromoleculeAtom, MacromoleculeKind
+from xtal.validate import MacromoleculeAtom, MacromoleculeKind, ValidatedCrystal
 
 # A monoclinic cell so that symmetry expansion and lattice translation are
 # both non-trivial. The volume gives a Matthews coefficient of about 2 for
@@ -396,6 +396,20 @@ def make_metadata(
         unit_cell_gamma=gamma,
         resolution_angstrom=resolution,
         gemmi_cell=gemmi.UnitCell(*cell) if cell is not None else None,
+    )
+
+
+def make_crystal(
+    cell: tuple[float, float, float, float, float, float] = SYNTHETIC_CELL,
+    space_group: str = SYNTHETIC_SPACE_GROUP,
+) -> ValidatedCrystal:
+    """Return a validated crystal with the given cell and space group."""
+    _, _, _, alpha, _, gamma = cell
+    return ValidatedCrystal(
+        gemmi_cell=gemmi.UnitCell(*cell),
+        space_group=gemmi.find_spacegroup_by_name(
+            space_group, alpha=alpha, gamma=gamma
+        ),
     )
 
 

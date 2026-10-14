@@ -4,7 +4,13 @@ from pathlib import Path
 
 import gemmi
 import pytest
-from support import approx, make_scored_atom, read_csv_rows
+from support import (
+    SYNTHETIC_CELL,
+    approx,
+    make_crystal,
+    make_scored_atom,
+    read_csv_rows,
+)
 
 from epath.outputs.files import EpathOutputPipelineOptions, EpathPipelineOutputFiles
 from epath.outputs.plots import write_z_score_falloff
@@ -165,7 +171,10 @@ def test_atom_subset_cif_round_trips_through_gemmi(tmp_path: Path) -> None:
         ),
     )
     path = write_atom_subset_cif(
-        tmp_path / "subset.cif", atoms, remarks=("Custom remark.",)
+        tmp_path / "subset.cif",
+        atoms,
+        crystal=make_crystal(),
+        remarks=("Custom remark.",),
     )
     block = gemmi.cif.read_file(str(path)).sole_block()
     assert block.name == "subset"
@@ -206,13 +215,13 @@ def test_atom_subset_cif_keeps_fields_that_do_not_fit_pdb_columns(
         make_scored_atom(chain_id="AB", residue_number=12346, atom_name="CA"),
         make_scored_atom(chain_id="C", residue_number=-1200, atom_name="CA"),
     )
-    path = write_atom_subset_cif(tmp_path / "wide.cif", atoms)
+    path = write_atom_subset_cif(tmp_path / "wide.cif", atoms, crystal=make_crystal())
     model = gemmi.read_structure(str(path))[0]
     assert [chain.name for chain in model] == ["AB", "C"]
     assert [res.seqid.num for res in model["AB"]] == [12345, 12346]
     assert model["C"][0].seqid.num == -1200
 
-    empty = write_atom_subset_cif(tmp_path / "empty.cif", ())
+    empty = write_atom_subset_cif(tmp_path / "empty.cif", (), crystal=make_crystal())
     block = gemmi.cif.read_file(str(empty)).sole_block()
     assert len(block.find("_atom_site.", ["id"])) == 0
 
@@ -229,6 +238,7 @@ def test_model_cif_marks_unscored_atoms_with_zero_bdamage(
     path = write_model_cif(
         tmp_path / "model.cif",
         cleaned,
+        crystal=result.bdamage_pipeline_result.crystal,
         bdamage_by_source_index=scores,
         bdamage_threshold=0.7734,
     )
@@ -260,7 +270,10 @@ def test_model_cif_marks_unscored_atoms_with_zero_bdamage(
 def test_path_subset_cifs_are_zero_padded(
     tmp_path: Path, result: EpathPipelineResult
 ) -> None:
-    paths = write_path_subset_cifs(tmp_path / "run", result.path_reports)
+    crystal = result.bdamage_pipeline_result.crystal
+    paths = write_path_subset_cifs(
+        tmp_path / "run", result.path_reports, crystal=crystal
+    )
 
     assert {path_id: path.name for path_id, path in paths.items()} == {
         r.path_id: f"run_path{r.path_id:02d}.cif" for r in result.path_reports
@@ -277,7 +290,53 @@ def test_path_subset_cifs_are_zero_padded(
         "/".join(cofactor.label for cofactor in first.nearby_cofactors) or "none"
     )
     assert len(block.find("_atom_site.", ["id"])) == result.path_reports[0].node_count
-    assert write_path_subset_cifs(tmp_path / "run", ()) == {}
+    assert write_path_subset_cifs(tmp_path / "run", (), crystal=crystal) == {}
+
+
+def test_coordinate_files_carry_the_input_cell_and_space_group(
+    tmp_path: Path, result: EpathPipelineResult
+) -> None:
+    files = write_epath_outputs(
+        result, EpathOutputPipelineOptions(output_prefix=tmp_path / "run")
+    )
+    paths = [files.selected_cif, files.model_cif, *files.path_cifs.values()]
+    assert len(paths) == 2 + len(result.path_reports)
+    for path in paths:
+        assert path is not None
+        structure = gemmi.read_structure(str(path))
+        cell = structure.cell
+        assert (cell.a, cell.b, cell.c, cell.alpha, cell.beta, cell.gamma) == approx(
+            SYNTHETIC_CELL
+        )
+        assert structure.spacegroup_hm == "P 1 21 1"
+        assert structure.find_spacegroup().number == 4
+        block = gemmi.cif.read_file(str(path)).sole_block()
+        assert block.find_value("_cell.Z_PDB") == "?"
+
+
+@pytest.mark.parametrize(
+    ("cell", "written", "extended"),
+    [
+        ((80.0, 80.0, 60.0, 90.0, 90.0, 120.0), "H 3", "R 3:H"),
+        ((50.0, 50.0, 50.0, 80.0, 80.0, 80.0), "R 3", "R 3:R"),
+    ],
+)
+def test_coordinate_files_name_the_setting_of_an_r_centred_group(
+    tmp_path: Path,
+    cell: tuple[float, float, float, float, float, float],
+    written: str,
+    extended: str,
+) -> None:
+    path = write_atom_subset_cif(
+        tmp_path / "r3.cif", (make_scored_atom(),), crystal=make_crystal(cell, "R 3")
+    )
+    block = gemmi.cif.read_file(str(path)).sole_block()
+    assert gemmi.cif.as_string(block.find_value("_symmetry.space_group_name_H-M")) == (
+        written
+    )
+    assert block.find_value("_symmetry.Int_Tables_number") == "146"
+    space_group = gemmi.read_structure(str(path)).find_spacegroup()
+    assert space_group is not None and space_group.xhm() == extended
 
 
 def test_z_score_plot_is_written_as_png(

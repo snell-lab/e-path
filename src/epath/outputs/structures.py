@@ -7,7 +7,10 @@ shows the BDamage landscape.
 
 Every coordinate file is written as mmCIF through Gemmi, so the outputs keep
 multi-character chain identifiers, large atom counts, and residue numbers
-outside the fixed-width PDB columns exactly as they were read.
+outside the fixed-width PDB columns exactly as they were read. Each file also
+carries the unit cell and space group of the input structure, so a viewer can
+generate symmetry mates around a pathway: E-path works in the asymmetric unit,
+and that is how to check whether a pathway sits at a crystal contact.
 
 The values are written as given. Structure preparation in `rabdam` has already
 removed every atom whose coordinates, occupancy, or B-factor is unusable, so
@@ -25,6 +28,7 @@ from epath.analysis.pathways import PathReport
 from epath.analysis.selection import EpathScoredAtom
 from rabdam.structure.models import PreparedAtom
 from xtal.reader import AtomRecord
+from xtal.validate import ValidatedCrystal
 
 # BDamage is a ratio of B-factors and is always greater than zero, so zero is
 # an unambiguous marker for an atom that was not scored.
@@ -35,6 +39,7 @@ def write_structure_outputs(
     output_prefix: str | Path,
     selected_atoms: Iterable[EpathScoredAtom],
     *,
+    crystal: ValidatedCrystal,
     bdamage_by_source_index: Mapping[int, float],
     path_reports: Sequence[PathReport],
     cleaned_atoms: Sequence[PreparedAtom],
@@ -50,7 +55,8 @@ def write_structure_outputs(
     `output_prefix` followed by `_selected.cif`, `_pathNN.cif`, and
     `_model.cif`. The paths come back as the selected-atom file, the model
     file, and the file of each pathway that was written, by path number and
-    in pathway order.
+    in pathway order. Every file carries the unit cell and space group of
+    `crystal`.
 
     `display_chains` restricts every coordinate file to those chains, and None
     keeps them all. It is a display filter only: the atoms and pathways were
@@ -76,17 +82,21 @@ def write_structure_outputs(
         write_atom_subset_cif(
             prefix.with_name(f"{prefix.name}_selected.cif"),
             selected_atom_tuple,
+            crystal=crystal,
             title="E-path selected atoms",
             remarks=chain_remarks,
         ),
         write_model_cif(
             prefix.with_name(f"{prefix.name}_model.cif"),
             cleaned_atoms,
+            crystal=crystal,
             bdamage_by_source_index=bdamage_by_source_index,
             bdamage_threshold=bdamage_threshold,
             remarks=chain_remarks,
         ),
-        write_path_subset_cifs(prefix, path_reports, display_chains=display_chains),
+        write_path_subset_cifs(
+            prefix, path_reports, crystal=crystal, display_chains=display_chains
+        ),
     )
 
 
@@ -94,6 +104,7 @@ def write_model_cif(
     output_path: str | Path,
     cleaned_atoms: Sequence[PreparedAtom],
     *,
+    crystal: ValidatedCrystal,
     bdamage_by_source_index: Mapping[int, float],
     bdamage_threshold: float,
     remarks: Iterable[str] = (),
@@ -147,6 +158,7 @@ def write_model_cif(
     return _write_mmcif(
         output_path,
         atoms,
+        crystal=crystal,
         title="E-path cleaned model with BDamage",
         remarks=remark_lines,
         values=values,
@@ -157,6 +169,7 @@ def write_path_subset_cifs(
     output_prefix: str | Path,
     path_reports: Sequence[PathReport],
     *,
+    crystal: ValidatedCrystal,
     display_chains: Sequence[str] | None = None,
 ) -> dict[int, Path]:
     """Write one mmCIF subset per reported pathway and return them by path number.
@@ -201,6 +214,7 @@ def write_path_subset_cifs(
         written[report.path_id] = write_atom_subset_cif(
             prefix.with_name(f"{prefix.name}_path{report.path_id:0{width}d}.cif"),
             atoms,
+            crystal=crystal,
             title=f"E-path pathway {report.path_id}",
             remarks=remarks,
             values={
@@ -216,6 +230,7 @@ def write_atom_subset_cif(
     output_path: str | Path,
     atoms: Iterable[EpathScoredAtom],
     *,
+    crystal: ValidatedCrystal,
     title: str = "E-path atom subset",
     remarks: Iterable[str] = (),
     values: Mapping[str, str] | None = None,
@@ -234,6 +249,7 @@ def write_atom_subset_cif(
     return _write_mmcif(
         output_path,
         [(atom.record, atom.bdamage_result.bdamage) for atom in atoms],
+        crystal=crystal,
         title=title,
         remarks=remark_lines,
         values=values or {},
@@ -244,6 +260,7 @@ def _write_mmcif(
     output_path: str | Path,
     atoms: Sequence[tuple[AtomRecord, float]],
     *,
+    crystal: ValidatedCrystal,
     title: str,
     remarks: Sequence[str],
     values: Mapping[str, str],
@@ -255,7 +272,9 @@ def _write_mmcif(
     renumbered from one in output order. Consecutive atoms that
     share a chain, residue number, insertion code, and residue name are
     grouped into one residue; a repeated residue elsewhere in the sequence
-    becomes a second residue block, mirroring the input order.
+    becomes a second residue block, mirroring the input order. The unit cell
+    and space group are those of `crystal`, in the frame the coordinates were
+    read in.
 
     The run metadata goes into `_struct.title`, an `_epath` category of
     machine-readable values, and an `_epath_remark` loop of human-readable
@@ -288,6 +307,11 @@ def _write_mmcif(
     # A CIF data-block name cannot hold whitespace.
     structure.name = "".join(output_file.stem.split())
     structure.add_model(model)
+    structure.cell = crystal.gemmi_cell
+    structure.spacegroup_hm = _pdb_space_group_name(crystal.space_group)
+    # ChimeraX will not build symmetry mates from a cell without Z_PDB. The
+    # input's value is not kept, so it is written as unknown.
+    structure.info["_cell.Z_PDB"] = "?"
     structure.assign_serial_numbers()
     structure.setup_entities()
 
@@ -303,6 +327,18 @@ def _write_mmcif(
     document.write_file(str(output_file))
 
     return output_file
+
+
+def _pdb_space_group_name(space_group: gemmi.SpaceGroup) -> str:
+    """Return the space-group name in the form the PDB writes it.
+
+    The PDB names the hexagonal setting of an R-centred group with an H, as
+    "H 3", and the rhombohedral setting with an R, so the setting survives
+    without the ":H" suffix of the extended name, which viewers may not read.
+    """
+    if space_group.ext == "H":
+        return "H" + space_group.hm[1:]
+    return space_group.hm
 
 
 def _make_residue(record: AtomRecord) -> gemmi.Residue:

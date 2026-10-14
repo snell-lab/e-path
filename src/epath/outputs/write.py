@@ -80,6 +80,7 @@ def write_epath_outputs(
         selected_cif, model_cif, path_cifs = write_structure_outputs(
             prefix,
             selection_result.selected_atoms,
+            crystal=bdamage_pipeline_result.crystal,
             path_reports=path_reports,
             cleaned_atoms=bdamage_pipeline_result.prepared_structure.cleaned_atoms,
             bdamage_by_source_index={
