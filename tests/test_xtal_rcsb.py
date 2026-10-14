@@ -5,7 +5,7 @@ import io
 from collections.abc import Callable
 from http.client import IncompleteRead
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -69,7 +69,7 @@ def _leftover_temp_files(directory: Path) -> list[Path]:
     return sorted(directory.glob(".*.part"))
 
 
-def test_download_keeps_the_id_and_uses_timeout_constant(
+def test_download_is_cached_and_reused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls = _serve(monkeypatch, lambda: _FakeResponse(VALID_CIF))
@@ -84,11 +84,63 @@ def test_download_keeps_the_id_and_uses_timeout_constant(
             rcsb.RCSB_DOWNLOAD_TIMEOUT_SECONDS,
         )
     ]
+    assert local.source_type is StructureSourceType.LOCAL_FILE
     assert local.structure_id == "1ABC"
     assert local.original_input == " 1abc "
     assert local.local_path == (tmp_path / "1ABC.cif").resolve()
     assert (tmp_path / "1ABC.cif").read_bytes() == VALID_CIF
     assert _leftover_temp_files(tmp_path) == []
+
+    again = rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path)
+    assert len(calls) == 1, "a cached file must not be downloaded again"
+    assert again.local_path == local.local_path
+
+    rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path, overwrite=True)
+    assert len(calls) == 2
+
+
+def test_a_local_input_is_not_downloaded(tmp_path: Path) -> None:
+    path = tmp_path / "m.pdb"
+    path.write_text("x")
+
+    with pytest.raises(rcsb.RcsbDownloadError, match="expected an RCSB ID input"):
+        rcsb.download_rcsb_mmcif(resolve_structure_input(str(path)))
+
+
+def _not_found() -> _FakeResponse:
+    raise HTTPError("url", 404, "Not Found", None, None)  # type: ignore[arg-type]
+
+
+def _unavailable() -> _FakeResponse:
+    raise HTTPError("url", 503, "Unavailable", None, None)  # type: ignore[arg-type]
+
+
+def _offline() -> _FakeResponse:
+    raise URLError("no network")
+
+
+@pytest.mark.parametrize(
+    ("respond", "message"),
+    [
+        (_not_found, "Could not find RCSB/PDB entry '1ABC'"),
+        (_unavailable, "HTTP status 503"),
+        (_offline, "Could not connect"),
+        (lambda: _FakeResponse(b""), "empty file"),
+    ],
+    ids=["not-found", "server-error", "offline", "empty"],
+)
+def test_failed_download_is_reported_and_not_cached(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    respond: Callable[[], _FakeResponse],
+    message: str,
+) -> None:
+    _serve(monkeypatch, respond)
+
+    with pytest.raises(rcsb.RcsbDownloadError, match=message):
+        rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_empty_cache_file_is_downloaded_again(
@@ -108,11 +160,7 @@ def test_failed_overwrite_download_keeps_cached_file(
 ) -> None:
     cached = tmp_path / "1ABC.cif"
     cached.write_bytes(b"data_OLD\n")
-
-    def unavailable() -> _FakeResponse:
-        raise HTTPError("url", 503, "Unavailable", None, None)  # type: ignore[arg-type]
-
-    _serve(monkeypatch, unavailable)
+    _serve(monkeypatch, _unavailable)
 
     with pytest.raises(rcsb.RcsbDownloadError, match="HTTP status 503"):
         rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path, overwrite=True)

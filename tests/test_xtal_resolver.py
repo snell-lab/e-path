@@ -1,16 +1,13 @@
-"""Input resolution and RCSB download handling."""
+"""Input resolution: local files, their formats, and PDB identifiers."""
 
 import gzip
-import io
 import sys
 from pathlib import Path
 from typing import NoReturn
-from urllib.error import HTTPError, URLError
 
 import pytest
 from support import approx, synthetic_pdb_text
 
-import xtal.rcsb as rcsb
 from xtal.reader import read_structure
 from xtal.resolver import (
     ResolvedStructureInput,
@@ -18,7 +15,6 @@ from xtal.resolver import (
     StructureInputError,
     StructureSourceType,
     detect_structure_format_from_path,
-    is_valid_classic_pdb_id,
     resolve_structure_input,
     split_structure_file_name,
 )
@@ -180,7 +176,7 @@ def test_pdb_id_resolves_to_rcsb_download(
     assert resolved.original_input == "  1lyz "
 
 
-@pytest.mark.parametrize("value", ["", "   ", "12345", "ABCD", "1AB", "missing.pdb"])
+@pytest.mark.parametrize("value", ["12345", "ABCD", "1AB", "missing.pdb"])
 def test_unresolvable_inputs_raise(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
@@ -197,14 +193,6 @@ def test_blank_input_is_reported_as_empty(
     monkeypatch.chdir(tmp_path)
     with pytest.raises(StructureInputError, match="cannot be empty"):
         resolve_structure_input(value)
-
-
-@pytest.mark.parametrize(
-    ("value", "valid"),
-    [("1LYZ", True), ("7xyz", True), ("0000", True), ("ABCD", False), ("1LY", False)],
-)
-def test_is_valid_classic_pdb_id(value: str, valid: bool) -> None:
-    assert is_valid_classic_pdb_id(value) is valid
 
 
 @pytest.mark.parametrize("kind", ["directory", "extensionless file"])
@@ -259,16 +247,10 @@ def test_tilde_is_expanded_but_environment_variables_are_not(
     assert resolve_structure_input("~/model.pdb").local_path == path.resolve()
     with pytest.raises(StructureInputError, match="Could not resolve"):
         resolve_structure_input("$EPATH_TEST_DIR/model.pdb")
-
-
-def test_filename_with_a_literal_dollar_sign_resolves(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("HOME", "/elsewhere")
-    path = tmp_path / "x$HOME.pdb"
-    path.write_text("x")
-
-    assert resolve_structure_input(str(path)).local_path == path.resolve()
+    # So a file whose name holds a dollar sign is found as written.
+    literal = tmp_path / "x$HOME.pdb"
+    literal.write_text("x")
+    assert resolve_structure_input(str(literal)).local_path == literal.resolve()
 
 
 @pytest.mark.parametrize(
@@ -299,110 +281,3 @@ def test_resolved_input_rejects_mismatched_fields(
             local_path=local_path,
             structure_id=structure_id,
         )
-
-
-def test_downloaded_input_may_keep_its_structure_id(tmp_path: Path) -> None:
-    resolved = ResolvedStructureInput(
-        original_input="1abc",
-        source_type=StructureSourceType.LOCAL_FILE,
-        file_format=StructureFileFormat.MMCIF,
-        local_path=tmp_path / "1ABC.cif",
-        structure_id="1ABC",
-    )
-
-    assert not resolved.needs_download and resolved.structure_id == "1ABC"
-
-
-class _FakeResponse(io.BytesIO):
-    """Stand in for the context manager returned by `urlopen`."""
-
-    def __enter__(self) -> _FakeResponse:
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        self.close()
-
-
-def _rcsb_input(structure_id: str = "1ABC") -> ResolvedStructureInput:
-    """Return a resolved RCSB identifier input for `structure_id`."""
-    return ResolvedStructureInput(
-        original_input=structure_id.lower(),
-        source_type=StructureSourceType.RCSB_ID,
-        file_format=StructureFileFormat.MMCIF,
-        structure_id=structure_id,
-    )
-
-
-def test_download_writes_cache_and_reuses_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[str] = []
-
-    def fake_urlopen(url: str, timeout: float) -> _FakeResponse:
-        calls.append(url)
-        return _FakeResponse(b"data_1ABC\n")
-
-    monkeypatch.setattr(rcsb, "urlopen", fake_urlopen)
-
-    local = rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path / "cache")
-
-    assert calls == ["https://files.rcsb.org/download/1abc.cif"]
-    assert local.source_type is StructureSourceType.LOCAL_FILE
-    assert local.structure_id == "1ABC"
-    assert local.local_path == (tmp_path / "cache" / "1ABC.cif").resolve()
-    assert local.local_path is not None
-    assert local.local_path.read_bytes() == b"data_1ABC\n"
-
-    again = rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path / "cache")
-    assert len(calls) == 1, "a cached file must not be downloaded again"
-    assert again.local_path == local.local_path
-
-    rcsb.download_rcsb_mmcif(
-        _rcsb_input(), download_dir=tmp_path / "cache", overwrite=True
-    )
-    assert len(calls) == 2
-
-
-def test_download_errors_are_reported(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def not_found(url: str, timeout: float) -> _FakeResponse:
-        raise HTTPError(url, 404, "Not Found", None, None)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(rcsb, "urlopen", not_found)
-    with pytest.raises(
-        rcsb.RcsbDownloadError, match="Could not find RCSB/PDB entry '1ABC'"
-    ):
-        rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path)
-
-    def server_error(url: str, timeout: float) -> _FakeResponse:
-        raise HTTPError(url, 503, "Unavailable", None, None)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(rcsb, "urlopen", server_error)
-    with pytest.raises(rcsb.RcsbDownloadError, match="HTTP status 503"):
-        rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path)
-
-    def offline(url: str, timeout: float) -> _FakeResponse:
-        raise URLError("no network")
-
-    monkeypatch.setattr(rcsb, "urlopen", offline)
-    with pytest.raises(rcsb.RcsbDownloadError, match="Could not connect"):
-        rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path)
-
-    def empty(url: str, timeout: float) -> _FakeResponse:
-        return _FakeResponse(b"")
-
-    monkeypatch.setattr(rcsb, "urlopen", empty)
-    with pytest.raises(rcsb.RcsbDownloadError, match="empty file"):
-        rcsb.download_rcsb_mmcif(_rcsb_input(), download_dir=tmp_path)
-    assert not (tmp_path / "1ABC.cif").exists()
-
-
-def test_a_local_input_is_not_downloaded(tmp_path: Path) -> None:
-    path = tmp_path / "m.pdb"
-    path.write_text("x")
-    local = resolve_structure_input(str(path))
-
-    assert not local.needs_download
-    with pytest.raises(rcsb.RcsbDownloadError, match="expected an RCSB ID input"):
-        rcsb.download_rcsb_mmcif(local)
