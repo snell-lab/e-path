@@ -1,9 +1,15 @@
 """The command-line interface: parsing, single runs, batches, and the launcher."""
 
 import argparse
+import ast
+import configparser
 import io
+import json
+import re
+import shutil
 import subprocess
 import sys
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -452,3 +458,104 @@ def test_launcher_runs_the_package_from_a_clone(tmp_path: Path) -> None:
         check=False,
     )
     assert failed.returncode == 2 and "missing required argument" in failed.stderr
+
+
+def _run_launcher(
+    launcher: Path, *python_flags: str
+) -> subprocess.CompletedProcess[str]:
+    """Run a launcher through this interpreter, so the test also works on Windows."""
+    return subprocess.run(
+        [sys.executable, *python_flags, str(launcher), "--version"],
+        capture_output=True,
+        text=True,
+        cwd=launcher.parent,
+        check=False,
+    )
+
+
+def test_launcher_reports_missing_libraries() -> None:
+    # Without the site module, none of the installed libraries can be found.
+    completed = _run_launcher(REPO_ROOT / "epath", "-S")
+    assert completed.returncode == 1
+    assert (
+        "missing required libraries: gemmi numpy scipy matplotlib" in completed.stderr
+    )
+
+
+def test_launcher_reports_an_old_python(tmp_path: Path) -> None:
+    source = (REPO_ROOT / "epath").read_text(encoding="utf-8")
+    assert "MINIMUM_PYTHON = (3, 14)" in source
+    launcher = tmp_path / "epath"
+    launcher.write_text(
+        source.replace("MINIMUM_PYTHON = (3, 14)", "MINIMUM_PYTHON = (99, 0)"),
+        encoding="utf-8",
+    )
+    completed = _run_launcher(launcher)
+    assert completed.returncode == 1
+    assert "Python 99.0 or newer is required" in completed.stderr
+
+
+def test_launcher_copied_out_of_the_clone_says_so(tmp_path: Path) -> None:
+    launcher = tmp_path / "epath"
+    shutil.copy(REPO_ROOT / "epath", launcher)
+    completed = _run_launcher(launcher)
+    assert completed.returncode == 1
+    assert "cannot find the E-path sources" in completed.stderr
+
+
+def test_launcher_stays_readable_by_old_pythons() -> None:
+    # The launcher must parse and reach its version check on Python 2.7 and
+    # early Python 3, which the linters (all targeting 3.14) cannot check.
+    tree = ast.parse((REPO_ROOT / "epath").read_text(encoding="utf-8"))
+    imports_before_main = [
+        alias.name if isinstance(node, ast.Import) else node.module
+        for node in tree.body
+        if isinstance(node, ast.Import | ast.ImportFrom)
+        for alias in node.names
+    ]
+    assert imports_before_main == ["__future__", "sys"]
+
+    too_new = (
+        ast.JoinedStr,  # f-strings: 3.6
+        ast.AnnAssign,  # variable annotations: 3.6
+        ast.Starred,  # several unpackings in one call: 3.5; keep it simple
+        ast.NamedExpr,  # 3.8
+        ast.Match,  # 3.10
+        ast.AsyncFunctionDef,  # 3.5
+        ast.Await,  # 3.5
+    )
+    for node in ast.walk(tree):
+        assert not isinstance(node, too_new), ast.dump(node)
+        if isinstance(node, ast.FunctionDef):
+            assert node.returns is None
+            assert all(arg.annotation is None for arg in node.args.args)
+            assert not node.args.kwonlyargs
+
+
+def test_launcher_minimum_python_matches_the_project_configuration() -> None:
+    tree = ast.parse((REPO_ROOT / "epath").read_text(encoding="utf-8"))
+    (minimum,) = (
+        ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(t, ast.Name) and t.id == "MINIMUM_PYTHON" for t in node.targets
+        )
+    )
+    version = "{}.{}".format(*minimum)
+
+    mypy = configparser.ConfigParser()
+    mypy.read(REPO_ROOT / "mypy.ini", encoding="utf-8")
+    assert mypy["mypy"]["python_version"] == version
+
+    pyright = json.loads((REPO_ROOT / "pyrightconfig.json").read_text(encoding="utf-8"))
+    assert pyright["pythonVersion"] == version
+
+    ruff = tomllib.loads((REPO_ROOT / "ruff.toml").read_text(encoding="utf-8"))
+    assert ruff["target-version"] == "py" + version.replace(".", "")
+
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert set(re.findall(r'python-version: "([\d.]+)"', ci)) == {version}
+
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert f"Python {version} or newer" in readme

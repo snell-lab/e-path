@@ -1,30 +1,44 @@
 #!/usr/bin/env python3
-"""Run E-path from a clone of the repository without installing anything."""
+"""Run E-path."""
 
-import importlib.util
+# This file is kept to syntax and imports that Python 2.7 and every Python 3
+# can read, so that an old interpreter reports the requirement instead of a
+# syntax error. Only `sys` is imported before the version check; the tests
+# hold the file to this.
+from __future__ import print_function  # noqa: UP010
+
 import sys
-from pathlib import Path
+
+# The type comment on main() stands in for an annotation Python 2 cannot parse.
+# pyright: reportTypeCommentUsage=false
 
 MINIMUM_PYTHON = (3, 14)
 REQUIRED_MODULES = ("gemmi", "numpy", "scipy", "matplotlib")
 
 
-def main() -> int:
+def main():
+    # type: () -> int
     """Check the Python version and libraries, then run the E-path command line."""
-    # This file is kept to syntax old interpreters can read, so that one of
-    # them reports the requirement instead of a syntax error from the package.
     if sys.version_info < MINIMUM_PYTHON:
         print(
-            "epath: Python {}.{} or newer is required, but this is Python {}.{}.".format(
-                *MINIMUM_PYTHON, *sys.version_info[:2]
+            "epath: Python {}.{} or newer is required, but this is Python {}.{}.".format(  # noqa: UP032
+                MINIMUM_PYTHON[0],
+                MINIMUM_PYTHON[1],
+                sys.version_info[0],
+                sys.version_info[1],
             ),
             file=sys.stderr,
         )
         return 1
 
+    import importlib.util
+    from pathlib import Path
+
     missing = [m for m in REQUIRED_MODULES if importlib.util.find_spec(m) is None]
     if missing:
-        print(f"epath: missing required libraries: {' '.join(missing)}", file=sys.stderr)
+        print(
+            "epath: missing required libraries: " + " ".join(missing), file=sys.stderr
+        )
         print(
             "Install the packages listed in requirements.txt however you "
             "prefer (pip, apt, conda, ...), then rerun.",
@@ -32,7 +46,17 @@ def main() -> int:
         )
         return 1
 
-    sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+    src = Path(__file__).resolve().parent / "src"
+    if not (src / "epath").is_dir():
+        print("epath: cannot find the E-path sources at " + str(src), file=sys.stderr)
+        print(
+            "Run this launcher from a clone of the repository, or link to it "
+            "rather than copying it.",
+            file=sys.stderr,
+        )
+        return 1
+
+    sys.path.insert(0, str(src))
     from epath.cli import main as epath_main
 
     return epath_main()
