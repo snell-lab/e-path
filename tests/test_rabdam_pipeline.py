@@ -1,13 +1,12 @@
 """The complete BDamage pipeline checked against brute-force references."""
 
-from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 import pytest
 from support import (
     PdbAtom,
+    StageRecorder,
     approx,
     brute_force_packing_density,
     make_metadata,
@@ -73,15 +72,11 @@ def _check_against_references(
 
 def test_pipeline_matches_brute_force_symmetry_expansion(synthetic_pdb: Path) -> None:
     data = read_structure(resolve_structure_input(str(synthetic_pdb)))
-    stages: list[str] = []
+    stages = StageRecorder()
 
-    def stage_runner(label: str, callback: Callable[[], Any]) -> Any:
-        stages.append(label)
-        return callback()
+    result = run_bdamage_pipeline(data, stage_runner=stages)
 
-    result = run_bdamage_pipeline(data, stage_runner=stage_runner)
-
-    assert stages == EXPECTED_STAGES
+    assert stages.labels == EXPECTED_STAGES
     assert result.window_size == 11
     assert result.options == BDamagePipelineOptions()
     assert result.crystal.operation_count == 2

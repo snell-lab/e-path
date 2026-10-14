@@ -1,11 +1,9 @@
 """The E-path analysis pipeline, from a BDamage result to its run record."""
 
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 import pytest
-from support import approx, bdamage_result_from_atoms, make_scored_atom
+from support import StageRecorder, approx, bdamage_result_from_atoms, make_scored_atom
 
 from epath.analysis.selection import EpathScoredAtom
 from epath.outputs.files import EpathOutputPipelineOptions
@@ -145,11 +143,7 @@ def test_an_empty_selection_still_writes_every_output(tmp_path: Path) -> None:
 
 def test_display_chains_are_checked_before_any_stage_runs() -> None:
     bdamage = bdamage_result_from_atoms(_grid_atoms())
-    stages: list[str] = []
-
-    def stage_runner(label: str, callback: Callable[[], Any]) -> Any:
-        stages.append(label)
-        return callback()
+    stages = StageRecorder()
 
     # Chain A is in the model and chain Z is not.
     with pytest.raises(
@@ -160,30 +154,24 @@ def test_display_chains_are_checked_before_any_stage_runs() -> None:
             options=EpathPipelineOptions(
                 output=EpathOutputPipelineOptions(display_chains=("A", "Z"))
             ),
-            stage_runner=stage_runner,
+            stage_runner=stages,
         )
-    assert stages == []
+    assert stages.labels == []
 
 
 def test_pipeline_from_a_bdamage_result(synthetic_pdb: Path) -> None:
     bdamage = run_bdamage_pipeline(
         read_structure(resolve_structure_input(str(synthetic_pdb)))
     )
-    stages: list[str] = []
-
-    def stage_runner(label: str, callback: Callable[[], Any]) -> Any:
-        stages.append(label)
-        return callback()
+    stages = StageRecorder()
 
     options = EpathPipelineOptions(
         selection=EpathSelectionPipelineOptions(percentile=30.0),
         clustering=EpathClusterPipelineOptions(minimum_cluster_size=3),
     )
-    result, files = run_epath_pipeline(
-        bdamage, options=options, stage_runner=stage_runner
-    )
+    result, files = run_epath_pipeline(bdamage, options=options, stage_runner=stages)
 
-    assert stages == EPATH_STAGES
+    assert stages.labels == EPATH_STAGES
     assert files.combined_csv is None
     assert result.analyzed_chains == ("A", "B")
     assert result.bdamage_pipeline_result is bdamage

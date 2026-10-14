@@ -14,7 +14,7 @@ code with the implementation they check.
 import csv
 import itertools
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -330,6 +330,17 @@ def approx(
 ) -> Any:
     """Return `pytest.approx` with a fully known type for the type checkers."""
     return pytest.approx(expected, rel=rel, abs=abs)  # pyright: ignore[reportUnknownMemberType]
+
+
+class StageRecorder:
+    """Run pipeline stages directly, recording each stage label in order."""
+
+    def __init__(self) -> None:
+        self.labels: list[str] = []
+
+    def __call__[T](self, label: str, callback: Callable[[], T]) -> T:
+        self.labels.append(label)
+        return callback()
 
 
 def read_csv_rows(path: Path) -> list[dict[str, str]]:
