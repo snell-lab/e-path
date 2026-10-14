@@ -62,7 +62,8 @@ def _rows_in_canonical_order(rows: object) -> NDArray[np.float64]:
     """Return `(n, 3)` coordinate rows sorted by x, then y, then z."""
     array = np.asarray(rows, dtype=np.float64).reshape(-1, 3)
     rounded = np.round(array, 6)
-    return array[np.lexsort((rounded[:, 2], rounded[:, 1], rounded[:, 0]))]
+    order = np.lexsort((rounded[:, 2], rounded[:, 1], rounded[:, 0]))
+    return np.asarray(array[order], dtype=np.float64)
 
 
 def test_p1_expansion_is_the_identity() -> None:
