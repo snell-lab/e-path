@@ -158,9 +158,9 @@ def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
         lines.extend(_unreported_component_lines(statistics))
         return tuple(lines)
 
-    anchored = sum(report.is_cofactor_anchored for report in path_reports)
+    near_cofactor = sum(report.is_near_cofactor for report in path_reports)
     lines.append(
-        f"Path count: {len(path_reports)} ({anchored} within range of a cofactor)"
+        f"Path count: {len(path_reports)} ({near_cofactor} within range of a cofactor)"
     )
     for report in path_reports:
         metrics = report.cluster.metrics
@@ -168,7 +168,7 @@ def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
             (
                 "",
                 f"Path {report.path_id}",
-                f"  Cofactors in range: {_anchor_text(report)}",
+                f"  Cofactors in range: {_nearby_cofactor_text(report)}",
                 f"  Chains: {_chain_text(report.chains)}",
                 (
                     f"  Residues: {report.residue_count}   "
@@ -215,14 +215,14 @@ def _unreported_component_lines(
     )
 
 
-def _anchor_text(report: PathReport) -> str:
-    if not report.anchors:
+def _nearby_cofactor_text(report: PathReport) -> str:
+    if not report.nearby_cofactors:
         return "none"
 
     return ", ".join(
         f"{cofactor.label} at {_number(cofactor.distance)} A from "
         f"{cofactor.atom_token} ({cofactor.residue})"
-        for cofactor in report.anchors
+        for cofactor in report.nearby_cofactors
     )
 
 

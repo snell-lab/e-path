@@ -9,7 +9,7 @@ These are measurements, reported as the basis for interpreting a path with
 the protein's known chemistry in view.
 
 `epath.analysis.clustering` supplies the clusters and their geometry. The
-chemistry comes from `epath.analysis.residues`, and the anchors from
+chemistry comes from `epath.analysis.residues`, and the nearby cofactors from
 `epath.analysis.cofactors`. This module gathers them into one report for each
 cluster and adds the residue listing and the steps. `epath.pipeline` calls
 `analyze_paths` once for a model, and `epath.outputs` and `epath.cli.report`
@@ -28,9 +28,9 @@ from epath.analysis.clustering import EpathCluster, coordinates_for_atoms
 from epath.analysis.cofactors import (
     CofactorContext,
     CofactorSite,
-    PathAnchor,
+    NearbyCofactor,
     build_cofactor_context,
-    find_path_anchors,
+    find_nearby_cofactors,
 )
 from epath.analysis.geometry import minimum_spanning_tree_edges
 from epath.analysis.labels import (
@@ -122,8 +122,8 @@ class PathReport:
     lists the chains in the order `residues` reaches them. `residue_path` is
     the same listing as text.
 
-    `anchors` are the cofactors within range of any atom of the path, the
-    nearest first, and empty when none is. `steps` are the edges of the
+    `nearby_cofactors` are the cofactors within range of any atom of the path,
+    the nearest first, and empty when none is. `steps` are the edges of the
     minimum spanning tree.
     """
 
@@ -131,14 +131,14 @@ class PathReport:
     chains: tuple[str, ...]
     residues: tuple[PathResidue, ...]
     residue_path: str
-    anchors: tuple[PathAnchor, ...]
+    nearby_cofactors: tuple[NearbyCofactor, ...]
     composition: ResidueComposition
     steps: tuple[PathStep, ...]
 
     @property
-    def is_cofactor_anchored(self) -> bool:
-        """Return whether any atom of this path lies in a cofactor's environment."""
-        return bool(self.anchors)
+    def is_near_cofactor(self) -> bool:
+        """Return whether any cofactor lies within range of this path."""
+        return bool(self.nearby_cofactors)
 
     @property
     def edges(self) -> EdgeProvenance:
@@ -173,14 +173,14 @@ class PathReport:
         return self.cluster.metrics.mst_total_length
 
     @property
-    def anchor_summary(self) -> str:
-        """Return each anchoring cofactor and its distance, or "none"."""
-        if not self.anchors:
+    def nearby_cofactor_summary(self) -> str:
+        """Return each nearby cofactor and its distance, or "none"."""
+        if not self.nearby_cofactors:
             return "none"
 
         return ", ".join(
             f"{cofactor.label} at {cofactor.distance:.1f} A"
-            for cofactor in self.anchors
+            for cofactor in self.nearby_cofactors
         )
 
 
@@ -231,7 +231,7 @@ def _build_path_report(
         chains=tuple(dict.fromkeys(residue.chain_id for residue in residues)),
         residues=residues,
         residue_path=_format_residue_path(residues),
-        anchors=find_path_anchors(atoms, context),
+        nearby_cofactors=find_nearby_cofactors(atoms, context),
         composition=composition,
         steps=_path_steps(atoms, coordinates),
     )

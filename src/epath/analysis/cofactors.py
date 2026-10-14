@@ -1,10 +1,10 @@
 """Find a model's redox cofactors and those within reach of each E-path cluster.
 
 Cofactors are excluded from the connectivity graph, so a path never runs
-through one, but a path can still lie within reach of one or more. Every
-cofactor within range of a path is reported as one of its anchors.
+through one, but a path can still lie within reach of one or more, and every
+cofactor within range of a path is reported as near it.
 
-`pathways` builds one `CofactorContext` per model and finds the anchors of
+`pathways` builds one `CofactorContext` per model and finds the cofactors near
 every path against it. The cofactor sites come from the cleaned model that
 `rabdam.structure` prepared. Distances are in angstroms.
 """
@@ -21,9 +21,10 @@ from epath.analysis.labels import atom_token, format_residue_label, residue_labe
 from rabdam.structure.models import PreparedAtom
 from xtal.reader import AtomRecord
 
-# A cofactor within this range of a path atom anchors the path. Beyond roughly
-# this distance a residue no longer shares the cofactor's first or second
-# shell.
+# A cofactor within this range of a path atom is reported as near the path.
+# The range is a judgement of what is near enough to be worth inspecting. It
+# covers the residues around the cofactor, out to a little beyond its second
+# shell, while leaving most paths with no cofactor near them.
 COFACTOR_PROXIMITY_ANGSTROM = 8.0
 
 # Only redox-capable groups are treated as cofactors. Every other bound group
@@ -101,7 +102,7 @@ class CofactorSite:
 
 
 @dataclass(frozen=True, slots=True)
-class PathAnchor:
+class NearbyCofactor:
     """One cofactor within range of a path.
 
     `label` is the label of the cofactor site. `distance` is measured between
@@ -117,7 +118,7 @@ class PathAnchor:
 
 @dataclass(frozen=True, slots=True)
 class CofactorContext:
-    """The cofactor sites of a model, used to find the anchors of each path.
+    """The cofactor sites of a model, used to find the cofactors near each path.
 
     `cofactor_coordinates` holds every atom of every site, with shape
     `(n, 3)`, and `cofactor_site_indices` gives, for each of those rows, the
@@ -144,15 +145,15 @@ def build_cofactor_context(cleaned_atoms: Sequence[PreparedAtom]) -> CofactorCon
     )
 
 
-def find_path_anchors(
+def find_nearby_cofactors(
     atoms: Sequence[AtomRecord],
     context: CofactorContext,
-) -> tuple[PathAnchor, ...]:
+) -> tuple[NearbyCofactor, ...]:
     """Return every cofactor within range of a path, the nearest first.
 
     A cofactor is in range when one of its atoms lies within the proximity
-    range of an atom of the path, the range itself included. Each anchor names
-    the path atom closest to its cofactor, and the first such atom in path
+    range of an atom of the path, the range itself included. Each one names the
+    path atom closest to that cofactor, and the first such atom in path
     order when several are equally close. Cofactors equally near are in site
     order. The result is empty when no cofactor is in range.
     """
@@ -166,7 +167,7 @@ def find_path_anchors(
             for atom in atoms
         ]
     )
-    nearby: list[PathAnchor] = []
+    nearby: list[NearbyCofactor] = []
     for site_index, site in enumerate(context.sites):
         nearest = int(np.argmin(distances[:, site_index]))
         distance = float(distances[nearest, site_index])
@@ -174,7 +175,7 @@ def find_path_anchors(
             continue
 
         nearby.append(
-            PathAnchor(
+            NearbyCofactor(
                 label=site.label,
                 distance=distance,
                 atom_token=atom_token(atoms[nearest]),

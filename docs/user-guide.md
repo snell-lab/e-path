@@ -79,7 +79,7 @@ count suggests an atom near the surface and a typical one an atom inside the
 protein, but packing density is not a solvent-accessibility calculation; use a
 dedicated tool when the distinction matters.
 
-### Cofactor Anchors
+### Nearby Cofactors
 
 Only redox-capable groups are treated as cofactors. A bound group qualifies if
 it contains a redox-active transition metal (V, Mn, Fe, Co, Ni, Cu, Mo, or W),
@@ -98,14 +98,18 @@ cofactor and should be discounted by eye.
 Sites sharing a residue name are numbered by chain and residue number, which is
 what produces `SF4-1` to `SF4-7`.
 
-A path is anchored to every cofactor that lies within 8.0 Å of any of its
-atoms, wherever along the path that atom is, so a path running between two
-cofactors is anchored to both. `anchor_cofactors`, `anchor_distances`, and
-`anchor_atoms` in `*_clusters.csv` list the sites, their distances, and the path
-atom closest to each, nearest first. Each column separates its entries with
-`/`, in the same order in all three, and all three are empty when no cofactor
-is in range. The summaries list every cofactor site found, so a path with no
-anchor can be told apart from a model that has no cofactors.
+Every cofactor that lies within 8.0 Å of any atom of a path is reported as
+near it, wherever along the path that atom is, so a path running between two
+cofactors is reported with both. This flags paths worth inspecting alongside a
+cofactor; it does not show that the two are connected. In a protein with many
+cofactors, many paths will lie near one.
+
+`nearby_cofactors`, `nearby_cofactor_distances`, and `nearby_cofactor_atoms` in
+`*_clusters.csv` list the sites, their distances, and the path atom closest to
+each, nearest first. Each column separates its entries with `/`, in the same
+order in all three, and all three are empty when no cofactor is in range. The
+summaries list every cofactor site found, so a path with no cofactor nearby can
+be told apart from a model that has no cofactors.
 
 ### Step Provenance
 
@@ -184,5 +188,5 @@ whole number of atoms, so `*_selected.cif` and the `selected` column of
 `*_selected.cif` holds every selected atom, including those in components too
 small to be reported as pathways. `*_path01.cif`, `*_path02.cif`, and so on
 each hold one pathway's atoms, with `_epath.path_id` and
-`_epath.anchor_cofactors` (the anchoring sites separated by `/`, or `none`)
+`_epath.nearby_cofactors` (the nearby sites separated by `/`, or `none`)
 recorded. Loading them separately is how to colour by pathway.

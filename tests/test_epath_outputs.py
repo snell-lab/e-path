@@ -102,10 +102,10 @@ def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathPipelineResult) 
     report = result.path_reports[0]
     assert first["residue_path"] == report.residue_path
     for row, path_report in zip(clusters, result.path_reports, strict=True):
-        nearby = path_report.anchors
-        assert row["anchor_cofactors"] == "/".join(a.label for a in nearby)
-        assert row["anchor_atoms"] == "/".join(a.atom_token for a in nearby)
-        distances = row["anchor_distances"].split("/") if nearby else []
+        nearby = path_report.nearby_cofactors
+        assert row["nearby_cofactors"] == "/".join(a.label for a in nearby)
+        assert row["nearby_cofactor_atoms"] == "/".join(a.atom_token for a in nearby)
+        distances = row["nearby_cofactor_distances"].split("/") if nearby else []
         assert [float(d) for d in distances] == approx([a.distance for a in nearby])
     assert int(first["atom_count"]) == report.node_count
     assert float(first["mst_total_length"]) == approx(report.total_length)
@@ -272,9 +272,9 @@ def test_path_subset_cifs_are_zero_padded(
     ]
     first = result.path_reports[0]
     assert "Pathway 1." in remarks
-    assert f"Cofactors in range: {first.anchor_summary}." in remarks
-    assert block.find_value("_epath.anchor_cofactors") == (
-        "/".join(cofactor.label for cofactor in first.anchors) or "none"
+    assert f"Cofactors in range: {first.nearby_cofactor_summary}." in remarks
+    assert block.find_value("_epath.nearby_cofactors") == (
+        "/".join(cofactor.label for cofactor in first.nearby_cofactors) or "none"
     )
     assert len(block.find("_atom_site.", ["id"])) == result.path_reports[0].node_count
     assert write_path_subset_cifs(tmp_path / "run", ()) == {}

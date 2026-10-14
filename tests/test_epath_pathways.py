@@ -1,4 +1,4 @@
-"""Residue chemistry, cofactor sites and anchors, and pathway description."""
+"""Residue chemistry, cofactor sites and proximity, and pathway description."""
 
 from collections.abc import Sequence
 
@@ -222,36 +222,36 @@ def _path(
     return analyze_paths(clusters, cleaned_atoms=cleaned).reports[0]
 
 
-def test_path_anchor_is_a_cofactor_in_range_of_any_atom() -> None:
+def test_a_cofactor_in_range_of_any_atom_is_near_the_path() -> None:
     names = ["TRP", "ALA", "LEU", "TYR", "VAL", "GLY"]
     at_start = _path(names, cofactors=[("FMN", "N", (-3.0, 0.0, 0.0))])
-    assert at_start.is_cofactor_anchored and len(at_start.anchors) == 1
-    cofactor = at_start.anchors[0]
+    assert at_start.is_near_cofactor and len(at_start.nearby_cofactors) == 1
+    cofactor = at_start.nearby_cofactors[0]
     assert (cofactor.label, cofactor.residue, cofactor.atom_token) == (
         "FMN",
         "Trp1",
         "A:1:CA",
     )
     assert cofactor.distance == approx(3.0)
-    assert at_start.anchor_summary == "FMN at 3.0 A"
+    assert at_start.nearby_cofactor_summary == "FMN at 3.0 A"
 
     # A cofactor beside the middle of a long path, out of range of both ends,
-    # still anchors it. Gly4 and Trp5 are equally near, and Gly4 comes first.
+    # is still near it. Gly4 and Trp5 are equally near, and Gly4 comes first.
     names = ["ALA", "LEU", "VAL", "GLY", "TRP", "ILE", "PRO", "ALA"]
     midway = _path(names, cofactors=[("FMN", "N", (12.25, 3.0, 0.0))])
-    assert [cofactor.label for cofactor in midway.anchors] == ["FMN"]
-    assert midway.anchors[0].distance == approx(np.hypot(1.75, 3.0))
-    assert midway.anchors[0].residue == "Gly4"
+    assert [cofactor.label for cofactor in midway.nearby_cofactors] == ["FMN"]
+    assert midway.nearby_cofactors[0].distance == approx(np.hypot(1.75, 3.0))
+    assert midway.nearby_cofactors[0].residue == "Gly4"
 
     # Just beyond the proximity range of every atom.
     distant = _path(names, cofactors=[("FMN", "N", (12.25, 8.5, 0.0))])
-    assert distant.anchors == () and not distant.is_cofactor_anchored
-    assert distant.anchor_summary == "none"
+    assert distant.nearby_cofactors == () and not distant.is_near_cofactor
+    assert distant.nearby_cofactor_summary == "none"
 
-    assert _path(names).anchors == ()
+    assert _path(names).nearby_cofactors == ()
 
 
-def test_a_path_between_two_cofactors_is_anchored_to_both() -> None:
+def test_a_path_between_two_cofactors_is_near_both() -> None:
     names = ["ALA", "LEU", "VAL", "GLY", "TRP", "ILE", "PRO", "ALA"]
     bridging = _path(
         names,
@@ -263,13 +263,15 @@ def test_a_path_between_two_cofactors_is_anchored_to_both() -> None:
     )
 
     # The nearest comes first, whatever the site order.
-    assert [cofactor.label for cofactor in bridging.anchors] == ["SF4", "FMN"]
-    assert [cofactor.distance for cofactor in bridging.anchors] == approx([2.5, 3.0])
-    assert [cofactor.residue for cofactor in bridging.anchors] == [
+    assert [cofactor.label for cofactor in bridging.nearby_cofactors] == ["SF4", "FMN"]
+    assert [cofactor.distance for cofactor in bridging.nearby_cofactors] == approx(
+        [2.5, 3.0]
+    )
+    assert [cofactor.residue for cofactor in bridging.nearby_cofactors] == [
         "Ala8",
         "Ala1",
     ]
-    assert bridging.anchor_summary == "SF4 at 2.5 A, FMN at 3.0 A"
+    assert bridging.nearby_cofactor_summary == "SF4 at 2.5 A, FMN at 3.0 A"
 
 
 def test_residue_path_listing_and_step_provenance() -> None:

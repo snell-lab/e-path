@@ -184,15 +184,15 @@ def _pathway_lines(pipeline_result: EpathPipelineResult) -> tuple[str, ...]:
         f"Count: {len(reports)}",
     ]
     if reports:
-        anchored = sum(report.is_cofactor_anchored for report in reports)
-        lines.append(f"Within range of a cofactor: {anchored}")
+        near_cofactor = sum(report.is_near_cofactor for report in reports)
+        lines.append(f"Within range of a cofactor: {near_cofactor}")
     lines.append(
         f"Cofactor sites: {cofactor_site_summary(pipeline_result.cofactor_sites)}"
     )
     lines.extend(
         f"Path {report.path_id}: "
         f"{report.residue_count} residues, {report.node_count} nodes, "
-        f"{report.total_length:.2f} A, cofactors in range: {report.anchor_summary}"
+        f"{report.total_length:.2f} A, cofactors in range: {report.nearby_cofactor_summary}"
         for report in reports
     )
     return tuple(lines)
