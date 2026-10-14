@@ -1,11 +1,10 @@
 """Output files: CSV tables, coordinate subsets, the plot, and the summary."""
 
-import csv
 from pathlib import Path
 
 import gemmi
 import pytest
-from support import approx, make_scored_atom
+from support import approx, make_scored_atom, read_csv_rows
 
 from epath.outputs.files import EpathOutputPipelineOptions, EpathPipelineOutputFiles
 from epath.outputs.plots import write_z_score_falloff
@@ -59,19 +58,13 @@ def result(synthetic_pdb: Path) -> EpathPipelineResult:
     return pipeline_result
 
 
-def _rows(path: Path) -> list[dict[str, str]]:
-    """Read a CSV file into one dict per row."""
-    with path.open(newline="") as handle:
-        return list(csv.DictReader(handle))
-
-
 def test_combined_atom_csv(tmp_path: Path, result: EpathPipelineResult) -> None:
     path = write_combined_atom_csv(
         tmp_path / "nested" / "x_epath.csv",
         result.selection_result,
         clusters=result.clusters,
     )
-    rows = _rows(path)
+    rows = read_csv_rows(path)
 
     assert list(rows[0]) == COMBINED_ATOM_FIELDNAMES
     assert len(rows) == len(result.selection_result.scored_atoms) == 77
@@ -100,7 +93,7 @@ def test_combined_atom_csv(tmp_path: Path, result: EpathPipelineResult) -> None:
 
 
 def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathPipelineResult) -> None:
-    clusters = _rows(
+    clusters = read_csv_rows(
         write_cluster_csv(tmp_path / "x_clusters.csv", result.path_reports)
     )
     assert list(clusters[0]) == CLUSTER_FIELDNAMES
@@ -126,7 +119,7 @@ def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathPipelineResult) 
     ]
     assert sum(fractions) <= 1.0 + 1e-9
 
-    steps = _rows(write_step_csv(tmp_path / "x_steps.csv", result.path_reports))
+    steps = read_csv_rows(write_step_csv(tmp_path / "x_steps.csv", result.path_reports))
     assert list(steps[0]) == STEP_FIELDNAMES
     assert (
         len(steps)
@@ -140,7 +133,7 @@ def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathPipelineResult) 
         "interchain",
     }
 
-    runs = _rows(write_run_csv(tmp_path / "x_run.csv", (result.run_record,)))
+    runs = read_csv_rows(write_run_csv(tmp_path / "x_run.csv", (result.run_record,)))
     assert list(runs[0]) == RUN_FIELDNAMES and len(runs) == 1
     assert runs[0]["structure"] == "synthetic"
     assert runs[0]["total_atoms"] == "77" and runs[0]["atoms_selected"] == "23"

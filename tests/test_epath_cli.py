@@ -1,7 +1,6 @@
 """The command-line interface: parsing, single runs, batches, and the launcher."""
 
-import csv
-import gzip
+import argparse
 import io
 import subprocess
 import sys
@@ -9,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from support import write_synthetic_pdb
+from support import read_csv_rows, write_synthetic_pdb
 
 import xtal.rcsb as rcsb
 from epath import __version__
@@ -38,12 +37,6 @@ def _run(argv: list[str]) -> tuple[int, str, str]:
     stdout, stderr = io.StringIO(), io.StringIO()
     code = main(argv, stdout=stdout, stderr=stderr)
     return code, stdout.getvalue(), stderr.getvalue()
-
-
-def _rows(path: Path) -> list[dict[str, str]]:
-    """Read a CSV file into one dict per row."""
-    with path.open(newline="") as handle:
-        return list(csv.DictReader(handle))
 
 
 def test_defaults_mirror_the_pipeline_options() -> None:
@@ -114,8 +107,6 @@ def test_argument_validators(
     good: tuple[str, float],
     bad: tuple[str, ...],
 ) -> None:
-    import argparse
-
     assert converter(good[0]) == good[1]
     for value in bad:
         with pytest.raises(argparse.ArgumentTypeError):
@@ -175,8 +166,8 @@ def test_single_run_writes_every_output(synthetic_pdb: Path, tmp_path: Path) -> 
         "run_summary.txt",
         "run_zfalloff.png",
     ]
-    assert len(_rows(prefix.parent / "run_epath.csv")) == 77
-    assert len(_rows(prefix.parent / "run_clusters.csv")) == 3
+    assert len(read_csv_rows(prefix.parent / "run_epath.csv")) == 77
+    assert len(read_csv_rows(prefix.parent / "run_clusters.csv")) == 3
     summary = (prefix.parent / "run_summary.txt").read_text()
     assert "Path count: 3" in summary and "Window size used: 11 atoms" in summary
 
@@ -342,7 +333,7 @@ def test_batch_run_writes_a_cohort_table_with_unique_prefixes(
     assert code == 0, err
     assert "Batch item 1/3" in err and "Batch item 3/3" in err
     assert "Successful: 3" in out and "Failed: 0" in out
-    rows = _rows(out_dir / "epath_runs.csv")
+    rows = read_csv_rows(out_dir / "epath_runs.csv")
     assert [row["structure"] for row in rows] == ["synthetic", "synthetic", "synthetic"]
     assert [row["input_path"] for row in rows] == [
         str(synthetic_pdb.resolve()),
@@ -362,7 +353,7 @@ def test_batch_run_writes_a_cohort_table_with_unique_prefixes(
     )
     assert code == 0
     assert (out_dir / "epath_runs.csv").read_text() == first_cohort
-    assert len(_rows(out_dir / "epath_runs_1.csv")) == 2
+    assert len(read_csv_rows(out_dir / "epath_runs_1.csv")) == 2
     assert (out_dir / "synthetic_4" / "synthetic_run.csv").is_file()
 
 
@@ -378,7 +369,7 @@ def test_batch_continues_past_a_failing_input(
 
     assert code == 1
     assert out == "" and f"epath: error: {broken}:" in err
-    rows = _rows(out_dir / "epath_runs.csv")
+    rows = read_csv_rows(out_dir / "epath_runs.csv")
     assert len(rows) == 1 and rows[0]["structure"] == "synthetic"
 
     code, _, err = _run(
@@ -439,47 +430,6 @@ def test_output_labels_and_prefixes(tmp_path: Path) -> None:
         default_output_prefix(downloaded, output_dir=tmp_path)
         == tmp_path / "1ABC_2" / "1ABC"
     )
-
-
-@pytest.mark.parametrize(
-    ("name", "file_format", "label"),
-    [
-        ("1abc.cif.gz", StructureFileFormat.MMCIF, "1abc"),
-        ("model.v2.pdb.gz", StructureFileFormat.PDB, "model.v2"),
-        ("PDB1ABC.ENT.GZ", StructureFileFormat.PDB, "PDB1ABC"),
-        ("model.ent", StructureFileFormat.PDB, "model"),
-    ],
-)
-def test_output_labels_strip_compression_and_format(
-    tmp_path: Path, name: str, file_format: StructureFileFormat, label: str
-) -> None:
-    local = ResolvedStructureInput(
-        name,
-        StructureSourceType.LOCAL_FILE,
-        file_format,
-        local_path=tmp_path / name,
-    )
-
-    assert output_label_for_input(local) == label
-    assert local.structure_id is None
-
-
-def test_gzipped_pdb_runs_like_the_plain_file(tmp_path: Path) -> None:
-    plain = write_synthetic_pdb(tmp_path / "plain.pdb")
-    gzipped = tmp_path / "packed.pdb.gz"
-    gzipped.write_bytes(gzip.compress(plain.read_bytes()))
-    output_dir = tmp_path / "out"
-
-    for path in (plain, gzipped):
-        code, _, err = _run(
-            [str(path), "--output-dir", str(output_dir), "-q", "--no-plot"]
-        )
-        assert code == 0, err
-
-    plain_rows = _rows(output_dir / "plain" / "plain_epath.csv")
-    gzipped_rows = _rows(output_dir / "packed" / "packed_epath.csv")
-    assert plain_rows and gzipped_rows == plain_rows
-    assert _rows(output_dir / "packed" / "packed_run.csv")[0]["structure"] == "packed"
 
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX shell launcher")

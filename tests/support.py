@@ -11,6 +11,7 @@ symmetry and cell handling and brute-force distance loops, so they share no
 code with the implementation they check.
 """
 
+import csv
 import itertools
 import math
 from collections.abc import Iterable, Sequence
@@ -329,6 +330,12 @@ def approx(
 ) -> Any:
     """Return `pytest.approx` with a fully known type for the type checkers."""
     return pytest.approx(expected, rel=rel, abs=abs)  # pyright: ignore[reportUnknownMemberType]
+
+
+def read_csv_rows(path: Path) -> list[dict[str, str]]:
+    """Read a CSV file into one dict per row."""
+    with path.open(newline="") as handle:
+        return list(csv.DictReader(handle))
 
 
 def make_atom_record(**overrides: object) -> AtomRecord:
