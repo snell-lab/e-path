@@ -73,12 +73,15 @@ def print_epath_summary(
 ) -> None:
     """Print the summary of one finished run.
 
-    The sections are the crystal, the BDamage calculation, the selection, the
-    Bnet results, the pathways and the files written. Crystal warnings are
-    part of the crystal section.
+    The crystal, the BDamage calculation and the Bnet results are the same at
+    every percentile and are printed once, with crystal warnings in the
+    crystal section. The selection, the pathways and the files written follow
+    for each percentile, headed by the percentile when there are several.
     """
-    pipeline_result = result.pipeline_result
-    bdamage_result = pipeline_result.bdamage_pipeline_result
+    runs = result.runs
+    first_result = runs[0].pipeline_result
+    bdamage_result = first_result.bdamage_pipeline_result
+    several = len(runs) > 1
 
     print(file=stream)
     print("Done.", file=stream)
@@ -97,24 +100,37 @@ def print_epath_summary(
         stream=stream,
     )
     _print_section(
-        "E-path selection:",
-        _selection_lines(pipeline_result),
-        stream=stream,
-    )
-    _print_section(
         "RABDAM Bnet results:",
-        bnet_summary_lines(pipeline_result.bnet_pipeline_result),
+        bnet_summary_lines(first_result.bnet_pipeline_result),
         stream=stream,
     )
-    _print_section("Pathways:", _pathway_lines(pipeline_result), stream=stream)
-    _print_section(
-        "Outputs:",
-        (
-            f"{label}: {path}"
-            for label, path in output_file_entries(result.output_files)
-        ),
-        stream=stream,
-    )
+    for run in runs:
+        pipeline_result = run.pipeline_result
+        heading = (
+            f" at {pipeline_result.run_record.cutoff_percent:g}%" if several else ""
+        )
+        _print_section(
+            f"E-path selection{heading}:",
+            _selection_lines(pipeline_result),
+            stream=stream,
+        )
+        _print_section(
+            f"Pathways{heading}:", _pathway_lines(pipeline_result), stream=stream
+        )
+        _print_section(
+            f"Outputs{heading}:",
+            (
+                f"{label}: {path}"
+                for label, path in output_file_entries(run.output_files)
+            ),
+            stream=stream,
+        )
+    if result.percentile_csv is not None:
+        _print_section(
+            "Percentiles:",
+            (f"Run CSV, one row per percentile: {result.percentile_csv}",),
+            stream=stream,
+        )
 
     print(file=stream)
     print(f"Total runtime: {total_runtime_seconds:.1f}s", file=stream)

@@ -143,11 +143,14 @@ def _add_epath_selection_arguments(
 ) -> None:
     group.add_argument(
         "--percentile",
-        metavar="FLOAT",
-        type=percent_float,
-        default=defaults.selection.percentile,
+        metavar="FLOAT[,FLOAT...]",
+        type=percentile_list,
+        default=(defaults.selection.percentile,),
         help=(
-            "Lowest BDamage percentile to select for E-path analysis. "
+            "Lowest BDamage percentile to select for E-path analysis. Several "
+            "comma-separated values, for example 1,2,3, run the analysis at "
+            "each from one BDamage calculation, with the outputs of each in a "
+            "directory of their own. "
             f"Default: {defaults.selection.percentile}"
         ),
     )
@@ -295,6 +298,20 @@ def chain_list(value: str) -> tuple[str, ...]:
     return chains
 
 
+def percentile_list(value: str) -> tuple[float, ...]:
+    """Return the percentages of a comma-separated list, each from 0 to 100.
+
+    Spaces around a value are dropped, and a repeated value is kept once, at
+    its first position. An empty value, as in `1,,2`, is rejected.
+    """
+    items = [item.strip() for item in value.split(",")]
+    if any(not item for item in items):
+        raise argparse.ArgumentTypeError(
+            f"expected comma-separated percentages, got {value!r}"
+        )
+    return tuple(dict.fromkeys(percent_float(item) for item in items))
+
+
 def positive_float(value: str) -> float:
     """Return a positive finite float for argparse."""
     parsed = _float_arg(value)
@@ -370,16 +387,17 @@ def bdamage_pipeline_options_from_args(
 def epath_pipeline_options_from_args(
     args: argparse.Namespace,
     *,
+    percentile: float,
     output_prefix: Path | None,
 ) -> EpathPipelineOptions:
-    """Build full E-path pipeline options from parsed command-line arguments.
+    """Build the E-path pipeline options of one percentile of `--percentile`.
 
     `--no-reports` switches off the cluster, step and run CSVs and the summary
     report together.
     """
     return EpathPipelineOptions(
         selection=EpathSelectionPipelineOptions(
-            percentile=args.percentile,
+            percentile=percentile,
         ),
         clustering=EpathClusterPipelineOptions(
             distance_cutoff=args.cluster_distance,

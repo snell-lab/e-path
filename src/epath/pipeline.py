@@ -4,7 +4,8 @@
 then run in order, each from its own module. `epath.analysis` selects the
 lowest-BDamage atoms, clusters them and describes each cluster as a pathway,
 `rabdam.bnet` adds Bnet and its percentile, and `epath.outputs` writes the
-files. `epath.cli` calls `run_epath_pipeline` once per structure.
+files. `epath.cli` calls `run_epath_pipeline` once per structure and
+percentile.
 """
 
 from collections.abc import Callable
@@ -122,6 +123,7 @@ def run_epath_pipeline(
     *,
     options: EpathPipelineOptions | None = None,
     stage_runner: PipelineStageRunner | None = None,
+    bnet_pipeline_result: BnetPipelineResult | None = None,
 ) -> tuple[EpathPipelineResult, EpathPipelineOutputFiles]:
     """Run the E-path analysis on a BDamage result and write its outputs.
 
@@ -136,6 +138,11 @@ def run_epath_pipeline(
     Without `options` the defaults of `EpathPipelineOptions` apply. A
     `stage_runner` is handed each stage as a label and a callback, so a caller
     can time or report the stages, as the command line does.
+
+    Bnet does not depend on the E-path options, so a caller that analyses the
+    same BDamage result at several percentiles can pass the
+    `bnet_pipeline_result` of the first run to the others, and it is used
+    instead of being calculated again.
 
     An `EpathPipelineError` is raised before any stage runs when a display
     chain is not in the cleaned model.
@@ -196,14 +203,15 @@ def run_epath_pipeline(
         ),
         stage_runner=stage_runner,
     )
-    bnet_pipeline_result = _run_stage(
-        "Calculating Bnet and Bnet percentile",
-        lambda: run_bnet_pipeline(
-            prepared_structure=prepared_structure,
-            bdamage_results=bdamage_pipeline_result.bdamage_results,
-        ),
-        stage_runner=stage_runner,
-    )
+    if bnet_pipeline_result is None:
+        bnet_pipeline_result = _run_stage(
+            "Calculating Bnet and Bnet percentile",
+            lambda: run_bnet_pipeline(
+                prepared_structure=prepared_structure,
+                bdamage_results=bdamage_pipeline_result.bdamage_results,
+            ),
+            stage_runner=stage_runner,
+        )
     run_record = build_run_record(
         structure_path=prepared_structure.metadata.source_path,
         selection_result=selection_result,

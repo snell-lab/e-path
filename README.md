@@ -31,6 +31,7 @@ On Windows, run `python epath` wherever this README says `./epath`.
 ./epath model.cif               # a local file
 ./epath 1ABC                    # a PDB ID, downloaded from RCSB and cached
 ./epath 1ABC 2XYZ model.cif     # a batch run
+./epath 1ABC --percentile 1,2,3 # several selection cutoffs in one run
 ```
 
 Inputs can be `.cif`, `.mmcif`, `.pdb`, or `.ent` files, optionally gzipped, or
@@ -51,9 +52,13 @@ Each run writes into its own directory under `output/`, such as `output/1ABC/`:
 - `*_zfalloff.png`: the BDamage Z-score falloff plot.
 - `*_summary.txt`: the analysis summary.
 
-A batch run also writes `epath_runs.csv`, with one row per structure. Running a
-structure again writes a new numbered directory rather than overwriting the old
-one.
+With several percentiles, BDamage is calculated once, the files above for each
+cutoff go in a directory of their own, such as `output/1ABC/percentile_2/`, and
+`*_runs.csv` beside them has one row per percentile.
+
+A batch run also writes `epath_runs.csv`, with one row per structure and
+percentile. Running a structure again writes a new numbered directory rather
+than overwriting the old one.
 
 ## Documentation
 

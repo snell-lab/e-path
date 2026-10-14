@@ -25,6 +25,7 @@ from epath.cli.args import (
     fraction_float,
     parse_args,
     percent_float,
+    percentile_list,
     positive_float,
     positive_int,
 )
@@ -49,7 +50,7 @@ def test_defaults_mirror_the_pipeline_options() -> None:
     args = parse_args(["model.pdb"])
 
     assert args.structure_inputs == ["model.pdb"]
-    assert args.percentile == 2.0 and args.chains is None
+    assert args.percentile == (2.0,) and args.chains is None
     assert args.cluster_distance == 4.0 and args.minimum_cluster_size == 8
     assert args.packing_density_threshold == 7.0 and args.window_size_fraction == 0.02
     assert args.minimum_window_size == 11 and args.translation_range == 1
@@ -58,19 +59,20 @@ def test_defaults_mirror_the_pipeline_options() -> None:
         args.no_csv or args.no_cif or args.no_plot or args.no_reports or args.quiet
     )
 
+    parsed = parse_args(
+        [
+            "a.pdb",
+            "--percentile",
+            "5",
+            "--no-reports",
+            "--no-plot",
+            "--chains",
+            "B, A,B",
+        ]
+    )
+    assert parsed.percentile == (5.0,)
     options = epath_pipeline_options_from_args(
-        parse_args(
-            [
-                "a.pdb",
-                "--percentile",
-                "5",
-                "--no-reports",
-                "--no-plot",
-                "--chains",
-                "B, A,B",
-            ]
-        ),
-        output_prefix=Path("x"),
+        parsed, percentile=parsed.percentile[0], output_prefix=Path("x")
     )
     assert options.selection.percentile == 5.0
     assert options.output.display_chains == ("B", "A")
@@ -95,6 +97,13 @@ def test_defaults_mirror_the_pipeline_options() -> None:
     )
     assert bdamage.packing_density_threshold == 6.5 and bdamage.translation_range == 2
 
+    # Several percentiles keep their order, with a repeat kept once.
+    assert parse_args(["a.pdb", "--percentile", "3, 1,3.0,2"]).percentile == (
+        3.0,
+        1.0,
+        2.0,
+    )
+
     batch = parse_args(["a.pdb", "b.pdb"])
     assert batch.structure_inputs == ["a.pdb", "b.pdb"]
 
@@ -105,12 +114,13 @@ def test_defaults_mirror_the_pipeline_options() -> None:
         (positive_float, ("0.5", 0.5), ("0", "-1", "inf", "x")),
         (fraction_float, ("0.25", 0.25), ("0", "1", "nan")),
         (percent_float, ("100", 100.0), ("-0.1", "100.1", "x")),
+        (percentile_list, ("1,2.5", (1.0, 2.5)), ("", "1,,2", "1,150", "1,x")),
         (positive_int, ("3", 3), ("0", "-2", "1.5")),
     ],
 )
 def test_argument_validators(
-    converter: Callable[[str], float],
-    good: tuple[str, float],
+    converter: Callable[[str], object],
+    good: tuple[str, object],
     bad: tuple[str, ...],
 ) -> None:
     assert converter(good[0]) == good[1]
@@ -176,6 +186,57 @@ def test_single_run_writes_every_output(synthetic_pdb: Path, tmp_path: Path) -> 
     assert len(read_csv_rows(prefix.parent / "run_clusters.csv")) == 3
     summary = (prefix.parent / "run_summary.txt").read_text()
     assert "Path count: 3" in summary and "Window size used: 11 atoms" in summary
+
+
+def test_several_percentiles_share_one_bdamage_calculation(
+    synthetic_pdb: Path, tmp_path: Path
+) -> None:
+    prefix = tmp_path / "multi" / "run"
+    code, out, err = _run(
+        [
+            str(synthetic_pdb),
+            "-o",
+            str(prefix),
+            "--percentile",
+            "20,30",
+            "--minimum-cluster-size",
+            "3",
+            "--no-plot",
+        ]
+    )
+
+    assert code == 0, err
+    assert err.count("Calculating BDamage scores...") == 1
+    assert err.count("Calculating Bnet and Bnet percentile...") == 1
+    assert err.count("Selecting E-path atoms...") == 2
+    assert "Pathways at 20%:" in out and "Pathways at 30%:" in out
+    assert out.count("RABDAM Bnet results:") == 1
+    assert sorted(p.name for p in prefix.parent.iterdir()) == [
+        "percentile_20",
+        "percentile_30",
+        "run_runs.csv",
+    ]
+    rows = read_csv_rows(prefix.parent / "run_runs.csv")
+    assert [row["cutoff_percent"] for row in rows] == ["20", "30"]
+    assert [row["atoms_selected"] for row in rows] == ["15", "23"]
+    assert rows[0]["bnet"] == rows[1]["bnet"]
+    for percentile, row in zip(("20", "30"), rows, strict=True):
+        directory = prefix.parent / f"percentile_{percentile}"
+        assert read_csv_rows(directory / "run_run.csv") == [row]
+        assert (directory / "run_summary.txt").is_file()
+        assert (directory / "run_path01.cif").is_file()
+
+    # Switching reports off drops the percentile table with the other reports.
+    prefix = tmp_path / "multi_noreports" / "run"
+    code, _, _ = _run(
+        [str(synthetic_pdb), "-o", str(prefix), "-q", "--percentile", "20,30"]
+        + ["--no-reports", "--no-plot", "--no-cif"]
+    )
+    assert code == 0
+    assert sorted(p.name for p in prefix.parent.iterdir()) == [
+        "percentile_20",
+        "percentile_30",
+    ]
 
 
 def test_output_groups_can_be_disabled_and_quiet_silences_progress(
@@ -361,6 +422,28 @@ def test_batch_run_writes_a_cohort_table_with_unique_prefixes(
     assert (out_dir / "epath_runs.csv").read_text() == first_cohort
     assert len(read_csv_rows(out_dir / "epath_runs_1.csv")) == 2
     assert (out_dir / "synthetic_4" / "synthetic_run.csv").is_file()
+
+
+def test_batch_runs_every_percentile_of_every_structure(
+    synthetic_pdb: Path, synthetic_mmcif: Path, tmp_path: Path
+) -> None:
+    out_dir = tmp_path / "batch"
+    code, _, err = _run(
+        [str(synthetic_pdb), str(synthetic_mmcif), "--output-dir", str(out_dir)]
+        + ["-q", "--no-plot", "--no-cif", "--percentile", "20,30"]
+    )
+
+    assert code == 0, err
+    rows = read_csv_rows(out_dir / "epath_runs.csv")
+    assert [(row["input_path"], row["cutoff_percent"]) for row in rows] == [
+        (str(synthetic_pdb.resolve()), "20"),
+        (str(synthetic_pdb.resolve()), "30"),
+        (str(synthetic_mmcif.resolve()), "20"),
+        (str(synthetic_mmcif.resolve()), "30"),
+    ]
+    for label in ("synthetic", "synthetic_1"):
+        assert len(read_csv_rows(out_dir / label / "synthetic_runs.csv")) == 2
+        assert (out_dir / label / "percentile_30" / "synthetic_run.csv").is_file()
 
 
 def test_batch_continues_past_a_failing_input(

@@ -2,7 +2,8 @@
 
 This module turns parsed arguments into single or batch runs: resolving and
 reading inputs, running the RABDAM BDamage stages, and handing the result to
-the E-path pipeline. Terminal reporting lives in `epath.cli.report`.
+the E-path pipeline once for each percentile of `--percentile`. Terminal
+reporting lives in `epath.cli.report`.
 """
 
 import argparse
@@ -42,6 +43,11 @@ from xtal.resolver import (
 # One row per structure in a batch, written alongside the per-structure output.
 BATCH_COHORT_CSV_STEM = "epath_runs"
 
+# With several percentiles, the outputs of each go in a directory of this name
+# followed by the percentile, as in `percentile_2.5`, beside a `*_runs.csv`
+# table with one row per percentile.
+PERCENTILE_DIRECTORY_PREFIX = "percentile_"
+
 # Every input, crystal and calculation error in xtal, rabdam and epath derives
 # from ValueError, so it covers them all. OSError covers files that cannot be
 # read or written.
@@ -49,17 +55,34 @@ CLI_ERRORS = (ValueError, OSError)
 
 
 @dataclass(frozen=True, slots=True)
-class EpathCliResult:
-    """Result of one structure's run.
+class EpathPercentileRun:
+    """The E-path analysis of one structure at one percentile.
 
-    `local_input` is the input as it was read, after any download, and
     `output_prefix` is the prefix its output files were written under.
+    """
+
+    output_prefix: Path
+    pipeline_result: EpathPipelineResult
+    output_files: EpathPipelineOutputFiles
+
+
+@dataclass(frozen=True, slots=True)
+class EpathCliResult:
+    """Result of one structure's run, at every percentile asked for.
+
+    `local_input` is the input as it was read, after any download.
+    `output_prefix` is the prefix of the run. With one percentile it is the
+    prefix of the output files, and with several the files of each percentile
+    are in a directory of their own beside it, chosen by `percentile_prefix`.
+    `runs` holds one analysis per percentile, in the order they were given.
+    `percentile_csv` is the `*_runs.csv` table of a run with several
+    percentiles, and `None` with one or when reports are switched off.
     """
 
     local_input: ResolvedStructureInput
     output_prefix: Path
-    pipeline_result: EpathPipelineResult
-    output_files: EpathPipelineOutputFiles
+    runs: tuple[EpathPercentileRun, ...]
+    percentile_csv: Path | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +158,11 @@ def run_single_structure(
 
     Without an `output_prefix` the run gets a directory of its own under
     `--output-dir`, chosen by `default_output_prefix`.
+
+    BDamage and Bnet are calculated once, and the E-path analysis then runs at
+    each percentile of `--percentile`. With several percentiles, the outputs
+    of each are written under `percentile_prefix`, and their run records
+    together to `<prefix>_runs.csv`, unless reports are switched off.
     """
 
     # A named generic function rather than a lambda so each pipeline stage
@@ -154,20 +182,42 @@ def run_single_structure(
             output_dir=Path(args.output_dir).expanduser(),
         )
 
-    options = epath_pipeline_options_from_args(
-        args,
-        output_prefix=output_prefix,
-    )
-    pipeline_result, output_files = run_epath_pipeline(
-        bdamage_result,
-        options=options,
-        stage_runner=stage_runner,
-    )
+    percentiles: tuple[float, ...] = args.percentile
+    several = len(percentiles) > 1
+    runs: list[EpathPercentileRun] = []
+    for percentile in percentiles:
+        run_prefix = (
+            percentile_prefix(output_prefix, percentile) if several else output_prefix
+        )
+        if several and not args.quiet:
+            print(f"Percentile {percentile:g}%:", file=stderr)
+        pipeline_result, output_files = run_epath_pipeline(
+            bdamage_result,
+            options=epath_pipeline_options_from_args(
+                args,
+                percentile=percentile,
+                output_prefix=run_prefix,
+            ),
+            stage_runner=stage_runner,
+            # Bnet does not depend on the percentile, so it is calculated once.
+            bnet_pipeline_result=(
+                runs[0].pipeline_result.bnet_pipeline_result if runs else None
+            ),
+        )
+        runs.append(EpathPercentileRun(run_prefix, pipeline_result, output_files))
+
+    percentile_csv = None
+    if several and not args.no_reports:
+        percentile_csv = write_run_csv(
+            output_prefix.with_name(f"{output_prefix.name}_runs.csv"),
+            (run.pipeline_result.run_record for run in runs),
+        )
+
     cli_result = EpathCliResult(
         local_input=local_input,
         output_prefix=output_prefix,
-        pipeline_result=pipeline_result,
-        output_files=output_files,
+        runs=tuple(runs),
+        percentile_csv=percentile_csv,
     )
 
     if not args.quiet:
@@ -190,11 +240,11 @@ def run_batch(
 ) -> EpathBatchCliResult:
     """Run the full E-path pipeline for several structure inputs in turn.
 
-    Each input is run and summarised as a single structure, in its own
-    directory under `--output-dir`. One that fails with any of
+    Each input is run and summarised as a single structure, at every
+    percentile, in its own directory under `--output-dir`. One that fails with any of
     `CLI_ERRORS` is reported on `stderr` and the batch carries on. The
-    structures that succeeded then share one cohort CSV, unless `--no-reports`
-    is given. Like the run directories, it is numbered rather than written
+    structures that succeeded then share one cohort CSV, with a row for each
+    structure at each percentile, unless `--no-reports` is given. Like the run directories, it is numbered rather than written
     over the cohort CSV of an earlier batch.
 
     `--output-prefix` names the files of one structure, so combining it with
@@ -232,12 +282,17 @@ def run_batch(
         else:
             results.append(result)
 
-    # One row per structure, so a batch is directly comparable across models.
+    # One row per structure and percentile, so a batch is directly comparable
+    # across models.
     cohort_csv = None
     if results and not args.no_reports:
         cohort_csv = write_run_csv(
             _unused_cohort_csv_path(output_dir),
-            (result.pipeline_result.run_record for result in results),
+            (
+                run.pipeline_result.run_record
+                for result in results
+                for run in result.runs
+            ),
         )
 
     batch_result = EpathBatchCliResult(
@@ -315,6 +370,20 @@ def default_output_prefix(
         suffix += 1
 
     return candidate
+
+
+def percentile_prefix(output_prefix: Path, percentile: float) -> Path:
+    """Return the output prefix of one percentile of a run with several.
+
+    The files keep the name of the run's prefix, in a directory of their own
+    beside it, so `output/1ABC/1ABC` at 2.5% gives
+    `output/1ABC/percentile_2.5/1ABC`.
+    """
+    return (
+        output_prefix.parent
+        / f"{PERCENTILE_DIRECTORY_PREFIX}{percentile:g}"
+        / output_prefix.name
+    )
 
 
 def _unused_cohort_csv_path(output_dir: Path) -> Path:

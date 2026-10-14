@@ -36,6 +36,13 @@ below it are then cut to 2% of the atom count by dropping the highest values.
 The count is rounded to a whole number of atoms, and one that falls exactly
 halfway rounds to the even number.
 
+`--percentile` takes several comma-separated values, such as `1,2,3`. BDamage
+and Bnet are calculated once, and the selection, clustering, and pathway
+analysis then run at each cutoff, with the full outputs of each written to a
+`percentile_<value>` directory of its own. Their run rows are collected in
+`*_runs.csv` beside those directories, so whether a pathway persists as the
+cutoff changes can be read from one run.
+
 Selected atoms within 4.0 Å of each other are connected, and every connected
 component of at least eight atoms is reported as a pathway.
 `--minimum-cluster-size` changes that reporting threshold. Each pathway's
