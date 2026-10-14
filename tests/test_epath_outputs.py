@@ -1,5 +1,6 @@
 """Output files: CSV tables, coordinate subsets, the plot, and the summary."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import gemmi
@@ -291,6 +292,33 @@ def test_path_subset_cifs_are_zero_padded(
     )
     assert len(block.find("_atom_site.", ["id"])) == result.path_reports[0].node_count
     assert write_path_subset_cifs(tmp_path / "run", (), crystal=crystal) == {}
+
+
+def test_path_subset_cifs_write_atoms_in_input_order(
+    tmp_path: Path, result: EpathPipelineResult
+) -> None:
+    # Reversed, the search order splits every residue of more than one atom.
+    report = result.path_reports[0]
+    atoms = report.cluster.atoms
+    scrambled = replace(report, cluster=replace(report.cluster, atoms=atoms[::-1]))
+    paths = write_path_subset_cifs(
+        tmp_path / "run", (scrambled,), crystal=result.bdamage_pipeline_result.crystal
+    )
+
+    block = gemmi.cif.read_file(str(paths[report.path_id])).sole_block()
+    rows = [
+        tuple(row)
+        for row in block.find(
+            "_atom_site.", ["auth_asym_id", "auth_seq_id", "label_atom_id"]
+        )
+    ]
+    in_order = sorted(atoms, key=lambda atom: atom.record.source_atom_index)
+    assert rows == [
+        (a.record.chain_id, str(a.record.residue_number), a.record.atom_name)
+        for a in in_order
+    ]
+    asym_ids = list(block.find_values("_struct_asym.id"))
+    assert len(asym_ids) == len(set(asym_ids))
 
 
 def test_coordinate_files_carry_the_input_cell_and_space_group(

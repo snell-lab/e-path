@@ -178,7 +178,8 @@ def write_path_subset_cifs(
     in components too small to report. These files hold one pathway each, so a
     viewer can load and colour them separately without a per-atom label being
     encoded into the occupancy or B-factor column, which both carry real
-    values.
+    values. The atoms of each pathway are written in input order, so each
+    residue is one block and each chain is listed once, as in the model file.
 
     Path numbers are zero padded to at least two digits so the files sort in
     path order, and keep their numbering when `display_chains` drops a pathway
@@ -192,7 +193,12 @@ def write_path_subset_cifs(
     width = max(2, len(str(max(report.path_id for report in path_reports))))
     written: dict[int, Path] = {}
     for report in path_reports:
-        atoms = report.cluster.atoms
+        # The cluster holds its atoms in the order the search reached them.
+        # Written that way, a residue is split into several blocks and a chain
+        # revisited gets a second, duplicate _struct_asym id.
+        atoms = tuple(
+            sorted(report.cluster.atoms, key=lambda atom: atom.record.source_atom_index)
+        )
         nearby_labels = "/".join(cofactor.label for cofactor in report.nearby_cofactors)
         remarks = [
             f"Pathway {report.path_id}.",
