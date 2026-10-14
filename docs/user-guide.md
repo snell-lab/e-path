@@ -172,8 +172,8 @@ threshold is marked, so the plot shows where the cutoff falls on the falloff.
 
 Every coordinate file is mmCIF. Run notes are written as an `_epath_remark`
 loop and machine-readable values (the E-path version as `_epath.version`, atom
-counts, the threshold, the pathway number and its cofactors) as an `_epath`
-category; viewers ignore both. Every
+counts, the threshold, the pathway number, its cofactors and the cluster
+distance) as an `_epath` category; viewers ignore both. Every
 file carries the unit cell and space group of the input, so a viewer can
 generate symmetry mates around a pathway. E-path works in the asymmetric unit,
 so this is how to check whether a pathway sits at a crystal contact.
@@ -192,6 +192,7 @@ whole number of atoms, so `*_selected.cif` and the `selected` column of
 
 `*_selected.cif` holds every selected atom, including those in components too
 small to be reported as pathways. `*_path01.cif`, `*_path02.cif`, and so on
-each hold one pathway's atoms, with `_epath.path_id` and
-`_epath.nearby_cofactors` (the nearby sites separated by `/`, or `none`)
-recorded. Loading them separately is how to colour by pathway.
+each hold one pathway's atoms, with `_epath.path_id`,
+`_epath.nearby_cofactors` (the nearby sites separated by `/`, or `none`), and
+`_epath.cluster_distance` (the `--cluster-distance` the atoms were connected
+within, in angstroms) recorded. Loading them separately is how to colour by pathway.

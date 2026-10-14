@@ -46,7 +46,7 @@ Each run writes into its own directory under `output/`, such as `output/1ABC/`:
 - `*_clusters.csv`: one row per reported pathway.
 - `*_steps.csv`: one row per step of every reported pathway.
 - `*_run.csv`: a single row of run-level results, including the E-path
-  version.
+  version and the clustering settings.
 - `*_selected.cif`: the selected atoms.
 - `*_path01.cif`, `*_path02.cif`, ...: one file per reported pathway.
 - `*_model.cif`: the cleaned model with BDamage in the B-factor column.

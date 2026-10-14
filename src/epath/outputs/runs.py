@@ -35,8 +35,9 @@ class EpathRunRecord:
     selected. `equivalent_z_score` is `bdamage_threshold` as a
     Z-score among the scored atoms.
 
-    `clusters_reported` counts the components of at least
-    `minimum_cluster_size` atoms, out of `total_components`. The
+    `cluster_distance` is the distance in angstroms within which two
+    selected atoms are connected. `clusters_reported` counts the components
+    of at least `minimum_cluster_size` atoms, out of `total_components`. The
     `largest_component_*` fields describe the largest component whether or not
     it was reported. Its lengths are in angstroms, and are `None` when no atom
     was selected and so there is no component. `bnet` and `bnet_percentile`
@@ -55,6 +56,7 @@ class EpathRunRecord:
     bnet: float | None
     bnet_percentile: float | None
     total_components: int
+    cluster_distance: float
     minimum_cluster_size: int
     clusters_reported: int
     largest_component_atoms: int
@@ -70,6 +72,7 @@ def build_run_record(
     selection_result: EpathSelectionResult,
     clusters: Sequence[EpathCluster],
     statistics: ComponentStatistics,
+    cluster_distance: float,
     minimum_cluster_size: int,
     cutoff_percent: float,
     bnet_pipeline_result: BnetPipelineResult,
@@ -102,6 +105,7 @@ def build_run_record(
         bnet=bnet.bnet if bnet else None,
         bnet_percentile=percentile.percentile_percent if percentile else None,
         total_components=statistics.total_count,
+        cluster_distance=cluster_distance,
         minimum_cluster_size=minimum_cluster_size,
         clusters_reported=len(clusters),
         largest_component_atoms=statistics.largest_atom_count,

@@ -97,7 +97,7 @@ def test_components_are_found_filtered_and_recorded() -> None:
     )
     assert record.bnet is None and record.bnet_percentile is None
     assert record.cutoff_percent == 90.0 and record.minimum_cluster_size == 3
-    assert record.epath_version == __version__
+    assert record.cluster_distance == 3.0 and record.epath_version == __version__
     assert files.combined_csv is None
 
 

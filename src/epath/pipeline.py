@@ -216,6 +216,7 @@ def run_epath_pipeline(
         selection_result=selection_result,
         clusters=clusters,
         statistics=statistics,
+        cluster_distance=options.clustering.distance_cutoff,
         minimum_cluster_size=minimum_cluster_size,
         cutoff_percent=options.selection.percentile,
         bnet_pipeline_result=bnet_pipeline_result,

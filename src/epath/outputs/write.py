@@ -82,6 +82,7 @@ def write_epath_outputs(
             selection_result.selected_atoms,
             crystal=bdamage_pipeline_result.crystal,
             path_reports=path_reports,
+            cluster_distance=result.run_record.cluster_distance,
             cleaned_atoms=bdamage_pipeline_result.prepared_structure.cleaned_atoms,
             bdamage_by_source_index={
                 atom_result.source_atom_index: atom_result.bdamage

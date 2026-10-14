@@ -167,6 +167,7 @@ def test_single_run_writes_every_output(synthetic_pdb: Path, tmp_path: Path) -> 
     assert code == 0, err
     assert "Done." in out and "Total runtime" in out
     assert "Pathways:" in out and "Cofactor sites: FMN" in out
+    assert "Cluster distance: 4 A" in out
     assert "Calculating BDamage scores..." in err and "done in" in err
     written = sorted(p.name for p in prefix.parent.iterdir())
     assert written == [

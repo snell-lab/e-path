@@ -180,6 +180,7 @@ def _selection_lines(pipeline_result: EpathPipelineResult) -> tuple[str, ...]:
 def _pathway_lines(pipeline_result: EpathPipelineResult) -> tuple[str, ...]:
     reports = pipeline_result.path_reports
     lines = [
+        f"Cluster distance: {pipeline_result.run_record.cluster_distance:g} A",
         f"Connected components: {pipeline_result.component_statistics.total_count}",
         f"Count: {len(reports)}",
     ]

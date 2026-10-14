@@ -66,6 +66,7 @@ RUN_FIELDNAMES = [
     "bnet",
     "bnet_percentile",
     "total_components",
+    "cluster_distance",
     "minimum_cluster_size",
     "clusters_reported",
     "largest_component_atoms",

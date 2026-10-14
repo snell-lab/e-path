@@ -146,6 +146,7 @@ def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathPipelineResult) 
     assert float(runs[0]["bnet"]) > 0 and 0 <= float(runs[0]["bnet_percentile"]) <= 100
     assert runs[0]["clusters_reported"] == str(len(result.path_reports))
     assert runs[0]["epath_version"] == __version__
+    assert runs[0]["cluster_distance"] == "4"
 
 
 def test_atom_subset_cif_round_trips_through_gemmi(tmp_path: Path) -> None:
@@ -275,7 +276,7 @@ def test_path_subset_cifs_are_zero_padded(
 ) -> None:
     crystal = result.bdamage_pipeline_result.crystal
     paths = write_path_subset_cifs(
-        tmp_path / "run", result.path_reports, crystal=crystal
+        tmp_path / "run", result.path_reports, crystal=crystal, cluster_distance=3.5
     )
 
     assert {path_id: path.name for path_id, path in paths.items()} == {
@@ -283,17 +284,24 @@ def test_path_subset_cifs_are_zero_padded(
     }
     block = gemmi.cif.read_file(str(paths[1])).sole_block()
     assert block.find_value("_epath.path_id") == "1"
+    assert block.find_value("_epath.cluster_distance") == "3.5"
     remarks = [
         gemmi.cif.as_string(r[1]) for r in block.find("_epath_remark.", ["id", "text"])
     ]
     first = result.path_reports[0]
     assert "Pathway 1." in remarks
     assert f"Cofactors in range: {first.nearby_cofactor_summary}." in remarks
+    assert "Atoms connected within 3.5 A." in remarks
     assert block.find_value("_epath.nearby_cofactors") == (
         "/".join(cofactor.label for cofactor in first.nearby_cofactors) or "none"
     )
     assert len(block.find("_atom_site.", ["id"])) == result.path_reports[0].node_count
-    assert write_path_subset_cifs(tmp_path / "run", (), crystal=crystal) == {}
+    assert (
+        write_path_subset_cifs(
+            tmp_path / "run", (), crystal=crystal, cluster_distance=3.5
+        )
+        == {}
+    )
 
 
 def test_path_subset_cifs_write_atoms_in_input_order(
@@ -304,7 +312,10 @@ def test_path_subset_cifs_write_atoms_in_input_order(
     atoms = report.cluster.atoms
     scrambled = replace(report, cluster=replace(report.cluster, atoms=atoms[::-1]))
     paths = write_path_subset_cifs(
-        tmp_path / "run", (scrambled,), crystal=result.bdamage_pipeline_result.crystal
+        tmp_path / "run",
+        (scrambled,),
+        crystal=result.bdamage_pipeline_result.crystal,
+        cluster_distance=4.0,
     )
 
     block = gemmi.cif.read_file(str(paths[report.path_id])).sole_block()
@@ -334,6 +345,9 @@ def test_coordinate_files_carry_the_epath_version(
         assert path is not None
         block = gemmi.cif.read_file(str(path)).sole_block()
         assert block.find_value("_epath.version") == __version__
+    for path in files.path_cifs.values():
+        block = gemmi.cif.read_file(str(path)).sole_block()
+        assert block.find_value("_epath.cluster_distance") == "4"
 
 
 def test_coordinate_files_carry_the_input_cell_and_space_group(
@@ -402,6 +416,7 @@ def test_summary_report_lists_results_and_files(
 
     assert f"\nE-path version: {__version__}\n" in text
     assert "Selected atoms: 23 / 77" in text
+    assert "Cluster distance: 4 A" in text
     assert (
         "Atoms removed before scoring: 1 hydrogen, 1 with invalid occupancy, "
         "1 without a usable B-factor, 1 alternate conformer"

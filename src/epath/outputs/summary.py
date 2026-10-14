@@ -150,6 +150,7 @@ def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
     path_reports = result.path_reports
     statistics = result.component_statistics
     lines = [
+        f"Cluster distance: {_number(result.run_record.cluster_distance)} A",
         "Minimum reported cluster size: "
         f"{result.run_record.minimum_cluster_size} atoms",
         f"Connected components found: {statistics.total_count}",
