@@ -8,6 +8,7 @@ atoms, and `epath.outputs` reports the statistics kept on the result.
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 
 import numpy as np
 
@@ -117,8 +118,10 @@ def select_atoms_by_percentile(
     atoms, by dropping the ones of highest BDamage. Of candidates with the
     same BDamage, the later ones in input order are dropped first. A count
     that falls exactly halfway between two whole numbers is rounded to the
-    even one, as `round` does, so a small percentile of a few atoms can select
-    nothing. The selected atoms are returned in input order.
+    even one, so a small percentile of a few atoms can select nothing. The
+    count is calculated from the percentile in decimal, as it was written,
+    so binary rounding cannot move it off the halfway point. The selected
+    atoms are returned in input order.
 
     A percentile of 0 selects nothing, with the lowest BDamage as its
     threshold, and 100 selects every atom, with the highest.
@@ -182,7 +185,9 @@ def _select_lowest_percentile(
     # count, when it falls just above an atom's BDamage or several atoms share
     # a value at it. The candidates of highest BDamage are dropped to make up
     # the difference. The sort is stable, so equal values keep input order.
-    target_count = round((percentile / 100.0) * len(scored_atoms))
+    # The count is worked out in decimal, as the percentile was written. In
+    # binary, 0.7% of 500 atoms is 3.4999999999999996 and would round down.
+    target_count = round(Decimal(str(percentile)) * len(scored_atoms) / 100)
     candidates.sort(key=lambda index: scored_atoms[index].bdamage_result.bdamage)
     selected_indices = sorted(candidates[:target_count])
 

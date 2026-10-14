@@ -100,6 +100,13 @@ def test_a_count_exactly_halfway_rounds_to_the_even_number() -> None:
         len(select_atoms_by_percentile(*_atoms(values), percentile=15.0).selected_atoms)
         == 2
     )
+    # 0.7% of 500 atoms is three and a half, though in binary it comes to
+    # 3.4999999999999996, and it still rounds to the even four.
+    many = [float(value) for value in range(1, 501)]
+    assert (
+        len(select_atoms_by_percentile(*_atoms(many), percentile=0.7).selected_atoms)
+        == 4
+    )
 
 
 def test_percentile_extremes() -> None:
