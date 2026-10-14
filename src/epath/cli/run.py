@@ -301,7 +301,7 @@ def default_output_prefix(
 
     Each run gets its own directory under `output_dir`, named after the
     structure label. A repeated run of the same structure gets a numbered
-    directory (`3I9V_1`, `3I9V_2`, ...) rather than overwriting the last one.
+    directory (`1ABC_1`, `1ABC_2`, ...) rather than overwriting the last one.
     Only directories on disk count as used. That covers the earlier items of
     a batch too, because each one writes its files before the next prefix is
     chosen.

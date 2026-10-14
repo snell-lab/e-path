@@ -1,171 +1,76 @@
 # E-path
 
-E-path calculates per-atom BDamage scores and analyzes spatially connected
-low-BDamage atom clusters in protein crystal structures. Its
-calculation core is a from-scratch implementation of the BDamage pipeline from
-RABDAM 2, created by the Garman Group at the University of Oxford
-(https://github.com/GarmanGroup/RABDAM).
+E-path finds spatially connected clusters of low-BDamage atoms in protein
+crystal structures and describes each as a pathway. BDamage compares an atom's
+B-factor with atoms in a similar local packing-density environment. Its
+calculation is a from-scratch implementation of the BDamage pipeline from
+[RABDAM 2](https://github.com/GarmanGroup/RABDAM), by the Garman Group at the
+University of Oxford. Like RABDAM, E-path also reports protein Bnet and its
+resolution-matched percentile.
 
-Use this near the end of refinement, or on deposited models, where per-atom
-B-factors are meaningful.
-
-## What It Calculates
-
-BDamage is a per-atom score that compares an atom's B-factor with atoms in a
-similar local packing-density environment. By default, packing density is the
-number of non-hydrogen crystal-environment atoms within 7.0 A.
-
-The E-path pipeline builds on these per-atom BDamage values with lowest-percentile
-selection, 4 A connectivity clustering, and minimum-spanning-tree
-(MST) geometry metrics. The complete RABDAM stage also calculates protein
-Bnet and a resolution-matched Bnet percentile. E-path consumes BDamage only;
-Bnet and its percentile are reported alongside the E-path results but do not
-change E-path selection or clustering.
+Use it near the end of refinement, or on deposited models, where per-atom
+B-factors are meaningful. Bnet and its percentile are intended for structures
+collected at cryogenic temperatures.
 
 ## Install
 
-E-path runs directly from a clone of this repository; there is no package to
-install. It requires Python 3.14 or newer and the four libraries listed in
-`requirements.txt`: Gemmi, NumPy, SciPy, and Matplotlib (for the default
-Z-score plot). Clone the repository, then install the libraries however you
-prefer — pip, your system package manager, conda — for example:
+E-path runs from a clone of this repository. It needs Python 3.14 or newer and
+the libraries in `requirements.txt`.
 
 ```bash
 git clone https://github.com/snell-lab/e-path.git
 cd e-path
 python3 -m pip install -r requirements.txt
-./epath --help
 ```
 
-`./epath` is a short Python script: it checks that the four libraries are
-importable (and names any that are missing), adds `src/` to `sys.path`, and
-calls the package's `main`, so edits to the source take effect immediately.
-Run it from any directory by its full path, add the repository root to your
-`PATH`, or run it with an explicit interpreter as `python3 epath ...`.
-
-E-path is pure Python and runs on Linux, macOS, and Windows; the four
-libraries all ship prebuilt wheels for each. On Windows the `./epath` form
-does not work because the shebang line is ignored, so run it through the
-interpreter instead:
-
-```powershell
-python epath --help
-```
-
-Everywhere the examples below say `./epath`, read `python epath` on Windows.
+On Windows, run `python epath` wherever this README says `./epath`.
 
 ## Run
 
-Local structure file:
-
 ```bash
-./epath model.cif
+./epath model.cif               # a local file
+./epath 1ABC                    # a PDB ID, downloaded from RCSB and cached
+./epath 1ABC 2XYZ model.cif     # a batch run
 ```
 
-RCSB/PDB ID:
-
-```bash
-./epath 1LYZ
-```
-
-Batch run:
-
-```bash
-./epath 1LYZ 2BLP model.cif
-```
-
-Accepted inputs are `.cif`, `.mmcif`, `.pdb`, and classic 4-character PDB IDs.
-Pass one input for a single run or multiple inputs for a batch run.
-
-PDB IDs are downloaded from RCSB as mmCIF files and cached in
-`downloads/rcsb/` by default, so a repeated run of the same ID works offline.
-`--download-dir` changes the cache directory and `--overwrite-download`
-fetches the file again even when a cached copy exists.
-
-`--version` and `--citations` print the program version and the papers to
-cite, and `-q`/`--quiet` suppresses progress and summary output.
+Inputs can be `.cif`, `.mmcif`, `.pdb`, or `.ent` files, optionally gzipped, or
+4-character PDB IDs. `./epath --help` lists every option.
 
 ## Output
 
-Single and batch E-path runs write results in `output/` by default, using the
-PDB ID or input filename stem as the output prefix. A normal run writes:
+Each run writes into its own directory under `output/`, such as `output/1ABC/`:
 
-- `*_epath.csv`: one row per scored atom, with its BDamage, Z-score, whether
-  it was selected, and its cluster membership. Run-level statistics are in the
-  summary and cluster geometry is in `*_clusters.csv`, joinable on
-  `cluster_id`, so neither is repeated per atom.
-- `*_clusters.csv`: one row per reported pathway (eight or more atoms by
-  default), holding the pathway table described in
-  [docs/pathways.md](docs/pathways.md).
+- `*_epath.csv`: one row per scored atom, with its BDamage, Z-score, and
+  cluster membership.
+- `*_clusters.csv`: one row per reported pathway.
 - `*_steps.csv`: one row per step of every reported pathway.
-- `*_run.csv`: a single row of run-level results, described in
-  [docs/comparing-models.md](docs/comparing-models.md).
-- `*_selected.cif`: selected E-path atoms.
+- `*_run.csv`: a single row of run-level results.
+- `*_selected.cif`: the selected atoms.
 - `*_path01.cif`, `*_path02.cif`, ...: one file per reported pathway.
-- `*_model.cif`: the complete cleaned model with BDamage in the B-factor
-  column.
+- `*_model.cif`: the cleaned model with BDamage in the B-factor column.
+- `*_zfalloff.png`: the BDamage Z-score falloff plot.
+- `*_summary.txt`: the analysis summary.
 
-The coordinate files are mmCIF, so chain identifiers, atom counts, and
-residue numbers are written exactly as read, without PDB column limits.
-- `*_zfalloff.png`: rank-ordered BDamage Z-score falloff.
-- `*_summary.txt`: persistent human-readable analysis summary.
-
-Each run writes into its own directory under `output/`, named after the
-structure (`output/3I9V/3I9V_epath.csv`, ...). Running the same structure again
-gets a numbered directory (`output/3I9V_1/`, `output/3I9V_2/`, ...) instead of
-overwriting the earlier results. A batch run additionally writes
-`epath_runs.csv` in the output directory, with one row per structure, numbered
-in the same way (`epath_runs_1.csv`, ...) when an earlier batch left one there.
-`--output-dir` chooses another output directory and `--output-prefix` bypasses
-the per-run directory and sets the file prefix directly for a single structure; `--no-csv`,
-`--no-cif`, `--no-plot`, and `--no-reports` disable the corresponding output
-groups. `--chains A,B` keeps only those chains in the coordinate files; the analysis
-itself always runs over every chain, so the CSVs and summary are unchanged. How to read each file is described in [docs/outputs.md](docs/outputs.md).
-
-## Tests
-
-The test suite needs `pytest` in addition to the runtime libraries. Run it
-from the repository root:
-
-```bash
-python3 -m pytest
-```
-
-The tests build a small synthetic crystal rather than downloading structures,
-so they run offline in a few seconds. The BDamage stages are checked against
-brute-force references built directly on Gemmi's symmetry and cell handling,
-and the E-path stages against hand-constructed clusters with known geometry,
-chemistry, and endpoints.
+A batch run also writes `epath_runs.csv`, with one row per structure. Running a
+structure again writes a new numbered directory rather than overwriting the old
+one.
 
 ## Documentation
 
-The sections above are enough to run E-path. The reasoning behind its choices
-and the details of its outputs are in `docs/`:
-
-- [Reading the output files](docs/outputs.md): what each file contains and how
-  to read the plot, the summaries, and the coordinate files.
-- [Scored atom population](docs/scored-atoms.md): why only protein atoms are
-  scored and why that is not configurable.
-- [Pathway table](docs/pathways.md): endpoints, cofactor anchors, step
-  provenance, per-pathway coordinate files, and the composition measurements.
-- [Comparing models](docs/comparing-models.md): the run-level table for
-  comparing structures across a cohort.
+- [User guide](docs/user-guide.md): accepted input, which atoms are scored, how
+  pathways are described, and how to read each output file.
 - [Input validation](docs/input-validation.md): the Matthews-coefficient check
-  that rejects biological assemblies and warns about truncated models.
-- [Differences from RABDAM 2](docs/rabdam-differences.md): what is preserved,
-  what is faster, and what was deliberately dropped.
-- [Package layout](docs/package-layout.md): the `xtal`, `rabdam`, `epath`, and
-  `spatial` packages and their dependency direction.
-- [Python API](docs/python-api.md): running the pipeline and setting its
-  options from Python.
+  and how far it can be trusted.
+- [Design notes](docs/design-notes.md): why some choices are fixed.
+- [Differences from RABDAM 2](docs/rabdam-differences.md): what matches and
+  what was dropped.
 
-## Limits And Assumptions
+## Tests
 
-The CLI expects a single-model crystallographic structure with unit-cell and
-space-group metadata. BDamage and Bnet rely on per-atom B-factors; structures
-with grouped or otherwise non-comparable B-factors should be interpreted with
-care. Bnet and Bnet percentiles are intended for protein crystal structures
-collected at cryogenic temperatures.
+```bash
+python3 -m pip install -r requirements-dev.txt
+python3 -m pytest
+```
 
 ## Citations
 

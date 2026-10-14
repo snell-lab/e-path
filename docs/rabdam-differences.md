@@ -1,52 +1,22 @@
-# Differences From RABDAM 2
+# Differences from RABDAM 2
 
-E-path currently contains a calculation-compatible rewrite of RABDAM 2, not a
-feature-for-feature clone. Its purpose is to keep the scientific calculation
-stable while making the program easier to install, faster to run, easier to
-test, and better suited to scripted use.
+E-path contains a calculation-compatible rewrite of RABDAM 2, not a
+feature-for-feature clone. Under normal default use, `PD`, `AVRG_BF`, and
+`BDAM` are intended to match RABDAM 2, because the rewrite keeps the same
+symmetry expansion, neighbouring unit-cell translation, strict 7.0 Å
+packing-density counts, and BDamage sliding windows. On large structures it can
+finish more than 80 times faster, and it does not need cctbx, CCP4/PDBCUR,
+pandas, or requests.
 
-The core BDamage calculation is preserved. Under normal default use, `PD`,
-`AVRG_BF`, and `BDAM` are intended to match RABDAM 2. The rewrite keeps the
-same scientific model: crystallographic symmetry expansion, neighbouring
-unit-cell translation, strict 7.0 A packing-density counts, and BDamage sliding
-windows.
+It drops some RABDAM 2 application features:
 
-The rewrite improves practical use in several ways:
-
-- Faster calculations: packing-density neighbour searches use `cKDTree`,
-  translation and trimming are fused to avoid materializing the full 3x3x3
-  crystal block, and BDamage window averages use cumulative sums instead
-  of pandas rolling means.
-- Larger-structure speedups: in large-structure runs, these changes can make
-  E-path complete more than 80 times faster than RABDAM 2.
-- Lighter installation: the core runtime stack is Gemmi, NumPy, SciPy, and
-  Matplotlib. It does not require cctbx, CCP4/PDBCUR, pandas, or requests.
-- Clearer structure: the code is split into small modules for input, structure
-  preparation, crystal expansion, packing density, BDamage, and later E-path
-  analysis.
-- Cleaner automation: the CLI uses
-  `epath STRUCTURE_INPUT [STRUCTURE_INPUT ...] [options]`, supports simple
-  batch runs, and writes compact per-atom CSVs plus terminal summaries.
-- Full damage context: protein Bnet and its resolution-matched percentile
-  are calculated with the bundled reference database and reported alongside
-  E-path results. Their scientific defaults are fixed by the integrated RABDAM
-  pipeline rather than exposed as additional E-path settings.
-
-These improvements intentionally remove some RABDAM 2 application features.
-E-path does not support the legacy text input file, `-f`, `-i`, `-r`
-dataframe restart modes, interactive overwrite prompts, or restartable
-dataframe outputs, and it does not produce RABDAM's HTML report, its
-per-structure BDamage plots, or its BDamage-coloured coordinate files. E-path
-writes its own equivalents instead: the `*_zfalloff.png` plot and the
-`*_model.cif` file with BDamage in the B-factor column.
-
-E-path also has no equivalent of RABDAM's optional `filter` setting, which
-stops a run when the model fails the Bnet eligibility criteria of Shelley &
-Garman (2022). As in a default RABDAM run, Bnet and its percentile are
-reported without those checks.
-
-E-path also does not expose RABDAM's atom-selection controls. RABDAM allows
-HETATM, nucleic-acid, and per-atom or per-component selection overrides;
-E-path fixes the population at protein atoms, because a pathway analysis that
-compares clusters between structures requires the scored population to be
-defined the same way in every model.
+- The legacy text input file, the `-f`, `-i`, and `-r` dataframe restart modes,
+  interactive overwrite prompts, and restartable dataframe outputs.
+- RABDAM's HTML report, per-structure BDamage plots, and BDamage-coloured
+  coordinate files. `*_zfalloff.png` and `*_model.cif` take their place.
+- The optional `filter` setting, which stops a run when the model fails the
+  Bnet eligibility criteria of Shelley & Garman (2022). As in a default RABDAM
+  run, Bnet and its percentile are reported without those checks.
+- The atom-selection controls. E-path always scores protein atoms, for
+  reasons given in the
+  [design notes](design-notes.md#why-only-protein-atoms-are-scored).

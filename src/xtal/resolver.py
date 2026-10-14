@@ -132,7 +132,7 @@ def resolve_structure_input(raw_input: str) -> ResolvedStructureInput:
         f"Could not resolve structure input {raw_input!r}.\n"
         f"Expected an existing local {_describe_suffixes()} file, optionally "
         f"gzipped ({COMPRESSED_SUFFIX}), "
-        "or a classic 4-character PDB ID such as 1LYZ."
+        "or a classic 4-character PDB ID such as 1ABC."
     )
 
 

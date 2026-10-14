@@ -76,7 +76,7 @@ def _add_structure_input_argument(group: Any) -> None:
         help=(
             f"One or more paths to {'/'.join(SUPPORTED_STRUCTURE_SUFFIXES)} "
             f"files, optionally gzipped ({COMPRESSED_SUFFIX}), or 4-character "
-            "PDB IDs such as 1LYZ."
+            "PDB IDs such as 1ABC."
         ),
     )
 
