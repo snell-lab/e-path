@@ -24,8 +24,10 @@ def write_z_score_falloff(
     Only the atoms with a Z-score of zero or below are drawn, lowest first.
     The Z-scores are centred on their mean, so at least one atom qualifies.
 
-    The selection threshold is marked, so the plot shows where the cutoff
-    falls on the falloff.
+    The selected atoms are shaded and the last of them is marked with a
+    dashed line, so the plot shows where the cutoff falls on the falloff.
+    Ties at the cutoff share a Z-score, so the selection is exactly the first
+    ranks of the curve.
 
     Missing parent directories are created and an existing file is replaced.
     The path written is returned.
@@ -45,14 +47,18 @@ def write_z_score_falloff(
     figure = pyplot.figure(figsize=PLOT_FIGSIZE)
     try:
         pyplot.plot(range(1, len(tail) + 1), tail, color="black", linewidth=1.0)
-        pyplot.axhline(
-            threshold,
-            color="red",
-            linestyle="--",
-            linewidth=1.0,
-            label=f"selection threshold Z = {threshold:.3f}",
-        )
-        pyplot.legend(loc="lower right", fontsize="small")
+        selected_count = len(selection_result.selected_atoms)
+        if selected_count:
+            pyplot.axvspan(0, selected_count, color="tab:cyan", alpha=0.15, linewidth=0)
+            pyplot.axvline(
+                selected_count,
+                color="tab:cyan",
+                linestyle="--",
+                linewidth=1.0,
+                label=f"{selected_count} atoms selected, Z = {threshold:.2f}",
+            )
+            pyplot.legend(loc="lower right", fontsize="small")
+        pyplot.xlim(left=0)
         pyplot.xlabel("Atom rank by ascending BDamage Z-score")
         pyplot.ylabel("BDamage Z-score")
         pyplot.title("BDamage Z-score falloff")

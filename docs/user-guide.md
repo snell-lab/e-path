@@ -202,8 +202,9 @@ temperatures missing from PDB-REDO were taken from the RCSB mmCIF.
 SHA-256, and E-path refuses to load a CSV that does not match that digest.
 
 `*_zfalloff.png` ranks atoms by ascending BDamage Z-score and plots the
-negative tail, which is the region the selection is drawn from. The selection
-threshold is marked, so the plot shows where the cutoff falls on the falloff.
+negative tail, which is the region the selection is drawn from. The selected
+atoms are shaded and the cutoff is marked, so the plot shows where it falls
+on the falloff.
 
 ### Coordinate Files
 
