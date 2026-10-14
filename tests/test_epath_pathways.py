@@ -1,6 +1,7 @@
 """Residue chemistry, cofactor sites and proximity, and pathway description."""
 
 from collections.abc import Sequence
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -390,8 +391,11 @@ def test_residue_path_listing_and_step_provenance() -> None:
         atom_names=["CA", "O", "CB", "CB", "CA", "CA"],
     )
     clusters = cluster_selected_atoms(scored, distance_cutoff=4.0)
+    # The peptide bond of His87 to His88, which the model holds though the
+    # path does not.
+    cleaned = _backbone_bonds([(("HIS", 87, ""), ("HIS", 88, ""), True)])
 
-    report = analyze_paths(clusters, cleaned_atoms=()).reports[0]
+    report = analyze_paths(clusters, cleaned_atoms=cleaned).reports[0]
 
     # Chains are ordered by the lowest residue number each contributes, so
     # chain B's Ala5 leads; atoms keep the order the graph reached them in.
@@ -441,3 +445,76 @@ def test_single_residue_path() -> None:
     assert report.residue_path.startswith("Chain A - Phe9 (CG, ")
     assert set(report.residues[0].atom_names) == {"CG", "CD1", "CE1"}
     assert report.edges.between_residues == 0 and report.edges.peptide_fraction == 0.0
+
+
+def _backbone_bonds(
+    pairs: Sequence[tuple[tuple[str, int, str], tuple[str, int, str], bool]],
+) -> list[PreparedAtom]:
+    """The C of the first residue and the N of the second, for each pair.
+
+    Each residue is its name, number and insertion code, in chain A. The two
+    atoms are 1.33 A apart, a peptide bond, when the pair is bonded, and
+    3.5 A apart, a chain break, when it is not.
+    """
+    atoms: list[PreparedAtom] = []
+    for index, (first, second, bonded) in enumerate(pairs):
+        x = 100.0 + 10.0 * index
+        for (name, number, icode), atom_name, atom_x in (
+            (first, "C", x),
+            (second, "N", x + (1.33 if bonded else 3.5)),
+        ):
+            atoms.append(
+                make_prepared_atom(
+                    source_atom_index=1000 + len(atoms),
+                    residue_name=name,
+                    residue_number=number,
+                    insertion_code=icode,
+                    atom_name=atom_name,
+                    element=atom_name,
+                    x=atom_x,
+                )
+            )
+    return atoms
+
+
+def test_peptide_steps_follow_modelled_bonds_not_numbers() -> None:
+    residues = [(10, ""), (11, ""), (52, ""), (52, "B"), (60, ""), (70, "")]
+    scored = tuple(
+        replace(atom, record=replace(atom.record, insertion_code=icode))
+        for atom, (_, icode) in zip(
+            scored_atoms_from_coordinates(
+                [(3.5 * i, 0.0, 0.0) for i in range(len(residues))],
+                residue_numbers=[number for number, _ in residues],
+            ),
+            residues,
+            strict=True,
+        )
+    )
+    cleaned = _backbone_bonds(
+        [
+            # Consecutive numbers across a chain break.
+            (("ALA", 10, ""), ("ALA", 11, ""), False),
+            # One number, but 52A lies between them.
+            (("ALA", 52, ""), ("ALA", 52, "A"), True),
+            (("ALA", 52, "A"), ("ALA", 52, "B"), True),
+            # A jump in numbering across an unbroken chain.
+            (("ALA", 60, ""), ("ALA", 70, ""), True),
+        ]
+    )
+
+    report = analyze_paths(
+        cluster_selected_atoms(scored, distance_cutoff=4.0), cleaned_atoms=cleaned
+    ).reports[0]
+
+    kinds = {
+        frozenset((step.first_residue, step.second_residue)): step.kind
+        for step in report.steps
+    }
+    assert kinds == {
+        frozenset(("Ala10", "Ala11")): "tertiary",
+        frozenset(("Ala11", "Ala52")): "tertiary",
+        frozenset(("Ala52", "Ala52B")): "tertiary",
+        frozenset(("Ala52B", "Ala60")): "tertiary",
+        frozenset(("Ala60", "Ala70")): "peptide",
+    }
+    assert report.edges.peptide_fraction == approx(1 / 5)

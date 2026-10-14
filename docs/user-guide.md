@@ -141,9 +141,15 @@ are classified by how they connect residues:
 `peptide_edge_fraction` is the share of between-residue steps that follow the
 sequence. It separates a rigid stretch of backbone from a path of the same size
 whose steps jump between residues that are distant in sequence, which geometry
-alone reports as identical. Peptide steps are identified by sequence adjacency
-within a chain rather than by a modelled backbone bond, so a chain break
-numbered consecutively counts as peptide-contiguous.
+alone reports as identical.
+
+Peptide steps are identified by a modelled peptide bond, the carbonyl C of one
+residue within 2.0 Å of the amide N of the other, not by residue numbers. A
+chain break is never a peptide step, however the residues on either side are
+numbered, and neither is a step to a residue whose backbone C or N is not
+modelled. Residues joined across a jump in numbering or an insertion code are
+peptide steps as long as the bond is there.
+
 
 `*_steps.csv` lists every step individually, with its length, its kind, and the
 two atoms it joins. Steps are listed in the order the spanning tree was built,

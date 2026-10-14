@@ -41,9 +41,19 @@ from epath.analysis.labels import (
 )
 from epath.analysis.residues import ResidueComposition, analyze_composition
 from rabdam.structure.models import PreparedAtom
+from spatial import radius_neighbour_indices
 from xtal.reader import AtomRecord
 
 StepKind = Literal["intra_residue", "peptide", "tertiary", "interchain"]
+
+# Two residues are joined by a peptide bond when the carbonyl C of one lies
+# within this distance of the amide N of the other. The bond is 1.33 A long,
+# and a chain break leaves the two atoms well over this apart.
+PEPTIDE_BOND_MAXIMUM_ANGSTROM = 2.0
+
+# The chain, residue number and insertion code of a residue, as `residue_key`
+# gives them.
+type ResidueKey = tuple[str, int | None, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,9 +83,9 @@ class EdgeProvenance:
     counted on the minimum spanning tree, so they are the same steps the
     reported length and mean step describe.
 
-    Peptide steps are identified by sequence adjacency within a chain rather
-    than by a modelled backbone bond, so a chain break numbered consecutively
-    counts as peptide-contiguous.
+    A peptide step joins two residues that a modelled peptide bond links, so
+    a chain break is never one, however the residues on either side are
+    numbered.
     """
 
     intra_residue: int
@@ -202,24 +212,60 @@ def analyze_paths(
     The reports are in the order of `clusters`.
     """
     context = build_cofactor_context(cleaned_atoms)
+    peptide_links = _peptide_links(cleaned_atoms)
 
     return PathAnalysisResult(
         reports=tuple(
-            _build_path_report(cluster, context=context) for cluster in clusters
+            _build_path_report(cluster, context=context, peptide_links=peptide_links)
+            for cluster in clusters
         ),
         cofactor_sites=context.sites,
     )
+
+
+def _peptide_links(
+    cleaned_atoms: Sequence[PreparedAtom],
+) -> frozenset[frozenset[ResidueKey]]:
+    """Return each pair of residues of the model joined by a peptide bond.
+
+    Each pair is the keys of its two residues. A residue whose backbone C or N
+    is not modelled is joined to nothing on that side.
+    """
+    backbone = [
+        (atom.record.atom_name.strip().upper(), atom.record)
+        for atom in cleaned_atoms
+        if atom.is_protein and atom.record.atom_name.strip().upper() in {"C", "N"}
+    ]
+    if not backbone:
+        return frozenset()
+
+    neighbours = radius_neighbour_indices(
+        np.asarray([(record.x, record.y, record.z) for _, record in backbone]),
+        PEPTIDE_BOND_MAXIMUM_ANGSTROM,
+    )
+    links: set[frozenset[ResidueKey]] = set()
+    for index, (name, record) in enumerate(backbone):
+        if name != "C":
+            continue
+
+        for neighbour_index in neighbours[index]:
+            neighbour_name, neighbour = backbone[neighbour_index]
+            if neighbour_name == "N" and residue_key(neighbour) != residue_key(record):
+                links.add(frozenset((residue_key(record), residue_key(neighbour))))
+
+    return frozenset(links)
 
 
 def _build_path_report(
     cluster: EpathCluster,
     *,
     context: CofactorContext,
+    peptide_links: frozenset[frozenset[ResidueKey]],
 ) -> PathReport:
     """Describe one cluster as a pathway.
 
-    `context` describes the whole model, not the cluster, so `analyze_paths`
-    builds it once and passes it to every cluster.
+    `context` and `peptide_links` describe the whole model, not the cluster,
+    so `analyze_paths` builds them once and passes them to every cluster.
     """
     atoms = [scored_atom.record for scored_atom in cluster.atoms]
     coordinates = coordinates_for_atoms(cluster.atoms)
@@ -233,7 +279,7 @@ def _build_path_report(
         residue_path=_format_residue_path(residues),
         nearby_cofactors=find_nearby_cofactors(atoms, context),
         composition=composition,
-        steps=_path_steps(atoms, coordinates),
+        steps=_path_steps(atoms, coordinates, peptide_links),
     )
 
 
@@ -283,6 +329,7 @@ def _path_residues(atoms: Sequence[AtomRecord]) -> tuple[PathResidue, ...]:
 def _path_steps(
     atoms: Sequence[AtomRecord],
     coordinates: NDArray[np.float64],
+    peptide_links: frozenset[frozenset[ResidueKey]],
 ) -> tuple[PathStep, ...]:
     """Return each step of a path with its length and how it connects residues.
 
@@ -294,7 +341,9 @@ def _path_steps(
         PathStep(
             step_index=step_index,
             length=edge.length,
-            kind=_edge_kind(atoms[edge.first_index], atoms[edge.second_index]),
+            kind=_edge_kind(
+                atoms[edge.first_index], atoms[edge.second_index], peptide_links
+            ),
             first_atom=atom_token(atoms[edge.first_index]),
             first_residue=residue_label(atoms[edge.first_index]),
             second_atom=atom_token(atoms[edge.second_index]),
@@ -304,23 +353,25 @@ def _path_steps(
     )
 
 
-def _edge_kind(first: AtomRecord, second: AtomRecord) -> StepKind:
+def _edge_kind(
+    first: AtomRecord,
+    second: AtomRecord,
+    peptide_links: frozenset[frozenset[ResidueKey]],
+) -> StepKind:
     """Return how a step between two atoms connects their residues.
 
-    A residue without a number is never a sequence neighbour.
+    `peptide_links` holds the residue pairs of the model joined by a peptide
+    bond, as `_peptide_links` returns them. Residue numbers play no part.
     """
-    if residue_key(first) == residue_key(second):
+    first_key = residue_key(first)
+    second_key = residue_key(second)
+    if first_key == second_key:
         return "intra_residue"
 
     if first.chain_id != second.chain_id:
         return "interchain"
 
-    if first.residue_number is None or second.residue_number is None:
-        return "tertiary"
-
-    # Residues that share a number and differ in insertion code are sequence
-    # neighbours too, which is the case of a difference of zero.
-    if abs(first.residue_number - second.residue_number) <= 1:
+    if frozenset((first_key, second_key)) in peptide_links:
         return "peptide"
 
     return "tertiary"
