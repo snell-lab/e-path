@@ -74,6 +74,58 @@ def _exact_case(
     pytest.fail(f"No carbon count lands exactly on {target}.")
 
 
+def test_derived_fields_follow_the_gemmi_cell() -> None:
+    crystal = validate_crystal(make_metadata(), macromolecule_atoms=())
+
+    assert crystal.space_group_name == "P 1 21 1"
+    assert crystal.operation_count == len(crystal.operations) == 2
+    expected_volume = 15 * 16 * 17 * math.sin(math.radians(95))
+    assert crystal.unit_cell_volume_angstrom3 == approx(expected_volume, rel=1e-9)
+    # No atoms means no content check, and nothing to warn about.
+    assert crystal.content is None and crystal.warnings == ()
+
+
+def test_matthews_coefficient_and_solvent_fraction() -> None:
+    atoms = make_macromolecule_atoms(["C"] * 100 + ["N"] * 30 + ["O"] * 30 + ["S"] * 2)
+    crystal = validate_crystal(
+        make_metadata(cell=(20, 20, 20, 90, 90, 90), space_group="P 1"),
+        macromolecule_atoms=atoms,
+    )
+
+    content = crystal.content
+    assert content is not None
+    mass = macromolecule_mass(atoms).total_dalton
+    assert content.macromolecule_mass_dalton == approx(mass)
+    assert content.macromolecule_atom_count == len(atoms)
+    assert content.matthews_coefficient == approx(8000 / mass)
+    assert content.solvent_fraction == approx(
+        1 - MATTHEWS_PROTEIN_CONSTANT / (8000 / mass)
+    )
+    assert crystal.warnings == ()
+
+
+def test_content_warnings_and_rejection() -> None:
+    # Ten carbon atoms in a 30 A cube: far too little protein for the cell.
+    sparse = validate_crystal(
+        make_metadata(cell=(30, 30, 30, 90, 90, 90), space_group="P 1"),
+        macromolecule_atoms=make_macromolecule_atoms(["C"] * 10),
+    )
+    assert len(sparse.warnings) == 1 and "higher than expected" in sparse.warnings[0]
+
+    # A 10 A cube holding 60 carbon atoms is dense but still fits.
+    dense = validate_crystal(
+        make_metadata(cell=(10, 10, 10, 90, 90, 90), space_group="P 1"),
+        macromolecule_atoms=make_macromolecule_atoms(["C"] * 60),
+    )
+    assert len(dense.warnings) == 1 and "lower than expected" in dense.warnings[0]
+
+    with pytest.raises(CrystalValidationError, match="cannot fit"):
+        validate_crystal(
+            make_metadata(cell=(10, 10, 10, 90, 90, 90), space_group="P 1"),
+            macromolecule_atoms=make_macromolecule_atoms(["C"] * 200),
+        )
+
+
 @pytest.mark.parametrize(
     "target", [MINIMUM_PLAUSIBLE_MATTHEWS, MAXIMUM_PLAUSIBLE_MATTHEWS]
 )
@@ -273,11 +325,6 @@ def test_all_unrecognized_elements_skip_the_content_check_with_a_warning() -> No
     assert "None of the 2 macromolecule element symbols" in crystal.warnings[0]
 
 
-def test_no_atoms_skip_the_content_check_silently() -> None:
-    crystal = validate_crystal(make_metadata(), macromolecule_atoms=[])
-    assert crystal.content is None and crystal.warnings == ()
-
-
 def test_centering_counts_toward_the_asymmetric_units() -> None:
     atoms = make_macromolecule_atoms(["C"] * 100)
 
@@ -291,26 +338,6 @@ def test_centering_counts_toward_the_asymmetric_units() -> None:
     assert crystal.content.matthews_coefficient == approx(
         40 * 30 * 20 / (4 * macromolecule_mass(atoms).total_dalton)
     )
-
-
-def test_reported_name_shows_the_setting() -> None:
-    crystal = validate_crystal(
-        make_metadata(cell=(50, 50, 60, 90, 90, 120), space_group="R 3"),
-        macromolecule_atoms=(),
-    )
-
-    assert crystal.space_group_name == "R 3:H"
-    assert crystal.operation_count == 9
-
-
-def test_derived_fields_follow_the_gemmi_cell() -> None:
-    crystal = validate_crystal(
-        make_metadata(cell=(10, 20, 30, 90, 90, 90)), macromolecule_atoms=()
-    )
-
-    assert crystal.unit_cell_volume_angstrom3 == approx(6000.0)
-    assert crystal.translation_vectors[2, 2] == approx(30.0)
-    assert len(crystal.operations) == crystal.operation_count
 
 
 def test_a_file_cell_with_no_physical_volume_is_rejected() -> None:
