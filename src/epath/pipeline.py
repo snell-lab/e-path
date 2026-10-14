@@ -193,7 +193,6 @@ def run_epath_pipeline(
             clusters,
             scored_atoms=selection_result.scored_atoms,
             cleaned_atoms=cleaned_atoms,
-            distance_cutoff=options.clustering.distance_cutoff,
         ),
         stage_runner=stage_runner,
     )

@@ -147,8 +147,7 @@ and the details of its outputs are in `docs/`:
 - [Scored atom population](docs/scored-atoms.md): why only protein atoms are
   scored and why that is not configurable.
 - [Pathway table](docs/pathways.md): endpoints, cofactor anchors, step
-  provenance, per-pathway coordinate files, and the topology and composition
-  measurements.
+  provenance, per-pathway coordinate files, and the composition measurements.
 - [Comparing models](docs/comparing-models.md): the run-level table for
   comparing structures across a cohort.
 - [Input validation](docs/input-validation.md): the Matthews-coefficient check

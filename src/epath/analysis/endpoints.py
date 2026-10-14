@@ -253,8 +253,8 @@ def find_path_anchor(
 ) -> PathAnchor | None:
     """Return the cofactor nearest to any atom of a path, if one is in range.
 
-    The two endpoints only describe where a path stops. A long or branched path
-    can touch a cofactor part-way along its length while both of its ends lie
+    The two endpoints only describe where a path stops. A long path can
+    touch a cofactor part-way along its length while both of its ends lie
     elsewhere, so every atom is tested, against the same range that places an
     endpoint in a cofactor's environment.
 

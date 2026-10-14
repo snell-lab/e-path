@@ -164,7 +164,6 @@ def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
     )
     for report in path_reports:
         metrics = report.cluster.metrics
-        topology = report.topology
         lines.extend(
             (
                 "",
@@ -186,11 +185,6 @@ def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
                     f"  MST mean step: {_number(metrics.mean_step)} A   "
                     f"largest edge: {_number(metrics.mst_largest_edge)} A   "
                     f"span: {_number(metrics.span)} A"
-                ),
-                (
-                    f"  Topology: {topology.topology} "
-                    f"(span/length {_number(topology.linearity)}, "
-                    f"junction nodes {_number(topology.branch_fraction)})"
                 ),
                 (
                     f"  Steps: {report.edges.intra_residue} within residues, "

@@ -1,4 +1,4 @@
-"""Residue chemistry, topology, endpoints, cofactor anchors, and pathway description."""
+"""Residue chemistry, endpoints, cofactor anchors, and pathway description."""
 
 from collections.abc import Sequence
 
@@ -12,7 +12,7 @@ from support import (
     scored_atoms_from_coordinates,
 )
 
-from epath.analysis.clustering import cluster_selected_atoms, mst_length_stats
+from epath.analysis.clustering import cluster_selected_atoms
 from epath.analysis.endpoints import (
     annotate_endpoint,
     build_endpoint_context,
@@ -27,7 +27,6 @@ from epath.analysis.residues import (
     class_fractions,
     residue_class,
 )
-from epath.analysis.topology import PathTopology, analyze_topology
 from rabdam.structure.models import PreparedAtom
 
 
@@ -85,50 +84,6 @@ def test_composition_fractions_sum_to_one_and_report_dominance_and_enrichment() 
 
     mixed = analyze_composition(["ALA"] * 5 + ["ASP"] * 6, background=background)
     assert mixed.dominant_classes == ("charged", "hydrophobic")  # 5/11 >= 0.8 * 6/11
-
-
-def _topology(
-    coordinates: Sequence[tuple[float, float, float]],
-    residue_indices: Sequence[int],
-    cutoff: float = 4.0,
-) -> PathTopology:
-    """Classify one-atom-per-residue coordinates as a cluster topology."""
-    array = np.asarray(coordinates, dtype=float)
-    return analyze_topology(
-        array, residue_indices, mst_length_stats(array), distance_cutoff=cutoff
-    )
-
-
-def test_topology_classes() -> None:
-    line = _topology([(3.5 * i, 0, 0) for i in range(6)], list(range(6)))
-    assert (
-        line.topology == "linear"
-        and line.linearity == approx(1.0)
-        and line.branch_fraction == 0.0
-    )
-
-    # A hub residue in contact with three arms: one junction in four residues.
-    arms = [(3.5, 0, 0), (-3.5, 0, 0), (0, 3.5, 0)]
-    star = _topology([(0, 0, 0), *arms], [0, 1, 2, 3])
-    assert star.topology == "branched" and star.branch_fraction == approx(0.25)
-    # Atoms at exactly the cutoff are in contact, and atoms just beyond are not.
-    assert _topology([(0, 0, 0), *arms], [0, 1, 2, 3], cutoff=3.5).branch_fraction > 0
-    assert _topology([(0, 0, 0), *arms], [0, 1, 2, 3], cutoff=3.4).branch_fraction == 0
-    # A hub residue of two atoms touches each arm twice, which is still one
-    # contact per arm, and its own two atoms are not a contact at all.
-    doubled = _topology([(0, 0, 0), (0, 0, 1), *arms], [0, 0, 1, 2, 3])
-    assert doubled.branch_fraction == approx(0.25)
-
-    # A tightly wound coil: a long path packed into a short span, and only
-    # consecutive residues in contact, so neither linear nor branched.
-    steps = np.arange(40)
-    coil = [
-        (3.0 * np.cos(np.radians(30 * i)), 3.0 * np.sin(np.radians(30 * i)), 0.2 * i)
-        for i in steps
-    ]
-    compact = _topology(coil, list(range(40)), cutoff=1.6)
-    assert compact.topology == "clustered"
-    assert compact.linearity < 0.2 and compact.branch_fraction == 0.0
 
 
 def _cleaned_model() -> tuple[PreparedAtom, ...]:
@@ -357,7 +312,6 @@ def _path(
 
 def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
     at_start = _path(["TRP", "ALA", "LEU", "TYR", "VAL", "GLY"], cofactor_at_start=True)
-    assert at_start.topology.topology == "linear"
     assert (
         at_start.start_endpoint.kind == "cofactor"
         and at_start.end_endpoint.kind == "low_packing"
@@ -388,7 +342,7 @@ def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
     assert unanchored.anchor is None
     assert unanchored.anchor_summary == "no cofactor in range"
     assert unanchored.start_endpoint.kind == "low_packing"
-    assert unanchored.structural_descriptor == "Hydrophobic corridor"
+    assert unanchored.structural_descriptor == "Hydrophobic path"
 
 
 def test_residue_path_listing_and_step_provenance() -> None:

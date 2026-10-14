@@ -3,16 +3,14 @@
 This module turns the geometric clusters produced by connectivity analysis
 into the pathway description the E-path analysis reports. A description gives
 the residues and protected atoms along the path, the environments its two ends
-terminate in, the cofactor it comes nearest to, and its graph topology and
-residue chemistry.
+terminate in, the cofactor it comes nearest to, and its residue chemistry.
 
 These are measurements, reported as the basis for interpreting a path with
 the protein's known chemistry in view.
 
 `epath.analysis.clustering` supplies the clusters and their geometry. The
-topology comes from `epath.analysis.topology`, the chemistry from
-`epath.analysis.residues`, and the endpoints and the anchor from
-`epath.analysis.endpoints`. This module gathers them into one report for each
+chemistry comes from `epath.analysis.residues`, and the endpoints and the
+anchor from `epath.analysis.endpoints`. This module gathers them into one report for each
 cluster and adds the residue listing, the steps, and the descriptor.
 `epath.pipeline` calls `analyze_paths` once for a model, and `epath.outputs`
 and `epath.cli.report` write the reports out.
@@ -26,11 +24,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from epath.analysis.clustering import (
-    DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
-    EpathCluster,
-    coordinates_for_atoms,
-)
+from epath.analysis.clustering import EpathCluster, coordinates_for_atoms
 from epath.analysis.endpoints import (
     CofactorSite,
     EndpointContext,
@@ -57,16 +51,8 @@ from epath.analysis.residues import (
     class_fractions,
 )
 from epath.analysis.selection import EpathScoredAtom
-from epath.analysis.topology import PathTopology, TopologyClass, analyze_topology
 from rabdam.structure.models import PreparedAtom
 from xtal.reader import AtomRecord
-
-_TOPOLOGY_NOUNS: dict[TopologyClass, str] = {
-    "linear": "corridor",
-    "branched": "network",
-    "clustered": "cluster",
-}
-
 
 StepKind = Literal["intra_residue", "peptide", "tertiary", "interchain"]
 
@@ -161,7 +147,6 @@ class PathReport:
     start_endpoint: PathEndpoint
     end_endpoint: PathEndpoint
     anchor: PathAnchor | None
-    topology: PathTopology
     composition: ResidueComposition
     steps: tuple[PathStep, ...]
     structural_descriptor: str
@@ -230,12 +215,10 @@ def analyze_paths(
     *,
     scored_atoms: Sequence[EpathScoredAtom],
     cleaned_atoms: Sequence[PreparedAtom],
-    distance_cutoff: float = DEFAULT_CLUSTER_DISTANCE_ANGSTROM,
 ) -> PathAnalysisResult:
     """Describe every reported cluster as a pathway.
 
-    The reports are in the order of `clusters`. `distance_cutoff` must be the
-    cutoff the clusters were built with, in angstroms.
+    The reports are in the order of `clusters`.
     """
     context = build_endpoint_context(
         scored_atoms=scored_atoms,
@@ -252,7 +235,6 @@ def analyze_paths(
                 cluster,
                 context=context,
                 background=background,
-                distance_cutoff=distance_cutoff,
             )
             for cluster in clusters
         ),
@@ -265,7 +247,6 @@ def _build_path_report(
     *,
     context: EndpointContext,
     background: dict[ResidueClass, float],
-    distance_cutoff: float,
 ) -> PathReport:
     """Describe one cluster as a pathway.
 
@@ -274,16 +255,10 @@ def _build_path_report(
     """
     atoms = [scored_atom.record for scored_atom in cluster.atoms]
     coordinates = coordinates_for_atoms(cluster.atoms)
-    residues, residue_indices = _path_residues(atoms)
+    residues = _path_residues(atoms)
     composition = analyze_composition(
         (residue.residue_name for residue in residues),
         background=background,
-    )
-    topology = analyze_topology(
-        coordinates,
-        residue_indices,
-        cluster.metrics,
-        distance_cutoff=distance_cutoff,
     )
     first_index, second_index, _ = maximum_pairwise_distance_pair(coordinates)
     start_endpoint = annotate_endpoint(cluster.atoms[first_index], context)
@@ -297,21 +272,17 @@ def _build_path_report(
         start_endpoint=start_endpoint,
         end_endpoint=end_endpoint,
         anchor=find_path_anchor(atoms, context),
-        topology=topology,
         composition=composition,
         steps=_path_steps(atoms, coordinates),
         structural_descriptor=_structural_descriptor(
             composition=composition,
-            topology=topology,
             endpoints=(start_endpoint, end_endpoint),
             residue_count=len(residues),
         ),
     )
 
 
-def _path_residues(
-    atoms: Sequence[AtomRecord],
-) -> tuple[tuple[PathResidue, ...], list[int]]:
+def _path_residues(atoms: Sequence[AtomRecord]) -> tuple[PathResidue, ...]:
     """Group a path's atoms into residues, in ascending residue order.
 
     Chains are ordered by the lowest residue number of the path they
@@ -319,9 +290,6 @@ def _path_residues(
     chain by residue number and then insertion code. This is the order the
     E-path table lists them in. The atoms of a residue keep the order they
     have in `atoms`.
-
-    The residues are returned with, for each atom, the index of its residue
-    among them.
     """
     grouped: dict[tuple[str, int | None, str], list[AtomRecord]] = {}
     for atom in atoms:
@@ -345,7 +313,7 @@ def _path_residues(
         ),
     )
 
-    residues = tuple(
+    return tuple(
         PathResidue(
             chain_id=key[0],
             residue_name=grouped[key][0].residue_name.strip().upper(),
@@ -355,10 +323,6 @@ def _path_residues(
         )
         for key in ordered_keys
     )
-    position_by_key = {key: position for position, key in enumerate(ordered_keys)}
-    residue_indices = [position_by_key[residue_key(atom)] for atom in atoms]
-
-    return residues, residue_indices
 
 
 def _path_steps(
@@ -426,16 +390,15 @@ def _format_residue_path(residues: Sequence[PathResidue]) -> str:
 def _structural_descriptor(
     *,
     composition: ResidueComposition,
-    topology: PathTopology,
     endpoints: Sequence[PathEndpoint],
     residue_count: int,
 ) -> str:
-    """Name a path by its dominant chemistry, its shape, and its enrichment.
+    """Name a path by its dominant chemistry, its setting, and its enrichment.
 
     A path with no dominant class, which is one made only of residues outside
     the named classes, is an "Unassigned cluster". A path within one residue
     is a hotspot. Any other is an interface motif when either endpoint lies at
-    an interface, and otherwise takes its noun from its topology. The classes
+    an interface, and otherwise a path. The classes
     it is enriched in are added unless they are already named as dominant.
     """
     dominant = composition.dominant_classes
@@ -453,7 +416,7 @@ def _structural_descriptor(
     if any(endpoint.kind == "interface" for endpoint in endpoints):
         noun = "interface motif"
     else:
-        noun = _TOPOLOGY_NOUNS[topology.topology]
+        noun = "path"
 
     enriched = [name for name in composition.enriched_classes if name not in dominant]
     descriptor = f"{adjective.capitalize()} {noun}"

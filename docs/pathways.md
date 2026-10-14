@@ -13,8 +13,8 @@ published. Each pathway is reported with:
 - the residue count, the node (atom) count, and the total path length.
 - the environments the two ends of the path terminate in.
 - the cofactor nearest to any atom of the path, and its distance.
-- the topology, step provenance, and residue-chemistry measurements, and a
-  structural descriptor that summarizes them.
+- the step provenance and residue-chemistry measurements, and a structural
+  descriptor that summarizes them.
 
 These measurements are the basis for interpreting a path with the protein's
 known chemistry in view.
@@ -71,8 +71,8 @@ lies near. The lists are `REDOX_ACTIVE_METALS` and `ORGANIC_REDOX_COFACTORS` in
 same metal added for crystallization, so a manganese or nickel ion from the
 mother liquor is still listed as a cofactor and should be discounted by eye.
 
-The two endpoints only describe where a path stops. A long or branched path can
-touch a cofactor part-way along its length while both of its ends lie
+The two endpoints only describe where a path stops. A long path can touch a
+cofactor part-way along its length while both of its ends lie
 elsewhere, so each path is also given an anchor: the cofactor nearest to any of
 its atoms, when one lies within 8.0 A. `anchor_cofactor`, `anchor_distance`,
 and `anchor_atom` in `*_clusters.csv` record the site, the distance, and the
@@ -130,16 +130,7 @@ both of which already carry real values. Path numbers are zero padded so the
 files sort in path order, and they are suppressed by `--no-cif` along with the
 other coordinate outputs.
 
-## Topology, Composition, and Descriptor
-
-Topology comes from the span-to-length ratio and node connectivity. A path
-whose span is at least 20% of its total MST length is `linear`; connectivity is
-counted between residues rather than atoms, and a path where at least 25% of
-residues contact three or more other residues of the same cluster is
-`branched`; anything else is `clustered`. Connectivity is deliberately not
-counted between atoms: the atoms of one side chain are all mutually close and
-an aromatic ring contains junctions of its own, so atom connectivity would
-mostly report the shape of the residues rather than a fork in the path.
+## Composition and Descriptor
 
 Composition assigns each residue exactly one chemistry class, so the reported
 fractions sum to one. Histidine and tyrosine count as aromatic rather than
@@ -150,10 +141,12 @@ measured against the structure being analysed rather than a fixed reference.
 An enriched class must also make up at least 7% of the path's residues, so
 that a single residue of a rare class in a long path is not called enrichment.
 
-The topology thresholds and the endpoint and anchor distances are fixed. They
-are constants in `epath.analysis.topology` and `epath.analysis.endpoints`.
+The endpoint and anchor distances are fixed. They are constants in
+`epath.analysis.endpoints`.
 
 Structural descriptors are generated from the same measurements, naming what
-the path is mostly made of, its topology, and the classes it is enriched in,
-which gives phrasings such as `Hydrophobic corridor with aromatic/sulfur
-enrichment` or `Single aromatic hotspot`.
+the path is mostly made of, whether it ends at a chain interface, and the
+classes it is enriched in, which gives phrasings such as `Hydrophobic path with
+aromatic/sulfur enrichment`, `Polar interface motif`, or `Single aromatic
+hotspot`. The shape of a path is not classified. Each pathway has its own
+coordinate file, described above, so its shape is best judged by eye.
