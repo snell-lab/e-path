@@ -95,8 +95,9 @@ cannot tell a functional metal from the same metal added for crystallization,
 so a manganese or nickel ion from the mother liquor is still listed as a
 cofactor and should be discounted by eye.
 
-Sites sharing a residue name are numbered by chain and residue number, which is
-what produces `SF4-1` to `SF4-7`.
+Sites sharing a residue name are numbered by chain, with the chains in the
+order they first appear in the input, and then by residue number, which is what
+produces `SF4-1` to `SF4-7`.
 
 Every cofactor that lies within 8.0 Å of any atom of a path is reported as
 near it, wherever along the path that atom is, so a path running between two

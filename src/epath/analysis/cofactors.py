@@ -205,10 +205,13 @@ def _cofactor_sites(
 ) -> tuple[tuple[CofactorSite, ...], NDArray[np.float64], NDArray[np.int_]]:
     """Return the cofactor sites, their atom coordinates, and each atom's site.
 
-    The sites are ordered by chain, residue number and insertion code.
+    The sites are ordered by chain, residue number and insertion code, with
+    the chains in the order they first appear in the model.
     """
+    chain_order: dict[str, int] = {}
     bound_groups: dict[tuple[str, str, int | None, str], list[AtomRecord]] = {}
     for atom in cleaned_atoms:
+        chain_order.setdefault(atom.record.chain_id, len(chain_order))
         # A bound group is whatever is neither polymer nor solvent.
         if atom.is_protein or atom.is_nucleic_acid or atom.is_solvent:
             continue
@@ -229,7 +232,11 @@ def _cofactor_sites(
             for key, records in bound_groups.items()
             if _is_redox_cofactor(key[1], records)
         ),
-        key=lambda key: (key[0], key[2] if key[2] is not None else 0, key[3]),
+        key=lambda key: (
+            chain_order[key[0]],
+            key[2] if key[2] is not None else 0,
+            key[3],
+        ),
     )
     labels = _site_labels([key[1] for key in ordered_keys])
 

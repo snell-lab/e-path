@@ -166,6 +166,31 @@ def test_only_redox_capable_groups_are_cofactors() -> None:
     assert [site.label for site in context.sites] == ["ZNH", "U10", "CU", "XYZ"]
 
 
+def test_cofactor_sites_follow_the_chain_order_of_the_model() -> None:
+    def site(index: int, chain_id: str) -> PreparedAtom:
+        return make_prepared_atom(
+            source_atom_index=index,
+            chain_id=chain_id,
+            residue_name="SF4",
+            residue_number=301,
+            atom_name="FE1",
+            element="FE",
+            is_hetatm=True,
+            x=20.0 * index,
+        )
+
+    cleaned = (
+        make_prepared_atom(source_atom_index=0, chain_id="2"),
+        make_prepared_atom(source_atom_index=1, chain_id="10"),
+        site(2, "10"),
+        site(3, "2"),
+    )
+
+    sites = build_cofactor_context(cleaned).sites
+
+    assert [(s.label, s.chain_id) for s in sites] == [("SF4-1", "2"), ("SF4-2", "10")]
+
+
 def test_cofactor_sites_are_numbered_and_other_groups_ignored() -> None:
     context = build_cofactor_context(_cleaned_model())
 
