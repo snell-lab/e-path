@@ -5,7 +5,7 @@
 - `pathways` describes each cluster as a path.
 - `residues` classifies path residues by side-chain chemistry.
 - `topology` measures whether a path is linear, branched, or clustered.
-- `endpoints` relates path ends to cofactors, interfaces, and the surface.
+- `endpoints` relates path ends to cofactors, interfaces, and packing density.
 - `geometry` holds the distance and spanning-tree helpers they share.
 - `labels` names atoms and residues for the tables and reports.
 """

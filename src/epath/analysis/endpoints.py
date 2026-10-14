@@ -1,9 +1,10 @@
 """Relate an E-path cluster to the cofactors and environments around it.
 
 The E-path pathway table records where each path starts and ends: at a
-cofactor, at a chain interface, or at the protein surface. Cofactors are
-excluded from the connectivity graph, so a path never runs through one, but
-a path can still lie within reach of one, and that proximity is reported.
+cofactor, at a chain interface, or by how densely packed its environment is.
+Cofactors are excluded from the connectivity graph, so a path never runs
+through one, but a path can still lie within reach of one, and that proximity
+is reported.
 
 Endpoints are the two atoms that define the cluster span, which the analysis
 already reports as the straight-line end-to-end distance of the path. A path
@@ -34,8 +35,8 @@ EndpointKind = Literal[
     "cofactor",
     "cofactor_region",
     "interface",
-    "surface",
-    "buried",
+    "low_packing",
+    "typical_packing",
 ]
 
 # An endpoint this close to a cofactor is in direct contact with it.
@@ -50,9 +51,9 @@ COFACTOR_PROXIMITY_ANGSTROM = 8.0
 INTERFACE_ANGSTROM = 4.0
 
 # Endpoints in the least densely packed quarter of the scored population are
-# reported as surface sites. Packing density is already calculated for every
-# scored atom, so no separate solvent-accessibility calculation is needed.
-SURFACE_PERCENTILE = 25.0
+# reported as low-packing sites, and the rest as typical-packing sites. Packing
+# density is the count BDamage already calculated for every scored atom.
+LOW_PACKING_PERCENTILE = 25.0
 
 # Only redox-capable groups are treated as cofactors. Every other bound group
 # (lipids, detergents, sugars, buffer and cryoprotectant molecules, substrates
@@ -134,8 +135,8 @@ class PathEndpoint:
 
     `label` is the reported name of the environment. It is the label of the
     cofactor site for a "cofactor" endpoint, that label followed by " region"
-    for a "cofactor_region" endpoint, and "Interface region", "Surface region"
-    or "Buried region" for the others. `atom_token` and `residue` name the
+    for a "cofactor_region" endpoint, and "Interface region",
+    "Low-packing region" or "Typical-packing region" for the others. `atom_token` and `residue` name the
     endpoint atom, in the forms of `labels.atom_token` and
     `labels.residue_label`.
     """
@@ -169,8 +170,8 @@ class EndpointContext:
     `(n, 3)`, and `cofactor_site_indices` gives, for each of those rows, the
     position of its site in `sites`. `protein_coordinates` and
     `protein_chain_ids` are aligned in the same way, one row per protein atom.
-    `surface_packing_density` is the packing density at or below which an
-    endpoint is a surface site.
+    `low_packing_density` is the packing density at or below which an
+    endpoint is a low-packing site.
     """
 
     sites: tuple[CofactorSite, ...]
@@ -178,7 +179,7 @@ class EndpointContext:
     cofactor_site_indices: NDArray[np.int_]
     protein_coordinates: NDArray[np.float64]
     protein_chain_ids: NDArray[np.str_]
-    surface_packing_density: float
+    low_packing_density: float
 
 
 def build_endpoint_context(
@@ -188,8 +189,8 @@ def build_endpoint_context(
 ) -> EndpointContext:
     """Collect the cofactor, chain, and packing context for endpoint labelling.
 
-    `scored_atoms` is every atom that received a BDamage score. The surface
-    threshold is the `SURFACE_PERCENTILE` percentile of their packing
+    `scored_atoms` is every atom that received a BDamage score. The
+    low-packing threshold is the `LOW_PACKING_PERCENTILE` percentile of their packing
     densities, so there must be at least one.
 
     `cleaned_atoms` is the complete cleaned model. The cofactor sites are taken
@@ -205,10 +206,10 @@ def build_endpoint_context(
         cofactor_site_indices=site_indices,
         protein_coordinates=protein_coordinates,
         protein_chain_ids=protein_chain_ids,
-        surface_packing_density=float(
+        low_packing_density=float(
             np.percentile(
                 [atom.bdamage_result.packing_density for atom in scored_atoms],
-                SURFACE_PERCENTILE,
+                LOW_PACKING_PERCENTILE,
             )
         ),
     )
@@ -219,11 +220,12 @@ def annotate_endpoint(atom: EpathScoredAtom, context: EndpointContext) -> PathEn
 
     Environments are tested in order of mechanistic weight. Contact with a
     cofactor comes first, then the environment of a nearby cofactor, then a
-    subunit interface, and finally the surface or interior of the chain itself.
+    subunit interface, and finally how densely packed the endpoint is.
 
     The cofactor is the one with the atom nearest to the endpoint. An interface
     is a protein atom of another chain within the interface distance, and a
-    surface site has a packing density no higher than the surface threshold.
+    low-packing site has a packing density no higher than the low-packing
+    threshold.
     Every range includes its limit.
     """
     record = atom.record
@@ -239,10 +241,10 @@ def annotate_endpoint(atom: EpathScoredAtom, context: EndpointContext) -> PathEn
     if _is_interface(point, record.chain_id, context):
         return _endpoint(record, label="Interface region", kind="interface")
 
-    if atom.bdamage_result.packing_density <= context.surface_packing_density:
-        return _endpoint(record, label="Surface region", kind="surface")
+    if atom.bdamage_result.packing_density <= context.low_packing_density:
+        return _endpoint(record, label="Low-packing region", kind="low_packing")
 
-    return _endpoint(record, label="Buried region", kind="buried")
+    return _endpoint(record, label="Typical-packing region", kind="typical_packing")
 
 
 def find_path_anchor(

@@ -253,7 +253,7 @@ def test_endpoints_are_labelled_in_order_of_mechanistic_weight() -> None:
     context = build_endpoint_context(
         scored_atoms=scored, cleaned_atoms=_cleaned_model()
     )
-    assert context.surface_packing_density == approx(
+    assert context.low_packing_density == approx(
         np.percentile([10, 20, 30, 40, 50, 60, 70, 80], 25)
     )
 
@@ -277,22 +277,25 @@ def test_endpoints_are_labelled_in_order_of_mechanistic_weight() -> None:
     )
     assert (interface.kind, interface.label) == ("interface", "Interface region")
 
-    surface = annotate_endpoint(
+    low = annotate_endpoint(
         make_scored_atom(chain_id="A", x=-20.0, packing_density=20), context
     )
-    assert (surface.kind, surface.label) == ("surface", "Surface region")
+    assert (low.kind, low.label) == ("low_packing", "Low-packing region")
 
-    buried = annotate_endpoint(
+    typical = annotate_endpoint(
         make_scored_atom(chain_id="A", x=-20.0, packing_density=70), context
     )
-    assert (buried.kind, buried.label) == ("buried", "Buried region")
+    assert (typical.kind, typical.label) == (
+        "typical_packing",
+        "Typical-packing region",
+    )
 
     # An atom of the same chain does not make an interface.
     assert (
         annotate_endpoint(
             make_scored_atom(chain_id="B", x=30.0, packing_density=70), context
         ).kind
-        == "buried"
+        == "typical_packing"
     )
 
 
@@ -357,9 +360,9 @@ def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
     assert at_start.topology.topology == "linear"
     assert (
         at_start.start_endpoint.kind == "cofactor"
-        and at_start.end_endpoint.kind == "surface"
+        and at_start.end_endpoint.kind == "low_packing"
     )
-    assert at_start.endpoint_summary == "FMN -> Surface region"
+    assert at_start.endpoint_summary == "FMN -> Low-packing region"
     assert at_start.anchor is not None and at_start.is_cofactor_anchored
     assert (at_start.anchor.label, at_start.anchor.residue) == ("FMN", "Trp1")
     assert at_start.anchor.distance == approx(3.0)
@@ -369,8 +372,8 @@ def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
     # so neither endpoint is labelled with it, but the path is still anchored.
     names = ["ALA", "LEU", "VAL", "GLY", "TRP", "ILE", "PRO", "ALA"]
     midway = _path(names, cofactor_at_start=True, cofactor_position=(12.25, 3.0, 0.0))
-    assert midway.start_endpoint.kind == "surface"
-    assert midway.end_endpoint.kind == "surface"
+    assert midway.start_endpoint.kind == "low_packing"
+    assert midway.end_endpoint.kind == "low_packing"
     assert midway.anchor is not None and midway.anchor.label == "FMN"
     assert midway.anchor.distance == approx(np.hypot(1.75, 3.0))
     assert midway.anchor.residue in {"Gly4", "Trp5"}
@@ -384,7 +387,7 @@ def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
     )
     assert unanchored.anchor is None
     assert unanchored.anchor_summary == "no cofactor in range"
-    assert unanchored.start_endpoint.kind == "surface"
+    assert unanchored.start_endpoint.kind == "low_packing"
     assert unanchored.structural_descriptor == "Hydrophobic corridor"
 
 

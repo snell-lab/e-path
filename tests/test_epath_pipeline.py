@@ -79,8 +79,8 @@ def test_components_are_found_filtered_and_recorded() -> None:
     assert [c.atom_count for c in result.clusters] == [6]
     assert len(result.path_reports) == 1
     report = result.path_reports[0]
-    assert report.start_endpoint.kind in {"surface", "buried"}
-    assert report.end_endpoint.kind in {"surface", "buried"}
+    assert report.start_endpoint.kind in {"low_packing", "typical_packing"}
+    assert report.end_endpoint.kind in {"low_packing", "typical_packing"}
     assert result.cofactor_sites == ()
     # Bnet needs Asp/Glu carboxyl oxygens, and this model has none.
     assert result.bnet_pipeline_result.bnet_result is None

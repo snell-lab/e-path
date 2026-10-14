@@ -29,10 +29,25 @@ with the environment it terminates in, tested in this order:
 - `FMN region`: within 8.0 A of that cofactor, so in its environment without
   touching it.
 - `Interface region`: within 4.0 A of a different chain.
-- `Surface region`: in the least densely packed quarter of the scored atoms.
-  Packing density is already calculated for every scored atom, so no separate
-  solvent-accessibility calculation is involved.
-- `Buried region`: none of the above.
+- `Low-packing region`: in the least densely packed quarter of the scored
+  atoms, by the packing density BDamage already calculates (the number of
+  atoms within 7 A, crystal neighbours included).
+- `Typical-packing region`: none of the above.
+
+The two packing labels are not a solvent-accessibility calculation, and they
+do not say whether an endpoint is on the surface. They do suggest it. An atom
+with few neighbours is usually near the protein surface, and one with a typical
+number is usually inside the protein. In a check against solvent-accessible
+surface area computed for the biological assembly, over 625 X-ray structures,
+about three quarters of low-packing endpoints lay on a solvent-exposed residue
+(25% or more relative accessibility) and about four fifths of typical-packing
+endpoints on a buried one. The two disagree in recognisable places. Packing
+density counts crystal neighbours, so a surface residue held in a crystal
+contact can read as typically packed. The cut is a fixed quarter of the scored
+atoms, so a surface residue that is merely less exposed than most can fall on
+the typical side too. Read the labels as a pointer to where an endpoint is
+likely to sit, and use a solvent-accessibility tool when the distinction
+matters.
 
 ## Cofactors and Anchors
 
