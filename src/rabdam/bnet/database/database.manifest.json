@@ -1,9 +1,7 @@
 {
-  "artifact": "database/reference/database.csv",
+  "artifact": "src/rabdam/bnet/database/database.csv",
   "attribution": "Derived from PDB-REDO databank entries; credit PDB-REDO and the original authors of the structural data.",
   "build": {
-    "documented_command": "./build_bnet_database downloads/pdb-redo --output-dir database/output",
-    "exact_invocation_retained": false,
     "settings": {
       "allow_nucleic_acid": true,
       "fetch_rcsb_temperatures_when_needed": true,

@@ -225,6 +225,11 @@ def test_bundled_reference_database_is_consistent_with_its_manifest() -> None:
     database = load_default_bnet_reference_database()
 
     assert database is not None
+    repository_root = Path(__file__).resolve().parents[1]
+    assert (
+        manifest["artifact"]
+        == DEFAULT_REFERENCE_DATABASE_CSV_PATH.relative_to(repository_root).as_posix()
+    )
     assert database.entry_count == manifest["entry_count"]
     assert database.database_id == manifest["database_id"]
     assert (

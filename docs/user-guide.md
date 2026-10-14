@@ -191,6 +191,16 @@ database. If a structure has no usable Asp/Glu carboxyl-oxygen sites or no
 resolution, the summaries explain why the value is unavailable without stopping
 E-path.
 
+The reference database, `src/rabdam/bnet/database/database.csv`, holds 124,948
+entries from PDB-REDO databank snapshot 8.20, downloaded in June 2026. It
+includes single-model X-ray structures containing protein, with resolution at
+most 3.5 Å, Rfree below 0.4, a collection temperature from 80 to 120 K, at
+least 20 Asp/Glu carboxyl oxygens, no Asp/Glu side chain with total occupancy
+below one, and per-atom B-factors. Nucleic acids are allowed, and collection
+temperatures missing from PDB-REDO were taken from the RCSB mmCIF.
+`database.manifest.json` beside the CSV records these settings and the CSV's
+SHA-256, and E-path refuses to load a CSV that does not match that digest.
+
 `*_zfalloff.png` ranks atoms by ascending BDamage Z-score and plots the
 negative tail, which is the region the selection is drawn from. The selection
 threshold is marked, so the plot shows where the cutoff falls on the falloff.

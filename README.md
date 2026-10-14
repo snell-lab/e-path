@@ -89,6 +89,11 @@ J Synchrotron Radiat 22, 201-212. https://doi.org/10.1107/S1600577515002131
 Bnet and Bnet percentile: Shelley KL & Garman EF (2022).
 Nat Commun 13, 1314. https://doi.org/10.1038/s41467-022-28934-0
 
+Bnet reference database: derived from the
+[PDB-REDO](https://pdb-redo.eu) databank. Credit PDB-REDO and the original
+authors of the structural data, and follow the
+[PDB-REDO usage policy](https://pdb-redo.eu/license).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
