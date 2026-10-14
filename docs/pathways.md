@@ -50,8 +50,8 @@ chlorophylls and pheophytins, metal-free and zinc porphyrins, and pterins.
 Everything else bound to the protein, including lipids, detergents, sugars,
 buffer and cryoprotectant molecules, substrates and inhibitors, and redox-inert
 ions such as Na, K, Mg, Ca, and Zn, is still in the model and still contributes
-to packing density, but ending beside a lipid does not make a path an electron
-conduit. The lists are `REDOX_ACTIVE_METALS` and `ORGANIC_REDOX_COFACTORS` in
+to packing density, but is not reported as a cofactor a path ends beside or
+lies near. The lists are `REDOX_ACTIVE_METALS` and `ORGANIC_REDOX_COFACTORS` in
 `epath.analysis.endpoints`. The rule cannot tell a functional metal from the
 same metal added for crystallization, so a manganese or nickel ion from the
 mother liquor is still listed as a cofactor and should be discounted by eye.
@@ -80,10 +80,10 @@ are classified by how they connect residues:
 `peptide_edge_fraction` is the share of between-residue steps that follow the
 sequence. It separates two paths that geometry alone reports as identical: a
 rigid stretch of backbone, and a path of the same size whose steps jump between
-residues that are distant in sequence. The second is the stronger coupling
-candidate, and the E-path analysis repeatedly rests on this distinction. Peptide steps are identified by sequence adjacency within a
-chain rather than by a modelled backbone bond, so a chain break numbered
-consecutively counts as peptide-contiguous.
+residues that are distant in sequence. The step kinds tell these two apart.
+Peptide steps are identified by sequence adjacency within a chain rather than
+by a modelled backbone bond, so a chain break numbered consecutively counts as
+peptide-contiguous.
 
 `*_steps.csv` lists every step individually, with its length, its kind, and the
 two atoms it joins. The summary reports the total, mean, and largest step of a
@@ -128,8 +128,7 @@ mostly report the shape of the residues rather than a fork in the path.
 
 Composition assigns each residue exactly one chemistry class, so the reported
 fractions sum to one. Histidine and tyrosine count as aromatic rather than
-polar, because the analysis treats aromatic side chains as the redox-active
-set. A modified residue is classed with its parent residue, so phosphoserine
+polar. A modified residue is classed with its parent residue, so phosphoserine
 counts as polar. A class is enriched when it is at least 1.5 times more common
 in the path than in the scored population of the same model, so enrichment is
 measured against the structure being analysed rather than a fixed reference.

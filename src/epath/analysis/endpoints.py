@@ -3,8 +3,7 @@
 The E-path pathway table records where each path starts and ends: at a
 cofactor, at a chain interface, or at the protein surface. Cofactors are
 excluded from the connectivity graph, so a path never runs through one, but
-a cofactor within reach of a path is what makes it a candidate electron
-conduit rather than an ordinary rigid region.
+a path can still lie within reach of one, and that proximity is reported.
 
 Endpoints are the two atoms that define the cluster span, which the analysis
 already reports as the straight-line end-to-end distance of the path. A path
@@ -58,8 +57,8 @@ SURFACE_PERCENTILE = 25.0
 # Only redox-capable groups are treated as cofactors. Every other bound group
 # (lipids, detergents, sugars, buffer and cryoprotectant molecules, substrates
 # and inhibitors, and redox-inert ions such as Na, K, Mg, Ca and Zn) is kept in
-# the model and still contributes to packing density, but ending beside one
-# does not make a path an electron conduit.
+# the model and still contributes to packing density, but is not reported as
+# a cofactor a path ends beside or lies near.
 #
 # A group qualifies by containing one of these transition metals, which covers
 # haems, iron-sulfur clusters, copper centres and molybdenum or tungsten

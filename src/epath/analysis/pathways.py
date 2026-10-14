@@ -92,11 +92,11 @@ class PathStep:
 class EdgeProvenance:
     """How the steps of a path connect the residues it runs through.
 
-    A path that only follows the backbone is a rigid stretch of chain, which is
-    a much weaker coupling candidate than one of the same size whose steps jump
-    between residues that are far apart in sequence. Steps are counted on the
-    minimum spanning tree, so they are the same steps the reported length and
-    mean step describe.
+    A path that only follows the backbone is a rigid stretch of chain, and one
+    of the same size whose steps jump between residues that are far apart in
+    sequence is not, though geometry alone reports the two alike. Steps are
+    counted on the minimum spanning tree, so they are the same steps the
+    reported length and mean step describe.
 
     Peptide steps are identified by sequence adjacency within a chain rather
     than by a modelled backbone bond, so a chain break numbered consecutively
