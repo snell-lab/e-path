@@ -7,7 +7,9 @@ one and no residue is double counted.
 
 Histidine and tyrosine are counted as aromatic rather than polar. A modified
 residue is classed with its parent residue, whatever its own chemistry, so
-phosphoserine is polar and pyroglutamate is charged.
+phosphoserine is polar and pyroglutamate is charged. The parent is the one the
+Chemical Component Dictionary records, so every modified amino acid that
+`rabdam.structure` scores as protein has one.
 
 `epath.analysis.pathways` calls this for every path, and `epath.outputs`
 writes the counts and fractions.
@@ -15,7 +17,10 @@ writes the counts and fractions.
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from functools import cache
 from typing import Literal
+
+import gemmi
 
 ResidueClass = Literal[
     "aromatic",
@@ -36,50 +41,38 @@ RESIDUE_CLASS_ORDER: tuple[ResidueClass, ...] = (
     "other",
 )
 
-_RESIDUE_CLASSES: Mapping[str, ResidueClass] = {
+# Keyed by the one-letter code of the parent amino acid, which is what a
+# modified residue is classed by.
+_PARENT_CLASSES: Mapping[str, ResidueClass] = {
     # Aromatic side chains, including the imidazole of histidine.
-    "PHE": "aromatic",
-    "TYR": "aromatic",
-    "TRP": "aromatic",
-    "HIS": "aromatic",
-    "PTR": "aromatic",
-    # Sulfur-containing side chains, including selenomethionine, which is
-    # substituted for methionine during phasing.
-    "MET": "sulfur",
-    "CYS": "sulfur",
-    "MSE": "sulfur",
-    "SEC": "sulfur",
-    "CSO": "sulfur",
-    "CME": "sulfur",
-    "CSD": "sulfur",
-    "FME": "sulfur",
-    # Charged side chains. Their modified forms are classed with the parent
-    # residue, whatever charge they carry themselves.
-    "ASP": "charged",
-    "GLU": "charged",
-    "LYS": "charged",
-    "ARG": "charged",
-    "MLY": "charged",
-    "KCX": "charged",
-    "LLP": "charged",
-    "PCA": "charged",
-    # Neutral polar side chains, plus phosphoserine and phosphothreonine,
-    # which are classed with their parent residues.
-    "SER": "polar",
-    "THR": "polar",
-    "ASN": "polar",
-    "GLN": "polar",
-    "SEP": "polar",
-    "TPO": "polar",
+    "F": "aromatic",
+    "Y": "aromatic",
+    "W": "aromatic",
+    "H": "aromatic",
+    # Sulfur-containing side chains, and selenocysteine, whose selenium takes
+    # the place of the sulfur of cysteine.
+    "M": "sulfur",
+    "C": "sulfur",
+    "U": "sulfur",
+    # Charged side chains, and pyrrolysine, which is built on lysine.
+    "D": "charged",
+    "E": "charged",
+    "K": "charged",
+    "R": "charged",
+    "O": "charged",
+    # Neutral polar side chains.
+    "S": "polar",
+    "T": "polar",
+    "N": "polar",
+    "Q": "polar",
     # Aliphatic side chains, plus glycine and proline, which contribute a
     # low-dielectric backbone environment rather than a functional group.
-    "ALA": "hydrophobic",
-    "GLY": "hydrophobic",
-    "VAL": "hydrophobic",
-    "LEU": "hydrophobic",
-    "ILE": "hydrophobic",
-    "PRO": "hydrophobic",
-    "HYP": "hydrophobic",
+    "A": "hydrophobic",
+    "G": "hydrophobic",
+    "V": "hydrophobic",
+    "L": "hydrophobic",
+    "I": "hydrophobic",
+    "P": "hydrophobic",
 }
 
 
@@ -95,13 +88,22 @@ class ResidueComposition:
     fractions: Mapping[ResidueClass, float]
 
 
+@cache
 def residue_class(residue_name: str) -> ResidueClass:
     """Return the side-chain chemistry class of one residue name.
 
-    Case and surrounding spaces are ignored. A name that is not an amino acid
-    listed above, such as a water, a ligand or a nucleotide, is "other".
+    The parent of a residue is the one-letter code the Chemical Component
+    Dictionary gives it, as Gemmi tabulates it: upper case for a standard
+    amino acid and lower case for a modified one. Case and surrounding spaces
+    in the name are ignored. A name that is not an amino acid, such as a
+    water, a ligand or a nucleotide, is "other", and so is an amino acid with
+    no known parent, such as UNK.
     """
-    return _RESIDUE_CLASSES.get(residue_name.strip().upper(), "other")
+    residue = gemmi.find_tabulated_residue(residue_name.strip().upper())
+    if not residue.is_amino_acid():
+        return "other"
+
+    return _PARENT_CLASSES.get(residue.one_letter_code.upper(), "other")
 
 
 def class_counts(residue_names: Iterable[str]) -> dict[ResidueClass, int]:

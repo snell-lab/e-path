@@ -138,8 +138,9 @@ which is deterministic but is not a walk from one end of a path to the other.
 
 Composition assigns each residue exactly one chemistry class, so the reported
 fractions sum to one. Histidine and tyrosine count as aromatic rather than
-polar. A modified residue is classed with its parent residue, so phosphoserine
-counts as polar.
+polar. A modified residue is classed with its parent residue, as the Chemical
+Component Dictionary records it, so phosphoserine counts as polar and
+trimethyllysine as charged.
 
 Paths are often only a few residues long, so the fractions of one path move in
 large steps. A single tryptophan in a four-residue path makes it 25% aromatic.

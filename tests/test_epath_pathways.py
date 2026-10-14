@@ -37,7 +37,20 @@ from rabdam.structure.models import PreparedAtom
         ("SER", "polar"),
         ("GLY", "hydrophobic"),
         ("PRO", "hydrophobic"),
+        # Modified residues take the class of their parent.
+        ("SEP", "polar"),
+        ("PCA", "charged"),
+        ("M3L", "charged"),
+        ("CGU", "charged"),
+        ("TYS", "aromatic"),
+        ("NEP", "aromatic"),
+        ("OCS", "sulfur"),
+        ("DAL", "hydrophobic"),
+        ("SEC", "sulfur"),
         ("XYZ", "other"),
+        ("UNK", "other"),
+        ("HOH", "other"),
+        ("DA", "other"),  # a nucleotide, though its one-letter code is A
     ],
 )
 def test_residue_classes(name: str, expected: str) -> None:
