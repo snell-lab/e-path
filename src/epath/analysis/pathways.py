@@ -2,18 +2,18 @@
 
 This module turns the geometric clusters produced by connectivity analysis
 into the pathway description the E-path analysis reports. A description gives
-the residues and protected atoms along the path, the environments its two ends
-terminate in, the cofactor it comes nearest to, and its residue chemistry.
+the residues and protected atoms along the path, the cofactor it comes
+nearest to, and its residue chemistry.
 
 These are measurements, reported as the basis for interpreting a path with
 the protein's known chemistry in view.
 
 `epath.analysis.clustering` supplies the clusters and their geometry. The
-chemistry comes from `epath.analysis.residues`, and the endpoints and the
-anchor from `epath.analysis.endpoints`. This module gathers them into one report for each
-cluster and adds the residue listing and the steps.
-`epath.pipeline` calls `analyze_paths` once for a model, and `epath.outputs`
-and `epath.cli.report` write the reports out.
+chemistry comes from `epath.analysis.residues`, and the anchor from
+`epath.analysis.cofactors`. This module gathers them into one report for each
+cluster and adds the residue listing and the steps. `epath.pipeline` calls
+`analyze_paths` once for a model, and `epath.outputs` and `epath.cli.report`
+write the reports out.
 """
 
 from collections import Counter
@@ -25,19 +25,14 @@ import numpy as np
 from numpy.typing import NDArray
 
 from epath.analysis.clustering import EpathCluster, coordinates_for_atoms
-from epath.analysis.endpoints import (
+from epath.analysis.cofactors import (
+    CofactorContext,
     CofactorSite,
-    EndpointContext,
     PathAnchor,
-    PathEndpoint,
-    annotate_endpoint,
-    build_endpoint_context,
+    build_cofactor_context,
     find_path_anchor,
 )
-from epath.analysis.geometry import (
-    maximum_pairwise_distance_pair,
-    minimum_spanning_tree_edges,
-)
+from epath.analysis.geometry import minimum_spanning_tree_edges
 from epath.analysis.labels import (
     atom_token,
     format_residue_label,
@@ -45,7 +40,6 @@ from epath.analysis.labels import (
     residue_label,
 )
 from epath.analysis.residues import ResidueComposition, analyze_composition
-from epath.analysis.selection import EpathScoredAtom
 from rabdam.structure.models import PreparedAtom
 from xtal.reader import AtomRecord
 
@@ -128,19 +122,15 @@ class PathReport:
     lists the chains in the order `residues` reaches them. `residue_path` is
     the same listing as text.
 
-    `start_endpoint` and `end_endpoint` describe the two atoms of the cluster
-    that lie farthest apart. A path has no direction, the start is simply the
-    one of the two that comes first in the cluster's atom order. `anchor` is
-    the cofactor nearest to any atom of the path, or None when none is within
-    range. `steps` are the edges of the minimum spanning tree.
+    `anchor` is the cofactor nearest to any atom of the path, or None when none
+    is within range. `steps` are the edges of the
+    minimum spanning tree.
     """
 
     cluster: EpathCluster
     chains: tuple[str, ...]
     residues: tuple[PathResidue, ...]
     residue_path: str
-    start_endpoint: PathEndpoint
-    end_endpoint: PathEndpoint
     anchor: PathAnchor | None
     composition: ResidueComposition
     steps: tuple[PathStep, ...]
@@ -190,15 +180,10 @@ class PathReport:
 
         return f"{self.anchor.label} at {self.anchor.distance:.1f} A"
 
-    @property
-    def endpoint_summary(self) -> str:
-        """Return both endpoint labels, the start first."""
-        return f"{self.start_endpoint.label} -> {self.end_endpoint.label}"
-
 
 @dataclass(frozen=True, slots=True)
 class PathAnalysisResult:
-    """Described pathways for one model and the cofactors they were labelled against."""
+    """Described pathways for one model and the cofactors found in it."""
 
     reports: tuple[PathReport, ...]
     cofactor_sites: tuple[CofactorSite, ...]
@@ -207,17 +192,13 @@ class PathAnalysisResult:
 def analyze_paths(
     clusters: Sequence[EpathCluster],
     *,
-    scored_atoms: Sequence[EpathScoredAtom],
     cleaned_atoms: Sequence[PreparedAtom],
 ) -> PathAnalysisResult:
     """Describe every reported cluster as a pathway.
 
     The reports are in the order of `clusters`.
     """
-    context = build_endpoint_context(
-        scored_atoms=scored_atoms,
-        cleaned_atoms=cleaned_atoms,
-    )
+    context = build_cofactor_context(cleaned_atoms)
 
     return PathAnalysisResult(
         reports=tuple(
@@ -230,7 +211,7 @@ def analyze_paths(
 def _build_path_report(
     cluster: EpathCluster,
     *,
-    context: EndpointContext,
+    context: CofactorContext,
 ) -> PathReport:
     """Describe one cluster as a pathway.
 
@@ -241,17 +222,12 @@ def _build_path_report(
     coordinates = coordinates_for_atoms(cluster.atoms)
     residues = _path_residues(atoms)
     composition = analyze_composition(residue.residue_name for residue in residues)
-    first_index, second_index, _ = maximum_pairwise_distance_pair(coordinates)
-    start_endpoint = annotate_endpoint(cluster.atoms[first_index], context)
-    end_endpoint = annotate_endpoint(cluster.atoms[second_index], context)
 
     return PathReport(
         cluster=cluster,
         chains=tuple(dict.fromkeys(residue.chain_id for residue in residues)),
         residues=residues,
         residue_path=_format_residue_path(residues),
-        start_endpoint=start_endpoint,
-        end_endpoint=end_endpoint,
         anchor=find_path_anchor(atoms, context),
         composition=composition,
         steps=_path_steps(atoms, coordinates),

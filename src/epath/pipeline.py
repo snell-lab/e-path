@@ -18,7 +18,7 @@ from epath.analysis.clustering import (
     cluster_selected_atoms,
     component_statistics,
 )
-from epath.analysis.endpoints import CofactorSite
+from epath.analysis.cofactors import CofactorSite
 from epath.analysis.pathways import PathReport, analyze_paths
 from epath.analysis.selection import (
     EpathSelectionResult,
@@ -129,11 +129,10 @@ def run_epath_pipeline(
 
     The atoms that received a BDamage score are selected, clustered and
     described as pathways. The rest of the cleaned model supplies what the
-    scored atoms cannot. It holds the cofactor sites and the chains that the
-    pathway endpoints are labelled against, and it is the model written with
-    BDamage in its B-factor column. Bnet and its percentile are calculated
-    from the same result. The analysis result is returned with, separately,
-    the files written from it.
+    scored atoms cannot. It holds the cofactor sites the pathways are
+    anchored to, and it is the model written with BDamage in its B-factor
+    column. Bnet and its percentile are calculated from the same result. The
+    analysis result is returned with, separately, the files written from it.
 
     Without `options` the defaults of `EpathPipelineOptions` apply. A
     `stage_runner` is handed each stage as a label and a callback, so a caller
@@ -198,7 +197,6 @@ def run_epath_pipeline(
         "Analyzing pathways",
         lambda: analyze_paths(
             clusters,
-            scored_atoms=selection_result.scored_atoms,
             cleaned_atoms=cleaned_atoms,
         ),
         stage_runner=stage_runner,

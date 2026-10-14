@@ -14,10 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from epath.analysis.geometry import (
-    maximum_pairwise_distance_pair,
-    minimum_spanning_tree_edges,
-)
+from epath.analysis.geometry import minimum_spanning_tree_edges
 from epath.analysis.selection import EpathScoredAtom
 from spatial import radius_neighbour_indices
 
@@ -34,13 +31,11 @@ class EpathClusterMetrics:
 
     `mst_total_length` is the summed length of the edges of the minimum
     spanning tree over the atoms, `mst_largest_edge` the longest of them, and
-    `mean_step` their mean. `span` is the largest distance between any two of
-    the atoms. All four are zero for a single atom.
+    `mean_step` their mean. All three are zero for a single atom.
     """
 
     mst_total_length: float
     mst_largest_edge: float
-    span: float
     mean_step: float
 
 
@@ -152,8 +147,8 @@ def mst_length_stats(coordinates: NDArray[np.float64]) -> EpathClusterMetrics:
     """Measure a group of atoms from its coordinates.
 
     `coordinates` has shape `(n, 3)` and is in angstroms. A single atom has no
-    spanning tree and no span, so all of its metrics are zero. The coordinates
-    must be finite, which `cluster_selected_atoms` checks.
+    spanning tree, so all of its metrics are zero. The coordinates must be
+    finite, which `cluster_selected_atoms` checks.
     """
     edges = minimum_spanning_tree_edges(coordinates)
     # The lengths are added one at a time because `sum` compensates for
@@ -164,12 +159,9 @@ def mst_length_stats(coordinates: NDArray[np.float64]) -> EpathClusterMetrics:
         total_length += edge.length
         largest_edge = max(largest_edge, edge.length)
 
-    _, _, span = maximum_pairwise_distance_pair(coordinates)
-
     return EpathClusterMetrics(
         mst_total_length=total_length,
         mst_largest_edge=largest_edge,
-        span=span,
         mean_step=total_length / len(edges) if edges else 0.0,
     )
 

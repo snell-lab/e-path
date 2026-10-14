@@ -12,7 +12,7 @@ highlights warnings and errors on a colour terminal.
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, TextIO
 
-from epath.analysis.endpoints import cofactor_site_summary
+from epath.analysis.cofactors import cofactor_site_summary
 from epath.cli.style import print_lines, style_line, supports_color
 from epath.outputs.summary import (
     bdamage_summary_lines,
@@ -190,7 +190,7 @@ def _pathway_lines(pipeline_result: EpathPipelineResult) -> tuple[str, ...]:
         f"Cofactor sites: {cofactor_site_summary(pipeline_result.cofactor_sites)}"
     )
     lines.extend(
-        f"Path {report.path_id} {report.endpoint_summary}: "
+        f"Path {report.path_id}: "
         f"{report.residue_count} residues, {report.node_count} nodes, "
         f"{report.total_length:.2f} A, nearest cofactor {report.anchor_summary}"
         for report in reports

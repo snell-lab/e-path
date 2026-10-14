@@ -24,20 +24,3 @@ Restricting the analysis to some chains would change both the Z-score
 distribution the selection percentile is taken from and the cross-chain
 connectivity that produces interface pathways. `--chains` therefore filters
 only the coordinate outputs, after the analysis has finished.
-
-## Packing Labels and Solvent Accessibility
-
-The `Low-packing region` and `Typical-packing region` endpoint labels come from
-the packing density BDamage already calculates, not from a
-solvent-accessibility calculation. They do suggest where an endpoint sits. An
-atom with few neighbours is usually near the protein surface, and one with a
-typical number is usually inside the protein.
-
-In a check against solvent-accessible surface area computed for the biological
-assembly, over 625 X-ray structures, about three quarters of low-packing
-endpoints lay on a solvent-exposed residue (25% or more relative accessibility)
-and about four fifths of typical-packing endpoints on a buried one. The two
-disagree in recognisable places. Packing density counts crystal neighbours, so
-a surface residue held in a crystal contact can read as typically packed. The
-cut is a fixed quarter of the scored atoms, so a surface residue that is merely
-less exposed than most can fall on the typical side too.

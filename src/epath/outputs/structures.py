@@ -186,8 +186,6 @@ def write_path_subset_cifs(
                 f"{report.residue_count} residues, {report.node_count} nodes, "
                 f"{report.total_length:.2f} A."
             ),
-            f"Start: {report.start_endpoint.label}.",
-            f"End: {report.end_endpoint.label}.",
             f"Nearest cofactor: {report.anchor_summary}.",
         ]
         if display_chains is not None:

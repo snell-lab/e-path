@@ -1,14 +1,13 @@
 """Distances and spanning trees over the atoms of one E-path cluster.
 
-`clustering` takes a cluster's spanning-tree lengths and span from here,
-`pathways` its steps and its two end atoms, and `endpoints` the distances from
-one point to a set of atoms. Coordinates are
-arrays of shape `(n, 3)`, and lengths come back in the units of the
-coordinates, which are angstroms for every caller.
+`clustering` takes a cluster's spanning-tree lengths from here, `pathways`
+its steps, and `cofactors` the distances from one point to a set of atoms.
+Coordinates are arrays of shape `(n, 3)`, and lengths come back in the units
+of the coordinates, which are angstroms for every caller.
 
-The spanning tree and the span measure every pair of points, which is fast
-enough for the atoms of one cluster. Finding the atoms within a cutoff of each
-other is left to the KD-tree in `spatial`.
+The spanning tree measures every pair of points, which is fast enough for the
+atoms of one cluster. Finding the atoms within a cutoff of each other is left
+to the KD-tree in `spatial`.
 
 Nothing is checked here. The coordinates must be finite, which `clustering`
 checks for the selected atoms before it forms the clusters.
@@ -83,30 +82,3 @@ def minimum_spanning_tree_edges(
         minimum_edges[improved] = distances[improved]
 
     return tuple(edges)
-
-
-def maximum_pairwise_distance_pair(
-    coordinates: NDArray[np.float64],
-) -> tuple[int, int, float]:
-    """Return the two most separated points and the distance between them.
-
-    The lower index comes first, and of several pairs equally far apart the
-    first in index order is returned. Fewer than two points, or points that
-    all coincide, give `(0, 0, 0.0)`.
-
-    The pair defines the span, which the analysis reports as the straight-line
-    end-to-end distance of a path, so these two atoms are also its endpoints.
-    """
-    first_endpoint = 0
-    second_endpoint = 0
-    maximum_distance = 0.0
-    for first_index in range(len(coordinates) - 1):
-        distances = row_norms(coordinates[first_index + 1 :] - coordinates[first_index])
-        offset = int(np.argmax(distances))
-        distance = float(distances[offset])
-        if distance > maximum_distance:
-            maximum_distance = distance
-            first_endpoint = first_index
-            second_endpoint = first_index + 1 + offset
-
-    return first_endpoint, second_endpoint, maximum_distance

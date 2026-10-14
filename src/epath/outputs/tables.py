@@ -72,7 +72,6 @@ RUN_FIELDNAMES = [
     "largest_component_length",
     "largest_component_mean_step",
     "largest_component_largest_edge",
-    "largest_component_span",
 ]
 
 STEP_FIELDNAMES = [
@@ -87,12 +86,10 @@ STEP_FIELDNAMES = [
 ]
 
 # The leading columns, up to `anchor_atom`, are the E-path pathway table: the
-# path, where it starts and ends, and the cofactor it comes nearest to. The
-# columns after them are its geometry, steps, and composition.
+# path, its size, and the cofactor it comes nearest to. The columns after them
+# are its geometry, steps, and composition.
 CLUSTER_FIELDNAMES = [
     "cluster_id",
-    "endpoint_start",
-    "endpoint_end",
     "residue_path",
     "residue_count",
     "atom_count",
@@ -103,7 +100,6 @@ CLUSTER_FIELDNAMES = [
     "chains",
     "mean_step",
     "largest_edge",
-    "span",
     "intra_residue_edges",
     "peptide_edges",
     "tertiary_edges",
@@ -114,10 +110,6 @@ CLUSTER_FIELDNAMES = [
     "charged_fraction",
     "polar_fraction",
     "hydrophobic_fraction",
-    "endpoint_start_kind",
-    "endpoint_start_atom",
-    "endpoint_end_kind",
-    "endpoint_end_atom",
 ]
 
 
@@ -214,8 +206,6 @@ def _cluster_row(report: PathReport) -> dict[str, object]:
 
     return {
         "cluster_id": report.path_id,
-        "endpoint_start": report.start_endpoint.label,
-        "endpoint_end": report.end_endpoint.label,
         "residue_path": report.residue_path,
         "residue_count": report.residue_count,
         "atom_count": report.node_count,
@@ -226,7 +216,6 @@ def _cluster_row(report: PathReport) -> dict[str, object]:
         "chains": "/".join(report.chains),
         "mean_step": metrics.mean_step,
         "largest_edge": metrics.mst_largest_edge,
-        "span": metrics.span,
         "intra_residue_edges": report.edges.intra_residue,
         "peptide_edges": report.edges.peptide,
         "tertiary_edges": report.edges.tertiary,
@@ -237,10 +226,6 @@ def _cluster_row(report: PathReport) -> dict[str, object]:
         "charged_fraction": fractions["charged"],
         "polar_fraction": fractions["polar"],
         "hydrophobic_fraction": fractions["hydrophobic"],
-        "endpoint_start_kind": report.start_endpoint.kind,
-        "endpoint_start_atom": report.start_endpoint.atom_token,
-        "endpoint_end_kind": report.end_endpoint.kind,
-        "endpoint_end_atom": report.end_endpoint.atom_token,
     }
 
 

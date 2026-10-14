@@ -311,7 +311,7 @@ def test_summary_report_lists_results_and_files(
     assert "Protein Bnet sites: 4" in text
     assert "Cofactor sites: FMN (Fmn201 chain A)" in text
     assert f"Path count: {len(result.path_reports)}" in text
-    assert "Path 1 " in text and result.path_reports[0].residue_path in text
+    assert "\nPath 1\n" in text and result.path_reports[0].residue_path in text
     assert "  Nearest cofactor: " in text
     assert "Combined atom CSV: " in text and "Pathway mmCIF 2: " in text
     assert "Cluster CSV" not in text and "Pathway mmCIF 1" not in text

@@ -1,65 +1,36 @@
-"""Relate an E-path cluster to the cofactors and environments around it.
+"""Find a model's redox cofactors and the one nearest to each E-path cluster.
 
-The E-path pathway table records where each path starts and ends: at a
-cofactor, at a chain interface, or by how densely packed its environment is.
 Cofactors are excluded from the connectivity graph, so a path never runs
-through one, but a path can still lie within reach of one, and that proximity
-is reported.
+through one, but a path can still lie within reach of one. The cofactor
+nearest to any atom of a path is reported as its anchor.
 
-Endpoints are the two atoms that define the cluster span, which the analysis
-already reports as the straight-line end-to-end distance of the path. A path
-can also pass a cofactor part-way along its length, so the nearest cofactor to
-any of its atoms is reported separately as its anchor.
-
-`pathways` builds one `EndpointContext` per model and labels the endpoints and
-the anchor of every path against it. The scored atoms come from `selection`,
-and the cofactor sites from the cleaned model that `rabdam.structure`
-prepared. Distances are in angstroms.
+`pathways` builds one `CofactorContext` per model and finds the anchor of
+every path against it. The cofactor sites come from the cleaned model that
+`rabdam.structure` prepared. Distances are in angstroms.
 """
 
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from epath.analysis.geometry import row_norms
 from epath.analysis.labels import atom_token, format_residue_label, residue_label
-from epath.analysis.selection import EpathScoredAtom
 from rabdam.structure.models import PreparedAtom
 from xtal.reader import AtomRecord
 
-EndpointKind = Literal[
-    "cofactor",
-    "cofactor_region",
-    "interface",
-    "low_packing",
-    "typical_packing",
-]
-
-# An endpoint this close to a cofactor is in direct contact with it.
-COFACTOR_CONTACT_ANGSTROM = 4.0
-
-# An endpoint within this range terminates in the cofactor's environment
-# without touching it. Beyond roughly this distance a residue no longer shares
-# the cofactor's first or second shell.
+# A cofactor within this range of a path atom anchors the path. Beyond roughly
+# this distance a residue no longer shares the cofactor's first or second
+# shell.
 COFACTOR_PROXIMITY_ANGSTROM = 8.0
-
-# An endpoint this close to another chain sits in a subunit interface.
-INTERFACE_ANGSTROM = 4.0
-
-# Endpoints in the least densely packed quarter of the scored population are
-# reported as low-packing sites, and the rest as typical-packing sites. Packing
-# density is the count BDamage already calculated for every scored atom.
-LOW_PACKING_PERCENTILE = 25.0
 
 # Only redox-capable groups are treated as cofactors. Every other bound group
 # (lipids, detergents, sugars, buffer and cryoprotectant molecules, substrates
 # and inhibitors, and redox-inert ions such as Na, K, Mg, Ca and Zn) is kept in
 # the model and still contributes to packing density, but is not reported as
-# a cofactor a path ends beside or lies near.
+# a cofactor a path lies near.
 #
 # A group qualifies by containing one of these transition metals, which covers
 # haems, iron-sulfur clusters, copper centres and molybdenum or tungsten
@@ -130,24 +101,6 @@ class CofactorSite:
 
 
 @dataclass(frozen=True, slots=True)
-class PathEndpoint:
-    """One end of a path and the environment it terminates in.
-
-    `label` is the reported name of the environment. It is the label of the
-    cofactor site for a "cofactor" endpoint, that label followed by " region"
-    for a "cofactor_region" endpoint, and "Interface region",
-    "Low-packing region" or "Typical-packing region" for the others. `atom_token` and `residue` name the
-    endpoint atom, in the forms of `labels.atom_token` and
-    `labels.residue_label`.
-    """
-
-    label: str
-    kind: EndpointKind
-    atom_token: str
-    residue: str
-
-
-@dataclass(frozen=True, slots=True)
 class PathAnchor:
     """The cofactor nearest to any atom of a path, when one is within range.
 
@@ -163,100 +116,39 @@ class PathAnchor:
 
 
 @dataclass(frozen=True, slots=True)
-class EndpointContext:
-    """Structural context used to label path endpoints.
+class CofactorContext:
+    """The cofactor sites of a model, used to find the anchor of each path.
 
     `cofactor_coordinates` holds every atom of every site, with shape
     `(n, 3)`, and `cofactor_site_indices` gives, for each of those rows, the
-    position of its site in `sites`. `protein_coordinates` and
-    `protein_chain_ids` are aligned in the same way, one row per protein atom.
-    `low_packing_density` is the packing density at or below which an
-    endpoint is a low-packing site.
+    position of its site in `sites`.
     """
 
     sites: tuple[CofactorSite, ...]
     cofactor_coordinates: NDArray[np.float64]
     cofactor_site_indices: NDArray[np.int_]
-    protein_coordinates: NDArray[np.float64]
-    protein_chain_ids: NDArray[np.str_]
-    low_packing_density: float
 
 
-def build_endpoint_context(
-    *,
-    scored_atoms: Sequence[EpathScoredAtom],
-    cleaned_atoms: Sequence[PreparedAtom],
-) -> EndpointContext:
-    """Collect the cofactor, chain, and packing context for endpoint labelling.
+def build_cofactor_context(cleaned_atoms: Sequence[PreparedAtom]) -> CofactorContext:
+    """Collect the cofactor sites of the complete cleaned model.
 
-    `scored_atoms` is every atom that received a BDamage score. The
-    low-packing threshold is the `LOW_PACKING_PERCENTILE` percentile of their packing
-    densities, so there must be at least one.
-
-    `cleaned_atoms` is the complete cleaned model. The cofactor sites are taken
-    from it, because cofactors are never scored, and its protein atoms are the
-    ones that can mark an interface.
+    The sites are taken from the cleaned model because cofactors are never
+    scored.
     """
     sites, cofactor_coordinates, site_indices = _cofactor_sites(cleaned_atoms)
-    protein_coordinates, protein_chain_ids = _protein_chains(cleaned_atoms)
 
-    return EndpointContext(
+    return CofactorContext(
         sites=sites,
         cofactor_coordinates=cofactor_coordinates,
         cofactor_site_indices=site_indices,
-        protein_coordinates=protein_coordinates,
-        protein_chain_ids=protein_chain_ids,
-        low_packing_density=float(
-            np.percentile(
-                [atom.bdamage_result.packing_density for atom in scored_atoms],
-                LOW_PACKING_PERCENTILE,
-            )
-        ),
     )
-
-
-def annotate_endpoint(atom: EpathScoredAtom, context: EndpointContext) -> PathEndpoint:
-    """Label one endpoint atom by the environment it terminates in.
-
-    Environments are tested in order of mechanistic weight. Contact with a
-    cofactor comes first, then the environment of a nearby cofactor, then a
-    subunit interface, and finally how densely packed the endpoint is.
-
-    The cofactor is the one with the atom nearest to the endpoint. An interface
-    is a protein atom of another chain within the interface distance, and a
-    low-packing site has a packing density no higher than the low-packing
-    threshold.
-    Every range includes its limit.
-    """
-    record = atom.record
-    point = np.asarray((record.x, record.y, record.z), dtype=float)
-    nearest = _nearest_cofactor(point, context)
-    if nearest is not None:
-        site, distance = nearest
-        if distance <= COFACTOR_CONTACT_ANGSTROM:
-            return _endpoint(record, label=site.label, kind="cofactor")
-
-        return _endpoint(record, label=f"{site.label} region", kind="cofactor_region")
-
-    if _is_interface(point, record.chain_id, context):
-        return _endpoint(record, label="Interface region", kind="interface")
-
-    if atom.bdamage_result.packing_density <= context.low_packing_density:
-        return _endpoint(record, label="Low-packing region", kind="low_packing")
-
-    return _endpoint(record, label="Typical-packing region", kind="typical_packing")
 
 
 def find_path_anchor(
     atoms: Sequence[AtomRecord],
-    context: EndpointContext,
+    context: CofactorContext,
 ) -> PathAnchor | None:
     """Return the cofactor nearest to any atom of a path, if one is in range.
-
-    The two endpoints only describe where a path stops. A long path can
-    touch a cofactor part-way along its length while both of its ends lie
-    elsewhere, so every atom is tested, against the same range that places an
-    endpoint in a cofactor's environment.
 
     The anchor names the path atom closest to the cofactor, and the first such
     atom in path order when several are equally close. None is returned when
@@ -382,23 +274,9 @@ def _site_labels(residue_names: Sequence[str]) -> list[str]:
     return labels
 
 
-def _protein_chains(
-    cleaned_atoms: Sequence[PreparedAtom],
-) -> tuple[NDArray[np.float64], NDArray[np.str_]]:
-    """Return the position and the chain of each protein atom of the model."""
-    records = [atom.record for atom in cleaned_atoms if atom.is_protein]
-    # The reshape keeps the `(n, 3)` shape when there is no protein atom.
-    return (
-        np.asarray(
-            [(record.x, record.y, record.z) for record in records], dtype=float
-        ).reshape(-1, 3),
-        np.asarray([record.chain_id for record in records], dtype=str),
-    )
-
-
 def _nearest_cofactor(
     point: NDArray[np.float64],
-    context: EndpointContext,
+    context: CofactorContext,
 ) -> tuple[CofactorSite, float] | None:
     """Return the site with the atom nearest to a point, and that distance.
 
@@ -415,32 +293,3 @@ def _nearest_cofactor(
         return None
 
     return context.sites[int(context.cofactor_site_indices[nearest])], distance
-
-
-def _endpoint(
-    atom: AtomRecord,
-    *,
-    label: str,
-    kind: EndpointKind,
-) -> PathEndpoint:
-    return PathEndpoint(
-        label=label,
-        kind=kind,
-        atom_token=atom_token(atom),
-        residue=residue_label(atom),
-    )
-
-
-def _is_interface(
-    point: NDArray[np.float64],
-    chain_id: str,
-    context: EndpointContext,
-) -> bool:
-    """Return whether a point lies at an interface with another chain.
-
-    It does when a protein atom of a chain other than `chain_id` is within the
-    interface distance of it, the distance itself included.
-    """
-    distances = row_norms(context.protein_coordinates - point)
-    within_range = distances <= INTERFACE_ANGSTROM
-    return bool(np.any(context.protein_chain_ids[within_range] != chain_id))

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from epath.analysis.clustering import ComponentStatistics
-from epath.analysis.endpoints import cofactor_site_summary
+from epath.analysis.cofactors import cofactor_site_summary
 from epath.analysis.pathways import PathReport
 from epath.analysis.residues import RESIDUE_CLASS_ORDER
 from epath.outputs.files import EpathPipelineOutputFiles
@@ -167,13 +167,7 @@ def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
         lines.extend(
             (
                 "",
-                f"Path {report.path_id} {report.endpoint_summary}",
-                (
-                    f"  Endpoint atoms: {report.start_endpoint.atom_token} "
-                    f"({report.start_endpoint.residue}) to "
-                    f"{report.end_endpoint.atom_token} "
-                    f"({report.end_endpoint.residue})"
-                ),
+                f"Path {report.path_id}",
                 f"  Nearest cofactor: {_anchor_text(report)}",
                 f"  Chains: {_chain_text(report.chains)}",
                 (
@@ -183,8 +177,7 @@ def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
                 ),
                 (
                     f"  MST mean step: {_number(metrics.mean_step)} A   "
-                    f"largest edge: {_number(metrics.mst_largest_edge)} A   "
-                    f"span: {_number(metrics.span)} A"
+                    f"largest edge: {_number(metrics.mst_largest_edge)} A"
                 ),
                 (
                     f"  Steps: {report.edges.intra_residue} within residues, "
@@ -217,8 +210,7 @@ def _unreported_component_lines(
             f"Largest component: {statistics.largest_atom_count} atoms, "
             f"length {_number(metrics.mst_total_length)} A, "
             f"mean step {_number(metrics.mean_step)} A, "
-            f"largest edge {_number(metrics.mst_largest_edge)} A, "
-            f"span {_number(metrics.span)} A"
+            f"largest edge {_number(metrics.mst_largest_edge)} A"
         ),
     )
 

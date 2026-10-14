@@ -47,7 +47,7 @@ Selected atoms within 4.0 Å of each other are connected, and every connected
 component of at least eight atoms is reported as a pathway.
 `--minimum-cluster-size` changes that reporting threshold. Each pathway's
 geometry is measured on its minimum spanning tree (MST), giving the atom count,
-total length, mean step, largest step, and span.
+total length, mean step, and largest step.
 
 The analysis always runs over every chain. `--chains` filters only the
 coordinate outputs.
@@ -65,28 +65,19 @@ Each pathway is reported with:
   order of the first residue each contributes, residues in ascending residue
   number, and atoms in the order the connectivity graph reached them.
 - The residue count, the node (atom) count, and the total path length.
-- The environments the two ends of the path terminate in.
+- The chains the path runs through.
 - The cofactor nearest to any atom of the path, and its distance.
 - The step provenance and residue-chemistry measurements.
 
-### Endpoints
+A path that crosses between chains lists each of them in `chains`, and its
+crossings are counted as interchain steps (see Step Provenance below).
 
-The endpoints are the two atoms that define the span. Each is labelled with the
-environment it terminates in, tested in this order:
-
-- `SF4-1`, `FMN`, `HEM-2`: in contact with that cofactor, within 4.0 Å.
-- `FMN region`: within 8.0 Å of that cofactor, so in its environment without
-  touching it.
-- `Interface region`: within 4.0 Å of a different chain.
-- `Low-packing region`: in the least densely packed quarter of the scored
-  atoms, by the packing density BDamage already calculates (the number of atoms
-  within 7.0 Å, crystal neighbours included).
-- `Typical-packing region`: none of the above.
-
-The packing labels suggest whether an endpoint is near the surface or buried,
-but they are not a solvent-accessibility calculation; use a dedicated tool when
-the distinction matters. The [design notes](design-notes.md) show how well they
-agree.
+The packing density of every path atom, the number of atoms within 7.0 Å that
+BDamage counts (crystal neighbours included), is the `packing_density` column
+of `*_epath.csv`, where `cluster_id` gives the path each atom belongs to. A low
+count suggests an atom near the surface and a typical one an atom inside the
+protein, but packing density is not a solvent-accessibility calculation; use a
+dedicated tool when the distinction matters.
 
 ### Cofactors and Anchors
 
@@ -99,22 +90,20 @@ chlorophyll, pheophytin, metal-free or zinc porphyrin, or pterin. Everything
 else bound to the protein, including lipids, detergents, sugars, buffer and
 cryoprotectant molecules, substrates and inhibitors, and redox-inert ions such
 as Na, K, Mg, Ca, and Zn, is still in the model and still contributes to
-packing density, but is not reported as a cofactor a path ends beside or lies
-near. The rule cannot tell a functional metal from the same metal added for
-crystallization, so a manganese or nickel ion from the mother liquor is still
-listed as a cofactor and should be discounted by eye.
+packing density, but is not reported as a cofactor a path lies near. The rule
+cannot tell a functional metal from the same metal added for crystallization,
+so a manganese or nickel ion from the mother liquor is still listed as a
+cofactor and should be discounted by eye.
 
 Sites sharing a residue name are numbered by chain and residue number, which is
 what produces `SF4-1` to `SF4-7`.
 
-The two endpoints only describe where a path stops. A long path can touch a
-cofactor part-way along its length while both of its ends lie elsewhere, so
-each path is also given an anchor, the cofactor nearest to any of its atoms
-when one lies within 8.0 Å. `anchor_cofactor`, `anchor_distance`, and
-`anchor_atom` in `*_clusters.csv` record the site, the distance, and the path
-atom closest to it, and are empty when no cofactor is in range. The summaries
-list every cofactor site found, so a path that reports no anchor can be told
-apart from a model that has no cofactors.
+Each path is given an anchor, the cofactor nearest to any of its atoms when one
+lies within 8.0 Å, wherever along the path that atom is. `anchor_cofactor`,
+`anchor_distance`, and `anchor_atom` in `*_clusters.csv` record the site, the
+distance, and the path atom closest to it, and are empty when no cofactor is in
+range. The summaries list every cofactor site found, so a path that reports no
+anchor can be told apart from a model that has no cofactors.
 
 ### Step Provenance
 

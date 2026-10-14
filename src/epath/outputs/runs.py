@@ -59,7 +59,6 @@ class EpathRunRecord:
     largest_component_length: float | None
     largest_component_mean_step: float | None
     largest_component_largest_edge: float | None
-    largest_component_span: float | None
 
 
 def build_run_record(
@@ -108,5 +107,4 @@ def build_run_record(
         largest_component_length=metrics.mst_total_length if metrics else None,
         largest_component_mean_step=metrics.mean_step if metrics else None,
         largest_component_largest_edge=metrics.mst_largest_edge if metrics else None,
-        largest_component_span=metrics.span if metrics else None,
     )

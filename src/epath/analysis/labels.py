@@ -1,7 +1,7 @@
 """Name atoms and residues the way the E-path tables and reports do.
 
 An atom is written as a token such as A:87A:CB and a residue as a label such
-as Trp76. `pathways`, `endpoints` and `epath.outputs.tables` all write them,
+as Trp76. `pathways`, `cofactors` and `epath.outputs.tables` all write them,
 so the two forms are defined once, here, with the key that tells which atoms
 belong to one residue. The atoms are the records `xtal.reader` read from the
 structure file.

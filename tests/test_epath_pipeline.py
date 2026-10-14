@@ -78,9 +78,6 @@ def test_components_are_found_filtered_and_recorded() -> None:
     assert result.component_statistics.largest_atom_count == 6
     assert [c.atom_count for c in result.clusters] == [6]
     assert len(result.path_reports) == 1
-    report = result.path_reports[0]
-    assert report.start_endpoint.kind in {"low_packing", "typical_packing"}
-    assert report.end_endpoint.kind in {"low_packing", "typical_packing"}
     assert result.cofactor_sites == ()
     # Bnet needs Asp/Glu carboxyl oxygens, and this model has none.
     assert result.bnet_pipeline_result.bnet_result is None
@@ -118,7 +115,9 @@ def test_largest_component_is_recorded_even_when_nothing_is_reported() -> None:
     assert result.run_record.largest_component_reported is False
     largest = result.component_statistics.largest_metrics
     assert largest is not None
-    assert result.run_record.largest_component_span == approx(largest.span)
+    assert result.run_record.largest_component_length == approx(
+        largest.mst_total_length
+    )
 
 
 def test_an_empty_selection_still_writes_every_output(tmp_path: Path) -> None:

@@ -4,7 +4,7 @@
 - `clustering` groups selected atoms by spatial connectivity.
 - `pathways` describes each cluster as a path.
 - `residues` classifies path residues by side-chain chemistry.
-- `endpoints` relates path ends to cofactors, interfaces, and packing density.
+- `cofactors` finds the redox cofactors and the one nearest to each path.
 - `geometry` holds the distance and spanning-tree helpers they share.
 - `labels` names atoms and residues for the tables and reports.
 """

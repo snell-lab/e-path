@@ -1,4 +1,4 @@
-"""Residue chemistry, endpoints, cofactor anchors, and pathway description."""
+"""Residue chemistry, cofactor sites and anchors, and pathway description."""
 
 from collections.abc import Sequence
 
@@ -8,16 +8,11 @@ from support import (
     approx,
     make_atom_record,
     make_prepared_atom,
-    make_scored_atom,
     scored_atoms_from_coordinates,
 )
 
 from epath.analysis.clustering import cluster_selected_atoms
-from epath.analysis.endpoints import (
-    annotate_endpoint,
-    build_endpoint_context,
-    cofactor_site_summary,
-)
+from epath.analysis.cofactors import build_cofactor_context, cofactor_site_summary
 from epath.analysis.labels import atom_token, format_residue_label, residue_label
 from epath.analysis.pathways import PathReport, analyze_paths
 from epath.analysis.residues import (
@@ -153,17 +148,13 @@ def test_only_redox_capable_groups_are_cofactors() -> None:
         group(8, "CU", "CU"),  # a redox-active metal ion
         group(9, "XYZ", "FE"),  # an unfamiliar name that holds iron
     )
-    context = build_endpoint_context(
-        scored_atoms=[make_scored_atom()], cleaned_atoms=cleaned
-    )
+    context = build_cofactor_context(cleaned)
 
     assert [site.label for site in context.sites] == ["ZNH", "U10", "CU", "XYZ"]
 
 
 def test_cofactor_sites_are_numbered_and_other_groups_ignored() -> None:
-    context = build_endpoint_context(
-        scored_atoms=[make_scored_atom()], cleaned_atoms=_cleaned_model()
-    )
+    context = build_cofactor_context(_cleaned_model())
 
     assert [site.label for site in context.sites] == ["FMN", "SF4-1", "SF4-2"]
     assert [(site.chain_id, site.residue_number) for site in context.sites] == [
@@ -176,65 +167,7 @@ def test_cofactor_sites_are_numbered_and_other_groups_ignored() -> None:
         == "FMN (Fmn201 chain A), SF4-1 (Sf4301 chain A), SF4-2 (Sf4302 chain B)"
     )
     assert cofactor_site_summary(()) == "none detected"
-    assert (
-        build_endpoint_context(
-            scored_atoms=[make_scored_atom()], cleaned_atoms=()
-        ).sites
-        == ()
-    )
-
-
-def test_endpoints_are_labelled_in_order_of_mechanistic_weight() -> None:
-    scored = [
-        make_scored_atom(packing_density=d) for d in (10, 20, 30, 40, 50, 60, 70, 80)
-    ]
-    context = build_endpoint_context(
-        scored_atoms=scored, cleaned_atoms=_cleaned_model()
-    )
-    assert context.low_packing_density == approx(
-        np.percentile([10, 20, 30, 40, 50, 60, 70, 80], 25)
-    )
-
-    contact = annotate_endpoint(
-        make_scored_atom(
-            chain_id="A", residue_name="TRP", residue_number=7, x=9.0, packing_density=1
-        ),
-        context,
-    )
-    assert (contact.kind, contact.label) == ("cofactor", "FMN")
-    assert contact.residue == "Trp7" and contact.atom_token == "A:7:CA"
-
-    region = annotate_endpoint(
-        make_scored_atom(chain_id="A", x=5.0, packing_density=1), context
-    )
-    assert (region.kind, region.label) == ("cofactor_region", "FMN region")
-
-    # Within 4 A of chain B's protein atom, but more than 8 A from any cofactor.
-    interface = annotate_endpoint(
-        make_scored_atom(chain_id="A", x=30.0, y=0.0, packing_density=1), context
-    )
-    assert (interface.kind, interface.label) == ("interface", "Interface region")
-
-    low = annotate_endpoint(
-        make_scored_atom(chain_id="A", x=-20.0, packing_density=20), context
-    )
-    assert (low.kind, low.label) == ("low_packing", "Low-packing region")
-
-    typical = annotate_endpoint(
-        make_scored_atom(chain_id="A", x=-20.0, packing_density=70), context
-    )
-    assert (typical.kind, typical.label) == (
-        "typical_packing",
-        "Typical-packing region",
-    )
-
-    # An atom of the same chain does not make an interface.
-    assert (
-        annotate_endpoint(
-            make_scored_atom(chain_id="B", x=30.0, packing_density=70), context
-        ).kind
-        == "typical_packing"
-    )
+    assert build_cofactor_context(()).sites == ()
 
 
 def test_labels_and_tokens() -> None:
@@ -288,29 +221,20 @@ def _path(
         )
     clusters = cluster_selected_atoms(scored, distance_cutoff=4.0)
     assert len(clusters) == 1
-    return analyze_paths(clusters, scored_atoms=scored, cleaned_atoms=cleaned).reports[
-        0
-    ]
+    return analyze_paths(clusters, cleaned_atoms=cleaned).reports[0]
 
 
 def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
     at_start = _path(["TRP", "ALA", "LEU", "TYR", "VAL", "GLY"], cofactor_at_start=True)
-    assert (
-        at_start.start_endpoint.kind == "cofactor"
-        and at_start.end_endpoint.kind == "low_packing"
-    )
-    assert at_start.endpoint_summary == "FMN -> Low-packing region"
     assert at_start.anchor is not None and at_start.is_cofactor_anchored
     assert (at_start.anchor.label, at_start.anchor.residue) == ("FMN", "Trp1")
     assert at_start.anchor.distance == approx(3.0)
     assert at_start.anchor_summary == "FMN at 3.0 A"
 
-    # A cofactor beside the middle of a long path is out of range of both ends,
-    # so neither endpoint is labelled with it, but the path is still anchored.
+    # A cofactor beside the middle of a long path, out of range of both ends,
+    # still anchors it.
     names = ["ALA", "LEU", "VAL", "GLY", "TRP", "ILE", "PRO", "ALA"]
     midway = _path(names, cofactor_at_start=True, cofactor_position=(12.25, 3.0, 0.0))
-    assert midway.start_endpoint.kind == "low_packing"
-    assert midway.end_endpoint.kind == "low_packing"
     assert midway.anchor is not None and midway.anchor.label == "FMN"
     assert midway.anchor.distance == approx(np.hypot(1.75, 3.0))
     assert midway.anchor.residue in {"Gly4", "Trp5"}
@@ -324,7 +248,6 @@ def test_path_anchor_is_the_nearest_cofactor_to_any_atom() -> None:
     )
     assert unanchored.anchor is None
     assert unanchored.anchor_summary == "no cofactor in range"
-    assert unanchored.start_endpoint.kind == "low_packing"
 
 
 def test_residue_path_listing_and_step_provenance() -> None:
@@ -345,7 +268,7 @@ def test_residue_path_listing_and_step_provenance() -> None:
     )
     clusters = cluster_selected_atoms(scored, distance_cutoff=4.0)
 
-    report = analyze_paths(clusters, scored_atoms=scored, cleaned_atoms=()).reports[0]
+    report = analyze_paths(clusters, cleaned_atoms=()).reports[0]
 
     # Chains are ordered by the lowest residue number each contributes, so
     # chain B's Ala5 leads; atoms keep the order the graph reached them in.
@@ -378,7 +301,6 @@ def test_residue_path_listing_and_step_provenance() -> None:
     interchain = next(s for s in report.steps if s.kind == "interchain")
     assert {interchain.first_atom, interchain.second_atom} == {"A:88:CA", "B:5:CA"}
     assert report.composition.fractions["aromatic"] == approx(0.75)
-    assert report.start_endpoint.atom_token in {"A:76:CA", "B:5:CA"}
 
 
 def test_single_residue_path() -> None:
@@ -390,7 +312,6 @@ def test_single_residue_path() -> None:
     )
     report = analyze_paths(
         cluster_selected_atoms(scored),
-        scored_atoms=scored,
         cleaned_atoms=(),
     ).reports[0]
 

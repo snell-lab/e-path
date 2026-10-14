@@ -10,10 +10,7 @@ from epath.analysis.clustering import (
     component_statistics,
     mst_length_stats,
 )
-from epath.analysis.geometry import (
-    maximum_pairwise_distance_pair,
-    minimum_spanning_tree_edges,
-)
+from epath.analysis.geometry import minimum_spanning_tree_edges
 
 LINE = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (3.0, 0.0, 0.0), (4.5, 0.0, 0.0)]
 
@@ -43,20 +40,11 @@ def test_cluster_metrics() -> None:
     assert (
         metrics.mst_total_length,
         metrics.mst_largest_edge,
-        metrics.span,
         metrics.mean_step,
-    ) == approx((4.5, 1.5, 4.5, 1.5))
+    ) == approx((4.5, 1.5, 1.5))
 
     single = mst_length_stats(np.asarray(LINE[:1]))
-    assert (single.mst_total_length, single.span, single.mean_step) == (0.0, 0.0, 0.0)
-
-
-def test_span_endpoints() -> None:
-    points = np.asarray([(0, 0, 0), (1, 0, 0), (0, 3, 0), (0, 0, 2)], dtype=float)
-
-    first, second, span = maximum_pairwise_distance_pair(points)
-    assert (first, second) == (2, 3) and span == approx(np.sqrt(13))
-    assert maximum_pairwise_distance_pair(points[:1]) == (0, 0, 0.0)
+    assert single.mst_total_length == single.mst_largest_edge == single.mean_step == 0
 
 
 def test_non_finite_coordinates_are_rejected() -> None:
@@ -86,7 +74,7 @@ def test_clusters_are_connected_components_ordered_by_size() -> None:
     assert [c.cluster_id for c in clusters] == [1, 2, 3, 4, 5]
     assert clusters[0].atom_count == 3
     assert clusters[0].metrics.mst_total_length == approx(7.8)
-    assert clusters[1].metrics.span == approx(4.0)
+    assert clusters[1].metrics.mst_total_length == approx(4.0)
     assert cluster_selected_atoms(()) == ()
 
     statistics = component_statistics(clusters)
