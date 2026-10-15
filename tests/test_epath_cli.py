@@ -171,17 +171,20 @@ def test_single_run_writes_every_output(synthetic_pdb: Path, tmp_path: Path) -> 
     assert "Calculating BDamage scores..." in err and "done in" in err
     written = sorted(p.name for p in prefix.parent.iterdir())
     assert written == [
+        "pathways",
         "run_clusters.csv",
         "run_epath.csv",
         "run_model.cif",
-        "run_path01.cif",
-        "run_path02.cif",
-        "run_path03.cif",
         "run_run.csv",
         "run_selected.cif",
         "run_steps.csv",
         "run_summary.txt",
         "run_zfalloff.png",
+    ]
+    assert sorted(p.name for p in (prefix.parent / "pathways").iterdir()) == [
+        "run_path01.cif",
+        "run_path02.cif",
+        "run_path03.cif",
     ]
     assert len(read_csv_rows(prefix.parent / "run_epath.csv")) == 77
     assert len(read_csv_rows(prefix.parent / "run_clusters.csv")) == 3
@@ -225,7 +228,7 @@ def test_several_percentiles_share_one_bdamage_calculation(
         directory = prefix.parent / f"percentile_{percentile}"
         assert read_csv_rows(directory / "run_run.csv") == [row]
         assert (directory / "run_summary.txt").is_file()
-        assert (directory / "run_path01.cif").is_file()
+        assert (directory / "pathways" / "run_path01.cif").is_file()
 
     # Switching reports off drops the percentile table with the other reports.
     prefix = tmp_path / "multi_noreports" / "run"

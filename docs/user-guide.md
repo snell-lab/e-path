@@ -231,8 +231,9 @@ whole number of atoms, so `*_selected.cif` and the `selected` column of
 `*_epath.csv` are what identify the selection exactly.
 
 `*_selected.cif` holds every selected atom, including those in components too
-small to be reported as pathways. `*_path01.cif`, `*_path02.cif`, and so on
-each hold one pathway's atoms, with `_epath.path_id`,
+small to be reported as pathways. `*_path01.cif`, `*_path02.cif`, and so on,
+in the `pathways` subdirectory beside the other outputs, each hold one
+pathway's atoms, with `_epath.path_id`,
 `_epath.nearby_cofactors` (the nearby sites separated by `/`, or `none`), and
 `_epath.cluster_distance` (the `--cluster-distance` the atoms were connected
 within, in angstroms) recorded. Loading them separately is how to colour by pathway.

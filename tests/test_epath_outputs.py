@@ -294,8 +294,9 @@ def test_path_subset_cifs_are_zero_padded(
         tmp_path / "run", result.path_reports, crystal=crystal, cluster_distance=3.5
     )
 
-    assert {path_id: path.name for path_id, path in paths.items()} == {
-        r.path_id: f"run_path{r.path_id:02d}.cif" for r in result.path_reports
+    assert paths == {
+        r.path_id: tmp_path / "pathways" / f"run_path{r.path_id:02d}.cif"
+        for r in result.path_reports
     }
     block = gemmi.cif.read_file(str(paths[1])).sole_block()
     assert block.find_value("_epath.path_id") == "1"
@@ -323,23 +324,34 @@ def test_path_subset_cifs_replace_those_of_an_earlier_run(
     tmp_path: Path, result: EpathPipelineResult
 ) -> None:
     crystal = result.bdamage_pipeline_result.crystal
+    directory = tmp_path / "pathways"
+    directory.mkdir()
     earlier = ["run_path01.cif", "run_path07.cif", "run_path123.cif"]
     unrelated = ["run_path01.cif.bak", "run_path01_notes.cif", "other_path01.cif"]
     for name in earlier + unrelated:
-        (tmp_path / name).write_text("old")
+        (directory / name).write_text("old")
 
     paths = write_path_subset_cifs(
         tmp_path / "run", result.path_reports[:1], crystal=crystal, cluster_distance=4.0
     )
 
-    assert sorted(path.name for path in tmp_path.iterdir()) == sorted(
+    assert sorted(path.name for path in directory.iterdir()) == sorted(
         ["run_path01.cif", *unrelated]
     )
     assert paths[1].read_text() != "old"
 
     # A run that reports no pathway leaves none behind.
     write_path_subset_cifs(tmp_path / "run", (), crystal=crystal, cluster_distance=4.0)
-    assert sorted(path.name for path in tmp_path.iterdir()) == sorted(unrelated)
+    assert sorted(path.name for path in directory.iterdir()) == sorted(unrelated)
+
+    # Nor an empty directory, once nothing else is in it.
+    for name in unrelated:
+        (directory / name).unlink()
+    write_path_subset_cifs(
+        tmp_path / "run", result.path_reports[:1], crystal=crystal, cluster_distance=4.0
+    )
+    write_path_subset_cifs(tmp_path / "run", (), crystal=crystal, cluster_distance=4.0)
+    assert not directory.exists()
 
 
 def test_path_subset_cifs_write_atoms_in_input_order(

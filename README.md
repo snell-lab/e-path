@@ -48,7 +48,8 @@ Each run writes into its own directory under `output/`, such as `output/1ABC/`:
 - `*_run.csv`: a single row of run-level results, including the E-path
   version and the clustering settings.
 - `*_selected.cif`: the selected atoms.
-- `*_path01.cif`, `*_path02.cif`, ...: one file per reported pathway.
+- `pathways/*_path01.cif`, `pathways/*_path02.cif`, ...: one file per reported
+  pathway.
 - `*_model.cif`: the cleaned model with BDamage in the B-factor column.
 - `*_zfalloff.png`: the BDamage Z-score falloff plot.
 - `*_summary.txt`: the analysis summary.

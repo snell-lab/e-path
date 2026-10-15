@@ -37,6 +37,10 @@ from xtal.validate import ValidatedCrystal
 # an unambiguous marker for an atom that was not scored.
 UNSCORED_BDAMAGE_PLACEHOLDER = 0.0
 
+# The pathway files go in a directory of their own beside the other outputs,
+# since a run can report dozens of them.
+PATHWAY_DIRECTORY_NAME = "pathways"
+
 
 def write_structure_outputs(
     output_prefix: str | Path,
@@ -57,7 +61,8 @@ def write_structure_outputs(
     so that solvent, ions, and cofactors can be inspected alongside the E-path
     results even though they were not scored. The file names are
     `output_prefix` followed by `_selected.cif`, `_pathNN.cif`, and
-    `_model.cif`. The paths come back as the selected-atom file, the model
+    `_model.cif`, with the pathway files in a `pathways` directory beside the
+    other two. The paths come back as the selected-atom file, the model
     file, and the file of each pathway that was written, by path number and
     in pathway order. Every file carries the unit cell and space group of
     `crystal`, and each pathway file the `cluster_distance` its atoms were
@@ -186,6 +191,12 @@ def write_path_subset_cifs(
 ) -> dict[int, Path]:
     """Write one mmCIF subset per reported pathway and return them by path number.
 
+    The files are named `<name>_pathNN.cif`, where `<name>` is the last
+    component of `output_prefix`, and go in a `pathways` directory beside
+    where the prefix puts the other outputs. They keep the prefix in their
+    names so that pathways of different runs stay apart once loaded together
+    in a viewer.
+
     The combined selected-atom file holds every selected atom, including those
     in components too small to report. These files hold one pathway each, so a
     viewer can load and colour them separately without a per-atom label being
@@ -202,14 +213,16 @@ def write_path_subset_cifs(
 
     The pathway files of an earlier run under the same prefix are removed
     first, so a run that reports fewer pathways leaves none of the old ones
-    behind to be read as its own.
+    behind to be read as its own. The `pathways` directory is removed too if
+    that leaves it empty and this run writes nothing into it.
     """
     prefix = Path(output_prefix)
-    _remove_path_subset_cifs(prefix)
-    if not path_reports:
-        return {}
+    directory = prefix.parent / PATHWAY_DIRECTORY_NAME
+    _remove_path_subset_cifs(directory, prefix.name)
 
-    width = max(2, len(str(max(report.path_id for report in path_reports))))
+    width = max(
+        2, len(str(max((report.path_id for report in path_reports), default=0)))
+    )
     written: dict[int, Path] = {}
     for report in path_reports:
         # The cluster holds its atoms in the order the search reached them.
@@ -238,7 +251,7 @@ def write_path_subset_cifs(
                 f"Coordinates limited to chains {', '.join(display_chains)}."
             )
         written[report.path_id] = write_atom_subset_cif(
-            prefix.with_name(f"{prefix.name}_path{report.path_id:0{width}d}.cif"),
+            directory / f"{prefix.name}_path{report.path_id:0{width}d}.cif",
             atoms,
             crystal=crystal,
             title=f"E-path pathway {report.path_id}",
@@ -250,6 +263,8 @@ def write_path_subset_cifs(
             },
         )
 
+    if not written and directory.is_dir() and not any(directory.iterdir()):
+        directory.rmdir()
     return written
 
 
@@ -400,12 +415,12 @@ def _make_atom(record: AtomRecord, b_factor: float) -> gemmi.Atom:
     return atom
 
 
-def _remove_path_subset_cifs(prefix: Path) -> None:
-    """Remove every `<prefix>_pathNN.cif` file, whatever its number of digits."""
-    if not prefix.parent.is_dir():
+def _remove_path_subset_cifs(directory: Path, name: str) -> None:
+    """Remove every `<name>_pathNN.cif` file in `directory`, whatever its digits."""
+    if not directory.is_dir():
         return
 
-    pattern = re.compile(rf"{re.escape(prefix.name)}_path\d+\.cif")
-    for path in prefix.parent.iterdir():
+    pattern = re.compile(rf"{re.escape(name)}_path\d+\.cif")
+    for path in directory.iterdir():
         if pattern.fullmatch(path.name) and path.is_file():
             path.unlink()
