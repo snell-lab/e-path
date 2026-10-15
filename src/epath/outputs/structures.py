@@ -50,6 +50,7 @@ def write_structure_outputs(
     bdamage_by_source_index: Mapping[int, float],
     path_reports: Sequence[PathReport],
     cluster_distance: float,
+    cofactor_range: float,
     cleaned_atoms: Sequence[PreparedAtom],
     bdamage_threshold: float,
     display_chains: Sequence[str] | None,
@@ -66,7 +67,8 @@ def write_structure_outputs(
     file, and the file of each pathway that was written, by path number and
     in pathway order. Every file carries the unit cell and space group of
     `crystal`, and each pathway file the `cluster_distance` its atoms were
-    joined within.
+    joined within and the `cofactor_range` its nearby cofactors were found
+    within.
 
     `display_chains` restricts every coordinate file to those chains, and None
     keeps them all. It is a display filter only: the atoms and pathways were
@@ -109,6 +111,7 @@ def write_structure_outputs(
             path_reports,
             crystal=crystal,
             cluster_distance=cluster_distance,
+            cofactor_range=cofactor_range,
             display_chains=display_chains,
         ),
     )
@@ -187,6 +190,7 @@ def write_path_subset_cifs(
     *,
     crystal: ValidatedCrystal,
     cluster_distance: float,
+    cofactor_range: float,
     display_chains: Sequence[str] | None = None,
 ) -> dict[int, Path]:
     """Write one mmCIF subset per reported pathway and return them by path number.
@@ -204,7 +208,8 @@ def write_path_subset_cifs(
     values. The atoms of each pathway are written in input order, so each
     residue is one block and each chain is listed once, as in the model file.
     Each file records `cluster_distance`, the distance in angstroms within
-    which the pathway's atoms were connected.
+    which the pathway's atoms were connected, and `cofactor_range`, the
+    distance in angstroms within which a cofactor was reported as near it.
 
     Path numbers are zero padded to at least two digits so the files sort in
     path order, and keep their numbering when `display_chains` drops a pathway
@@ -240,6 +245,7 @@ def write_path_subset_cifs(
             ),
             f"Cofactors in range: {report.nearby_cofactor_summary}.",
             f"Atoms connected within {cluster_distance:g} A.",
+            f"Cofactors reported within {cofactor_range:g} A.",
         ]
         if display_chains is not None:
             atoms = tuple(
@@ -259,6 +265,7 @@ def write_path_subset_cifs(
             values={
                 "path_id": str(report.path_id),
                 "cluster_distance": f"{cluster_distance:g}",
+                "cofactor_range": f"{cofactor_range:g}",
                 "nearby_cofactors": nearby_labels or "none",
             },
         )

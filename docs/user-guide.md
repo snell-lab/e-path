@@ -235,8 +235,10 @@ whole number of atoms, so `*_selected.cif` and the `selected` column of
 small to be reported as pathways. `*_path01.cif`, `*_path02.cif`, and so on,
 in the `pathways` subdirectory beside the other outputs, each hold one
 pathway's atoms, with `_epath.path_id`,
-`_epath.nearby_cofactors` (the nearby sites separated by `/`, or `none`), and
+`_epath.nearby_cofactors` (the nearby sites separated by `/`, or `none`),
 `_epath.cluster_distance` (the `--cluster-distance` the atoms were connected
-within, in angstroms) recorded. Loading them separately is how to colour by pathway.
+within, in angstroms), and `_epath.cofactor_range` (the `--cofactor-range` the
+nearby cofactors were found within, in angstroms) recorded. Loading them
+separately is how to colour by pathway.
 A run removes the pathway files an earlier run left under the same prefix, so
 rerunning with `-o` never leaves stale pathways beside the new ones.
