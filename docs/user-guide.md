@@ -66,9 +66,10 @@ citation will be added to the README and to `--citations` when it is published.
 Each pathway is reported with:
 
 - The residues the path runs through and the protected atoms in each of them,
-  written `Chain A - Trp76 (CA, O, CB) -> His87 (CB)`. Chains appear in the
-  order of the first residue each contributes, residues in ascending residue
-  number, and atoms in the order the connectivity graph reached them.
+  written `Chain A - Trp76 (CA, O, CB); His87 (CB)`. This is a listing, not a
+  route from one end of the path to the other: chains appear in the order of
+  the first residue each contributes, residues in ascending residue number, and
+  atoms in the order the connectivity graph reached them.
 - The residue count, the node (atom) count, and the total path length.
 - The chains the path runs through.
 - The cofactors within reach of the path, and their distances.

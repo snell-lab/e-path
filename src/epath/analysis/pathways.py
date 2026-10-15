@@ -394,7 +394,7 @@ def _format_residue_path(residues: Sequence[PathResidue]) -> str:
         atom_names = ", ".join(residue.atom_names)
         parts.append(f"{prefix}{residue.label} ({atom_names})")
 
-    return " -> ".join(parts)
+    return "; ".join(parts)
 
 
 def _sort_number(residue_number: int | None) -> int:

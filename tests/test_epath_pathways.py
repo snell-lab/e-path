@@ -401,7 +401,7 @@ def test_residue_path_listing_and_step_provenance() -> None:
     # chain B's Ala5 leads; atoms keep the order the graph reached them in.
     assert (
         report.residue_path
-        == "Chain B - Ala5 (CA) -> Chain A - Trp76 (CA, CB, O) -> His87 (CB) -> His88 (CA)"
+        == "Chain B - Ala5 (CA); Chain A - Trp76 (CA, CB, O); His87 (CB); His88 (CA)"
     )
     assert report.chains == ("B", "A")
     assert (report.residue_count, report.node_count) == (4, 6)
