@@ -19,6 +19,7 @@ from epath import __version__
 from epath.outputs.files import EpathOutputPipelineOptions
 from epath.pipeline import (
     EpathClusterPipelineOptions,
+    EpathPathwayPipelineOptions,
     EpathPipelineOptions,
     EpathSelectionPipelineOptions,
 )
@@ -179,6 +180,16 @@ def _add_epath_advanced_arguments(
         help=(
             "Minimum connected-component size reported as an E-path cluster. "
             f"Default: {defaults.clustering.minimum_cluster_size}"
+        ),
+    )
+    group.add_argument(
+        "--cofactor-range",
+        metavar="ANGSTROM",
+        type=positive_float,
+        default=defaults.pathways.cofactor_range,
+        help=(
+            "Distance from any atom of a pathway within which a cofactor is "
+            f"reported as near it. Default: {defaults.pathways.cofactor_range}"
         ),
     )
 
@@ -402,6 +413,9 @@ def epath_pipeline_options_from_args(
         clustering=EpathClusterPipelineOptions(
             distance_cutoff=args.cluster_distance,
             minimum_cluster_size=args.minimum_cluster_size,
+        ),
+        pathways=EpathPathwayPipelineOptions(
+            cofactor_range=args.cofactor_range,
         ),
         output=EpathOutputPipelineOptions(
             output_prefix=output_prefix,

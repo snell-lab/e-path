@@ -68,6 +68,7 @@ RUN_FIELDNAMES = [
     "total_components",
     "cluster_distance",
     "minimum_cluster_size",
+    "cofactor_range",
     "clusters_reported",
     "largest_component_atoms",
     "largest_component_reported",

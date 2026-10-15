@@ -40,7 +40,9 @@ class EpathRunRecord:
     of at least `minimum_cluster_size` atoms, out of `total_components`. The
     `largest_component_*` fields describe the largest component whether or not
     it was reported. Its lengths are in angstroms, and are `None` when no atom
-    was selected and so there is no component. `bnet` and `bnet_percentile`
+    was selected and so there is no component. `cofactor_range` is the
+    distance in angstroms within which a cofactor is reported as near a path.
+    `bnet` and `bnet_percentile`
     are `None` when they could not be calculated.
     """
 
@@ -58,6 +60,7 @@ class EpathRunRecord:
     total_components: int
     cluster_distance: float
     minimum_cluster_size: int
+    cofactor_range: float
     clusters_reported: int
     largest_component_atoms: int
     largest_component_reported: bool
@@ -74,6 +77,7 @@ def build_run_record(
     statistics: ComponentStatistics,
     cluster_distance: float,
     minimum_cluster_size: int,
+    cofactor_range: float,
     cutoff_percent: float,
     bnet_pipeline_result: BnetPipelineResult,
 ) -> EpathRunRecord:
@@ -107,6 +111,7 @@ def build_run_record(
         total_components=statistics.total_count,
         cluster_distance=cluster_distance,
         minimum_cluster_size=minimum_cluster_size,
+        cofactor_range=cofactor_range,
         clusters_reported=len(clusters),
         largest_component_atoms=statistics.largest_atom_count,
         largest_component_reported=(

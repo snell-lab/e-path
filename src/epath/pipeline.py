@@ -18,7 +18,7 @@ from epath.analysis.clustering import (
     cluster_selected_atoms,
     component_statistics,
 )
-from epath.analysis.cofactors import CofactorSite
+from epath.analysis.cofactors import DEFAULT_COFACTOR_RANGE_ANGSTROM, CofactorSite
 from epath.analysis.pathways import PathReport, analyze_paths
 from epath.analysis.selection import (
     EpathSelectionResult,
@@ -64,6 +64,18 @@ class EpathClusterPipelineOptions:
 
 
 @dataclass(frozen=True, slots=True)
+class EpathPathwayPipelineOptions:
+    """Set how the reported clusters are described as pathways.
+
+    A cofactor is reported as near a path when one of its atoms lies within
+    `cofactor_range` angstroms of an atom of the path. The range must be
+    positive.
+    """
+
+    cofactor_range: float = DEFAULT_COFACTOR_RANGE_ANGSTROM
+
+
+@dataclass(frozen=True, slots=True)
 class EpathPipelineOptions:
     """Group the options of every stage of the E-path pipeline.
 
@@ -76,6 +88,9 @@ class EpathPipelineOptions:
     )
     clustering: EpathClusterPipelineOptions = field(
         default_factory=EpathClusterPipelineOptions
+    )
+    pathways: EpathPathwayPipelineOptions = field(
+        default_factory=EpathPathwayPipelineOptions
     )
     output: EpathOutputPipelineOptions = field(
         default_factory=EpathOutputPipelineOptions
@@ -199,6 +214,7 @@ def run_epath_pipeline(
         lambda: analyze_paths(
             clusters,
             cleaned_atoms=cleaned_atoms,
+            cofactor_range=options.pathways.cofactor_range,
         ),
         stage_runner=stage_runner,
     )
@@ -218,6 +234,7 @@ def run_epath_pipeline(
         statistics=statistics,
         cluster_distance=options.clustering.distance_cutoff,
         minimum_cluster_size=minimum_cluster_size,
+        cofactor_range=options.pathways.cofactor_range,
         cutoff_percent=options.selection.percentile,
         bnet_pipeline_result=bnet_pipeline_result,
     )

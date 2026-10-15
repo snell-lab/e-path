@@ -21,11 +21,11 @@ from epath.analysis.labels import atom_token, format_residue_label, residue_labe
 from rabdam.structure.models import PreparedAtom
 from xtal.reader import AtomRecord
 
-# A cofactor within this range of a path atom is reported as near the path.
-# The range is a judgement of what is near enough to be worth inspecting. It
-# covers the residues around the cofactor, out to a little beyond its second
-# shell, while leaving most paths with no cofactor near them.
-COFACTOR_PROXIMITY_ANGSTROM = 8.0
+# By default a cofactor within this range of a path atom is reported as near
+# the path. The range is a judgement of what is near enough to be worth
+# inspecting. It covers the residues around the cofactor, out to a little
+# beyond its second shell, while leaving most paths with no cofactor near them.
+DEFAULT_COFACTOR_RANGE_ANGSTROM = 8.0
 
 # Only redox-capable groups are treated as cofactors. Every other bound group
 # (lipids, detergents, sugars, buffer and cryoprotectant molecules, substrates
@@ -167,11 +167,13 @@ def build_cofactor_context(cleaned_atoms: Sequence[PreparedAtom]) -> CofactorCon
 def find_nearby_cofactors(
     atoms: Sequence[AtomRecord],
     context: CofactorContext,
+    *,
+    cofactor_range: float = DEFAULT_COFACTOR_RANGE_ANGSTROM,
 ) -> tuple[NearbyCofactor, ...]:
     """Return every cofactor within range of a path, the nearest first.
 
-    A cofactor is in range when one of its atoms lies within the proximity
-    range of an atom of the path, the range itself included. Each one names the
+    A cofactor is in range when one of its atoms lies within `cofactor_range`
+    angstroms of an atom of the path, the range itself included. Each one names the
     path atom closest to that cofactor, and the first such atom in path
     order when several are equally close. Cofactors equally near are in site
     order. The result is empty when no cofactor is in range.
@@ -190,7 +192,7 @@ def find_nearby_cofactors(
     for site_index, site in enumerate(context.sites):
         nearest = int(np.argmin(distances[:, site_index]))
         distance = float(distances[nearest, site_index])
-        if distance > COFACTOR_PROXIMITY_ANGSTROM:
+        if distance > cofactor_range:
             continue
 
         nearby.append(

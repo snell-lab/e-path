@@ -26,6 +26,7 @@ from numpy.typing import NDArray
 
 from epath.analysis.clustering import EpathCluster, coordinates_for_atoms
 from epath.analysis.cofactors import (
+    DEFAULT_COFACTOR_RANGE_ANGSTROM,
     CofactorContext,
     CofactorSite,
     NearbyCofactor,
@@ -210,17 +211,24 @@ def analyze_paths(
     clusters: Sequence[EpathCluster],
     *,
     cleaned_atoms: Sequence[PreparedAtom],
+    cofactor_range: float = DEFAULT_COFACTOR_RANGE_ANGSTROM,
 ) -> PathAnalysisResult:
     """Describe every reported cluster as a pathway.
 
-    The reports are in the order of `clusters`.
+    The reports are in the order of `clusters`. A cofactor is reported as near
+    a path when it lies within `cofactor_range` angstroms of one of its atoms.
     """
     context = build_cofactor_context(cleaned_atoms)
     peptide_links = _peptide_links(cleaned_atoms)
 
     return PathAnalysisResult(
         reports=tuple(
-            _build_path_report(cluster, context=context, peptide_links=peptide_links)
+            _build_path_report(
+                cluster,
+                context=context,
+                peptide_links=peptide_links,
+                cofactor_range=cofactor_range,
+            )
             for cluster in clusters
         ),
         cofactor_sites=context.sites,
@@ -265,6 +273,7 @@ def _build_path_report(
     *,
     context: CofactorContext,
     peptide_links: frozenset[frozenset[ResidueKey]],
+    cofactor_range: float,
 ) -> PathReport:
     """Describe one cluster as a pathway.
 
@@ -281,7 +290,9 @@ def _build_path_report(
         chains=tuple(dict.fromkeys(residue.chain_id for residue in residues)),
         residues=residues,
         residue_path=_format_residue_path(residues),
-        nearby_cofactors=find_nearby_cofactors(atoms, context),
+        nearby_cofactors=find_nearby_cofactors(
+            atoms, context, cofactor_range=cofactor_range
+        ),
         composition=composition,
         steps=_path_steps(atoms, coordinates, peptide_links),
     )

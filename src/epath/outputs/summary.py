@@ -153,6 +153,7 @@ def _pathway_summary_lines(result: EpathPipelineResult) -> tuple[str, ...]:
         f"Cluster distance: {_number(result.run_record.cluster_distance)} A",
         "Minimum reported cluster size: "
         f"{result.run_record.minimum_cluster_size} atoms",
+        f"Cofactor range: {_number(result.run_record.cofactor_range)} A",
         f"Connected components found: {statistics.total_count}",
         f"Cofactor sites: {cofactor_site_summary(result.cofactor_sites)}",
     ]

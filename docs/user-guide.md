@@ -121,9 +121,10 @@ produces `SF4-1` to `SF4-7`.
 
 Every cofactor that lies within 8.0 Å of any atom of a path is reported as
 near it, wherever along the path that atom is, so a path running between two
-cofactors is reported with both. This flags paths worth inspecting alongside a
-cofactor; it does not show that the two are connected. In a protein with many
-cofactors, many paths will lie near one.
+cofactors is reported with both. `--cofactor-range` changes that distance, and
+the run CSV records it as `cofactor_range`. This flags paths worth inspecting
+alongside a cofactor; it does not show that the two are connected. In a protein
+with many cofactors, many paths will lie near one.
 
 `nearby_cofactors`, `nearby_cofactor_distances`, and `nearby_cofactor_atoms` in
 `*_clusters.csv` list the sites, their distances, and the path atom closest to

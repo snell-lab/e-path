@@ -287,6 +287,7 @@ def _path(
     residue_names: Sequence[str],
     *,
     cofactors: Sequence[tuple[str, str, tuple[float, float, float]]] = (),
+    cofactor_range: float = 8.0,
 ) -> PathReport:
     """A straight path with one residue per atom, 3.5 A apart along x.
 
@@ -319,7 +320,9 @@ def _path(
         )
     clusters = cluster_selected_atoms(scored, distance_cutoff=4.0)
     assert len(clusters) == 1
-    return analyze_paths(clusters, cleaned_atoms=cleaned).reports[0]
+    return analyze_paths(
+        clusters, cleaned_atoms=cleaned, cofactor_range=cofactor_range
+    ).reports[0]
 
 
 def test_a_cofactor_in_range_of_any_atom_is_near_the_path() -> None:
@@ -349,6 +352,20 @@ def test_a_cofactor_in_range_of_any_atom_is_near_the_path() -> None:
     assert distant.nearby_cofactor_summary == "none"
 
     assert _path(names).nearby_cofactors == ()
+
+
+def test_the_cofactor_range_is_inclusive_and_can_be_changed() -> None:
+    names = ["TRP", "ALA", "LEU"]
+    cofactors = [("FMN", "N", (-5.0, 0.0, 0.0))]
+    assert _path(names, cofactors=cofactors).is_near_cofactor
+    assert _path(names, cofactors=cofactors, cofactor_range=5.0).is_near_cofactor
+    assert not _path(names, cofactors=cofactors, cofactor_range=4.5).is_near_cofactor
+
+    # A wider range reaches a cofactor beyond the default one.
+    far = [("FMN", "N", (-10.0, 0.0, 0.0))]
+    assert not _path(names, cofactors=far).is_near_cofactor
+    widened = _path(names, cofactors=far, cofactor_range=12.0)
+    assert widened.nearby_cofactor_summary == "FMN at 10.0 A"
 
 
 def test_a_path_between_two_cofactors_is_near_both() -> None:

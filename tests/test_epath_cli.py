@@ -52,6 +52,7 @@ def test_defaults_mirror_the_pipeline_options() -> None:
     assert args.structure_inputs == ["model.pdb"]
     assert args.percentile == (2.0,) and args.chains is None
     assert args.cluster_distance == 4.0 and args.minimum_cluster_size == 8
+    assert args.cofactor_range == 8.0
     assert args.packing_density_threshold == 7.0 and args.window_size_fraction == 0.02
     assert args.minimum_window_size == 11 and args.translation_range == 1
     assert args.output_prefix is None and args.output_dir == "output"
@@ -68,6 +69,8 @@ def test_defaults_mirror_the_pipeline_options() -> None:
             "--no-plot",
             "--chains",
             "B, A,B",
+            "--cofactor-range",
+            "6.5",
         ]
     )
     assert parsed.percentile == (5.0,)
@@ -75,6 +78,7 @@ def test_defaults_mirror_the_pipeline_options() -> None:
         parsed, percentile=parsed.percentile[0], output_prefix=Path("x")
     )
     assert options.selection.percentile == 5.0
+    assert options.pathways.cofactor_range == 6.5
     assert options.output.display_chains == ("B", "A")
     assert options.output.output_prefix == Path("x")
     assert not options.output.write_reports

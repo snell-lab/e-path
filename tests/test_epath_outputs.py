@@ -154,6 +154,7 @@ def test_cluster_step_and_run_csvs(tmp_path: Path, result: EpathPipelineResult) 
     assert runs[0]["clusters_reported"] == str(len(result.path_reports))
     assert runs[0]["epath_version"] == __version__
     assert runs[0]["cluster_distance"] == "4"
+    assert runs[0]["cofactor_range"] == "8"
 
 
 def test_atom_subset_cif_round_trips_through_gemmi(tmp_path: Path) -> None:
